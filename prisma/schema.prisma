@@ -10,7 +10,8 @@ datasource db {
 model User {
   id            String    @id @default(uuid())
   email         String    @unique
-  name          String?
+  firstName     String?
+  lastName      String?
   image         String?   // For avatar (e.g., from Google OAuth)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -22,7 +23,7 @@ model User {
 
 model Document {
   id          String   @id @default(uuid())
-  title       String   @default("Untitled Document")
+  title       String   @unique
   content     String   @db.Text // LaTeX source code
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -30,6 +31,7 @@ model Document {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  @@unique([userId, title])
   @@index([userId])
   @@map("documents")
 }
