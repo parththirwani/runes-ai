@@ -1,4 +1,5 @@
 import { prisma } from "@/src/lib/db";
+import { generateSlug } from "@/src/lib/slug";
 import { withAuth } from "@/src/lib/withAuth";
 import { documentSchema } from "@/src/schema/documentSchema";
 import { NextResponse } from "next/server";
@@ -29,11 +30,14 @@ export const POST = withAuth(async (req, session) => {
       );
     }
 
+    const slug = generateSlug(title)
+
     const document = await prisma.document.create({
       data: {
         title,
         content,
         userId,
+        slug
       },
     });
 
@@ -62,7 +66,7 @@ export const GET = withAuth(async (_req, session) => {
       documents,
     });
   } catch (error) {
-    console.error("[DOCUMENT_GET_ERROR]", error);
+    console.error("[DOCUMENTS_GET_ERROR]", error);
 
     return NextResponse.json(
       { message: "Internal server error" },

@@ -25,6 +25,7 @@ model Document {
   id          String   @id @default(uuid())
   title       String   @unique
   content     String   @db.Text // LaTeX source code
+  slug        String   @unique
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
