@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 
 export const GET = withAuth(async (req, session, context) => {
   try {
-    const { slug } = context.params;
+    const { slug } = await context.params;
     const userId = session.user.id;
     
     const document = await prisma.document.findFirst({
@@ -40,7 +40,7 @@ export const GET = withAuth(async (req, session, context) => {
 
 export const DELETE = withAuth(async (req, session, context) => {
   try {
-    const { slug } = context.params;
+    const { slug } = await context.params;
     const userId = session.user.id;
 
     const document = await prisma.document.findFirst({
@@ -78,7 +78,7 @@ export const DELETE = withAuth(async (req, session, context) => {
 
 export const PUT = withAuth(async (req, session, context) => {
   try {
-    const { slug } = context.params;
+    const { slug } = await context.params;
     const userId = session.user.id;
     const body = await req.json(); 
     const parsedData = updateDocumentSchema.safeParse(body);
@@ -136,7 +136,7 @@ export const PUT = withAuth(async (req, session, context) => {
 
 export const PATCH = withAuth(async (req, session, context) => {
   try {
-    const { slug } = context.params;
+    const { slug } = await context.params;
     const userId = session.user.id;
     const body = await req.json(); 
     const parsedData = documentSchema.safeParse(body);
