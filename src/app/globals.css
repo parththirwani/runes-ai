@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+/* Dark theme as default */
+:root {
+  --background: 3 7 18;
+  --foreground: 229 231 235;
+  --card: 17 24 39;
+  --border: 55 65 81;
+}
+
+/* Optional: light theme if you ever want it */
+.light {
+  --background: 255 255 255;
+  --foreground: 17 24 39;
+  --card: 255 255 255;
+  --border: 229 231 235;
+}
+
+/* Apply globally */
+body {
+  background-color: rgb(var(--background));
+  color: rgb(var(--foreground));
+}
