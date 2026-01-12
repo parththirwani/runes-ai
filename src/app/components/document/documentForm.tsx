@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Document } from "./documentPage";
+import LatexTemplateModal from "./latexTemplate";
 
 type DocumentFormProps = {
   onDocumentCreated: (document: Document) => void;
@@ -13,6 +14,7 @@ export default function DocumentForm({ onDocumentCreated }: DocumentFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,6 +54,11 @@ export default function DocumentForm({ onDocumentCreated }: DocumentFormProps) {
     setContent("");
     setError("");
     setSuccess(false);
+  };
+
+  const handleTemplateSelect = (templateContent: string) => {
+    setContent(templateContent);
+    setShowTemplates(false);
   };
 
   return (
@@ -107,19 +114,31 @@ export default function DocumentForm({ onDocumentCreated }: DocumentFormProps) {
         </div>
 
         <div>
-          <label
-            htmlFor="content"
-            className="block text-sm font-medium text-gray-700 mb-2"
-          >
-            Content
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label
+              htmlFor="content"
+              className="block text-sm font-medium text-gray-700"
+            >
+              LaTeX Content
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowTemplates(true)}
+              className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+              </svg>
+              Use Template
+            </button>
+          </div>
           <textarea
             id="content"
             value={content}
             onChange={(e) => setContent(e.target.value)}
             rows={10}
-            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-shadow"
-            placeholder="Write your document content here..."
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-shadow font-mono text-sm"
+            placeholder="Write your LaTeX content here or use a template..."
             required
             disabled={isSubmitting}
           />
@@ -205,6 +224,13 @@ export default function DocumentForm({ onDocumentCreated }: DocumentFormProps) {
           </button>
         </div>
       </form>
+
+      {showTemplates && (
+        <LatexTemplateModal
+          onSelect={handleTemplateSelect}
+          onClose={() => setShowTemplates(false)}
+        />
+      )}
     </div>
   );
 }

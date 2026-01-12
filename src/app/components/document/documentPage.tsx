@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import DocumentForm from "./documentForm";
 import DocumentList from "./documentList";
+import QuickStartGuide from "./quickStart";
+
 
 export type Document = {
   id: string;
@@ -103,6 +105,9 @@ export default function DocumentsPage() {
           </div>
         </div>
       </div>
+
+      {/* Quick Start Guide */}
+      <QuickStartGuide />
     </div>
   );
 }

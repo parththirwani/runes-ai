@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Document } from "./documentPage";
+import { saveAs } from "file-saver";
 
 type DocumentCardProps = {
   document: Document;
@@ -16,6 +17,7 @@ export default function DocumentCard({ document, onDelete, onUpdate }: DocumentC
   const [editTitle, setEditTitle] = useState(document.title);
   const [editContent, setEditContent] = useState(document.content);
   const [isSaving, setIsSaving] = useState(false);
+  const [isCompiling, setIsCompiling] = useState(false);
   const [error, setError] = useState("");
 
   const formatDate = (dateString: string) => {
@@ -94,6 +96,29 @@ export default function DocumentCard({ document, onDelete, onUpdate }: DocumentC
     setEditContent(document.content);
     setIsEditing(false);
     setError("");
+  };
+
+  const handleCompilePDF = async () => {
+    setIsCompiling(true);
+    setError("");
+
+    try {
+      const response = await fetch(`/api/document/${document.slug}`, {
+        method: "POST",
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        saveAs(blob, `${document.slug}.pdf`);
+      } else {
+        const data = await response.json();
+        setError(data.message || "Failed to compile PDF");
+      }
+    } catch (err) {
+      setError("An error occurred while compiling PDF");
+    } finally {
+      setIsCompiling(false);
+    }
   };
 
   return (
@@ -211,6 +236,48 @@ export default function DocumentCard({ document, onDelete, onUpdate }: DocumentC
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                onClick={handleCompilePDF}
+                disabled={isCompiling}
+                className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Compile to PDF"
+              >
+                {isCompiling ? (
+                  <svg
+                    className="w-5 h-5 animate-spin"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                ) : (
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                    />
+                  </svg>
+                )}
+              </button>
               <button
                 onClick={() => setIsEditing(true)}
                 className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
