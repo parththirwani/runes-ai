@@ -130,8 +130,8 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         setSlug(data.slug);
         setHasUnsavedChanges(false);
         
-        // Update URL without reload
-        router.replace(`/document?slug=${data.slug}`);
+        // Update URL without reload - use dynamic route
+        router.push(`/document/${data.slug}`);
         console.log('Document created successfully');
         return true;
       }

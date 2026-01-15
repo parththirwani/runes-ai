@@ -1,4 +1,5 @@
 import { Menu, FileText, Save, Play, Sparkles, Settings, Zap, Download, Clock, Users, Edit2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import Button from '../ui/Button';
 import IconButton from '../ui/IconButton';
 import ViewModeToggle from './ViewModeToggle';
@@ -32,6 +33,8 @@ export default function TopNavBar({
   isCompiling = false,
   hasUnsavedChanges = false
 }: TopNavBarProps) {
+  const router = useRouter();
+
   return (
     <div className="h-14 bg-[#2d2d2d] border-b border-[#3e3e3e] flex items-center justify-between px-4 relative z-30">
       {/* Left Section */}
@@ -44,9 +47,12 @@ export default function TopNavBar({
         
         <div className="flex items-center gap-2">
           <Zap className="w-6 h-6 text-emerald-500" />
-          <span className="font-bold text-lg text-white">
+          <button
+            onClick={() => router.push('/document')}
+            className="font-bold text-lg text-white hover:text-emerald-400 transition-colors"
+          >
             Runes<span className="text-emerald-500">AI</span>
-          </span>
+          </button>
         </div>
         
         <div className="h-6 w-px bg-[#3e3e3e]" />
