@@ -1,5 +1,5 @@
-import React from 'react';
-import { FileText, Download, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { FileText, Download, ZoomIn, ZoomOut, Maximize2, Minimize2 } from 'lucide-react';
 import Button from '../ui/Button';
 import IconButton from '../ui/IconButton';
 
@@ -16,51 +16,101 @@ export default function PDFPreview({
   onCompile,
   onDownload
 }: PDFPreviewProps) {
-  const [zoom, setZoom] = React.useState(100);
+  const [zoom, setZoom] = useState(100);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const handleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (error) {
+      console.error('Fullscreen error:', error);
+    }
+  };
+
+  React.useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const handleZoomIn = () => {
+    setZoom(prev => Math.min(200, prev + 25));
+  };
+
+  const handleZoomOut = () => {
+    setZoom(prev => Math.max(50, prev - 25));
+  };
+
+  const handleResetZoom = () => {
+    setZoom(100);
+  };
 
   return (
-    <div className="h-full w-full bg-gray-900 flex flex-col">
+    <div className="h-full w-full bg-[#2a2a2e] flex flex-col">
       {/* Preview Toolbar */}
       <div className="h-12 bg-[#2d2d2d] border-b border-[#3e3e3e] flex items-center justify-between px-4">
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-400">PDF Preview</span>
         </div>
         
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          {/* Zoom Controls */}
           <IconButton
             icon={<ZoomOut className="w-4 h-4" />}
             size="sm"
-            onClick={() => setZoom(Math.max(50, zoom - 10))}
+            onClick={handleZoomOut}
             tooltip="Zoom out"
+            disabled={zoom <= 50}
+            className="cursor-pointer"
           />
-          <span className="text-xs text-gray-400 min-w-12.5 text-center">
+          <button
+            onClick={handleResetZoom}
+            className="px-3 py-1.5 text-xs text-gray-400 hover:text-white min-w-15 text-center transition-colors cursor-pointer"
+            title="Reset zoom"
+          >
             {zoom}%
-          </span>
+          </button>
           <IconButton
             icon={<ZoomIn className="w-4 h-4" />}
             size="sm"
-            onClick={() => setZoom(Math.min(200, zoom + 10))}
+            onClick={handleZoomIn}
             tooltip="Zoom in"
+            disabled={zoom >= 200}
+            className="cursor-pointer"
           />
           
-          <div className="h-6 w-px bg-[#3e3e3e] mx-2" />
+          <div className="h-6 w-px bg-[#3e3e3e] mx-1" />
           
+          {/* Fullscreen Toggle */}
           <IconButton
-            icon={<Maximize2 className="w-4 h-4" />}
+            icon={isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             size="sm"
-            tooltip="Fullscreen"
+            onClick={handleFullscreen}
+            tooltip={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            className="cursor-pointer"
           />
+          
+          {/* Download */}
           <IconButton
             icon={<Download className="w-4 h-4" />}
             size="sm"
             onClick={onDownload}
             tooltip="Download PDF"
+            disabled={!pdfUrl}
+            className="cursor-pointer"
           />
         </div>
       </div>
 
       {/* Preview Area */}
-      <div className="flex-1 overflow-auto bg-gray-800 flex items-center justify-center p-8 custom-scrollbar">
+      <div className="flex-1 overflow-auto bg-[#2a2a2e] flex items-center justify-center p-8 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-[#2a2a2e] hover:scrollbar-thumb-gray-500">
         {isLoading ? (
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto mb-4" />
@@ -68,15 +118,15 @@ export default function PDFPreview({
           </div>
         ) : pdfUrl ? (
           <div 
-            className="bg-white shadow-2xl rounded-lg overflow-hidden"
+            className="shadow-2xl transition-all duration-300"
             style={{
-              width: `${zoom}%`,
-              maxWidth: '100%'
+              transform: `scale(${zoom / 100})`,
+              transformOrigin: 'center top'
             }}
           >
             <iframe
-              src={pdfUrl}
-              className="w-full h-200"
+              src={`${pdfUrl}#view=FitH`}
+              className="w-204 h-264 border-0 block bg-white"
               title="PDF Preview"
             />
           </div>
@@ -101,23 +151,6 @@ export default function PDFPreview({
           </div>
         )}
       </div>
-
-      <style jsx>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 12px;
-          height: 12px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: #1f2937;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #4b5563;
-          border-radius: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #6b7280;
-        }
-      `}</style>
     </div>
   );
 }

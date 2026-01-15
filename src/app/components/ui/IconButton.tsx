@@ -1,4 +1,3 @@
-// src/app/components/ui/IconButton.tsx
 import React from 'react';
 
 interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -15,9 +14,10 @@ export default function IconButton({
   tooltip,
   className = '',
   onClick,
+  disabled,
   ...props
 }: IconButtonProps) {
-  const baseStyles = 'inline-flex items-center justify-center rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
+  const baseStyles = 'inline-flex items-center justify-center rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed';
   
   const variants = {
     default: 'bg-[#3e3e3e] text-gray-300 hover:bg-[#4e4e4e] hover:text-white',
@@ -36,6 +36,7 @@ export default function IconButton({
       className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`}
       title={tooltip}
       onClick={onClick}
+      disabled={disabled}
       {...props}
     >
       {icon}

@@ -58,7 +58,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const [slug, setSlug] = useState(initialDocument?.slug || '');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [showFileTree, setShowFileTree] = useState(false);
-  const [showAI, setShowAI] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isCompiling, setIsCompiling] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string>();
@@ -86,7 +86,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         title !== initialDocument.title;
       setHasUnsavedChanges(hasChanged);
     } else if (code !== initialCode || title !== 'Untitled Document') {
-      // New document that hasn't been saved yet
       setHasUnsavedChanges(true);
     }
   }, [code, title, initialDocument]);
@@ -97,7 +96,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
     try {
       if (slug) {
-        // Update existing document
         const response = await fetch(`/api/document/${slug}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -109,12 +107,10 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           throw new Error(error.message || 'Failed to save document');
         }
 
-        const data = await response.json();
         setHasUnsavedChanges(false);
         console.log('Document saved successfully');
         return true;
       } else {
-        // Create new document
         const response = await fetch('/api/document', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -130,7 +126,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         setSlug(data.slug);
         setHasUnsavedChanges(false);
         
-        // Update URL without reload - use dynamic route
         router.push(`/document/${data.slug}`);
         console.log('Document created successfully');
         return true;
@@ -147,13 +142,11 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   };
 
   const handleCompile = async () => {
-    // Check if document needs to be saved first
     if (!slug) {
       setCompileError('Please save the document first before compiling');
       return;
     }
 
-    // Auto-save if there are unsaved changes
     if (hasUnsavedChanges) {
       setCompileError('Saving changes before compiling...');
       const saveSuccess = await handleSave();
@@ -177,11 +170,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         throw new Error(error.error || error.message || 'Compilation failed');
       }
 
-      // Get PDF as blob
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       
-      // Revoke previous URL if exists
       if (pdfUrl) {
         URL.revokeObjectURL(pdfUrl);
       }
@@ -221,6 +212,12 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     setShowTitleModal(false);
   };
 
+  const handleSettingsToggle = () => {
+    setShowSettings(!showSettings);
+    // You can implement settings panel here
+    console.log('Settings toggled');
+  };
+
   // Auto-save every 30 seconds if there are unsaved changes
   useEffect(() => {
     if (hasUnsavedChanges && slug) {
@@ -243,7 +240,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [title, code, slug]); // Include dependencies so handleSave has latest values
+  }, [title, code, slug]);
 
   // Cleanup PDF URL on unmount
   useEffect(() => {
@@ -263,7 +260,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         onMenuToggle={() => setShowFileTree(!showFileTree)}
         onSave={handleSave}
         onCompile={handleCompile}
-        onAIToggle={() => setShowAI(!showAI)}
+        onSettingsToggle={handleSettingsToggle}
         onTitleEdit={handleTitleEdit}
         isSaving={isSaving}
         isCompiling={isCompiling}

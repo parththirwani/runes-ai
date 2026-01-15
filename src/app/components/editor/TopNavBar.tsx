@@ -1,4 +1,4 @@
-import { Menu, FileText, Save, Play, Sparkles, Settings, Zap, Download, Clock, Users, Edit2 } from 'lucide-react';
+import { Menu, FileText, Save, Play, Settings, Zap, Edit2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Button from '../ui/Button';
 import IconButton from '../ui/IconButton';
@@ -13,7 +13,7 @@ interface TopNavBarProps {
   onMenuToggle: () => void;
   onSave: () => void;
   onCompile: () => void;
-  onAIToggle: () => void;
+  onSettingsToggle?: () => void;
   onTitleEdit?: () => void;
   isSaving?: boolean;
   isCompiling?: boolean;
@@ -27,7 +27,7 @@ export default function TopNavBar({
   onMenuToggle,
   onSave,
   onCompile,
-  onAIToggle,
+  onSettingsToggle,
   onTitleEdit,
   isSaving = false,
   isCompiling = false,
@@ -43,13 +43,14 @@ export default function TopNavBar({
           icon={<Menu className="w-5 h-5" />}
           onClick={onMenuToggle}
           tooltip="Toggle file tree"
+          className="cursor-pointer"
         />
         
         <div className="flex items-center gap-2">
           <Zap className="w-6 h-6 text-emerald-500" />
           <button
             onClick={() => router.push('/document')}
-            className="font-bold text-lg text-white hover:text-emerald-400 transition-colors"
+            className="font-bold text-lg text-white hover:text-emerald-400 transition-colors cursor-pointer"
           >
             Runes<span className="text-emerald-500">AI</span>
           </button>
@@ -61,7 +62,7 @@ export default function TopNavBar({
           <FileText className="w-4 h-4" />
           <button
             onClick={onTitleEdit}
-            className="max-w-50 truncate hover:text-gray-200 transition-colors flex items-center gap-1 group"
+            className="max-w-50 truncate hover:text-gray-200 transition-colors flex items-center gap-1 group cursor-pointer"
             title="Click to edit title"
           >
             <span>{documentTitle}</span>
@@ -99,16 +100,11 @@ export default function TopNavBar({
           {isCompiling ? 'Compiling...' : 'Compile'}
         </Button>
 
-        <Button
-          variant="ai"
-          size="sm"
-          icon={<Sparkles className="w-5 h-5" />}
-          onClick={onAIToggle}
-        />
-
         <IconButton
           icon={<Settings className="w-5 h-5" />}
           tooltip="Settings"
+          onClick={onSettingsToggle}
+          className="cursor-pointer"
         />
       </div>
     </div>
