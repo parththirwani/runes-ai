@@ -1,4 +1,4 @@
-import { Menu, FileText, Save, Play, Sparkles, Settings, Zap, Download, Clock, Users } from 'lucide-react';
+import { Menu, FileText, Save, Play, Sparkles, Settings, Zap, Download, Clock, Users, Edit2 } from 'lucide-react';
 import Button from '../ui/Button';
 import IconButton from '../ui/IconButton';
 import ViewModeToggle from './ViewModeToggle';
@@ -13,8 +13,10 @@ interface TopNavBarProps {
   onSave: () => void;
   onCompile: () => void;
   onAIToggle: () => void;
+  onTitleEdit?: () => void;
   isSaving?: boolean;
   isCompiling?: boolean;
+  hasUnsavedChanges?: boolean;
 }
 
 export default function TopNavBar({
@@ -25,8 +27,10 @@ export default function TopNavBar({
   onSave,
   onCompile,
   onAIToggle,
+  onTitleEdit,
   isSaving = false,
-  isCompiling = false
+  isCompiling = false,
+  hasUnsavedChanges = false
 }: TopNavBarProps) {
   return (
     <div className="h-14 bg-[#2d2d2d] border-b border-[#3e3e3e] flex items-center justify-between px-4 relative z-30">
@@ -49,10 +53,17 @@ export default function TopNavBar({
         
         <div className="flex items-center gap-2 text-sm text-gray-400">
           <FileText className="w-4 h-4" />
-          <span className="max-w-50 truncate">{documentTitle}</span>
-          <button className="text-gray-500 hover:text-gray-300 transition-colors">
-            <Clock className="w-3.5 h-3.5" />
+          <button
+            onClick={onTitleEdit}
+            className="max-w-50 truncate hover:text-gray-200 transition-colors flex items-center gap-1 group"
+            title="Click to edit title"
+          >
+            <span>{documentTitle}</span>
+            <Edit2 className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
           </button>
+          {hasUnsavedChanges && (
+            <span className="w-2 h-2 bg-yellow-500 rounded-full" title="Unsaved changes" />
+          )}
         </div>
       </div>
 
@@ -63,22 +74,13 @@ export default function TopNavBar({
         <div className="h-6 w-px bg-[#3e3e3e]" />
 
         <Button
-          variant="ghost"
-          size="sm"
-          icon={<Users className="w-4 h-4" />}
-          className="text-gray-300 hover:text-white"
-        >
-          Share
-        </Button>
-
-        <Button
           variant="secondary"
           size="sm"
           icon={<Save className="w-4 h-4" />}
           onClick={onSave}
           loading={isSaving}
         >
-          {isSaving ? 'Saving...' : 'Save'}
+          {isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save' : 'Saved'}
         </Button>
 
         <Button
