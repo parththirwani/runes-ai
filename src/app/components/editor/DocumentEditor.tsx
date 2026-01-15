@@ -6,6 +6,8 @@ import TopNavBar from './TopNavBar';
 import FileTree from './FileTree';
 import MonacoEditorWrapper from './MonacoEditorWrapper';
 import PDFPreview from './PDFPreview';
+import InputModal from '../ui/InputModal';
+import AlertModal from '../ui/AlertModal';
 
 type ViewMode = 'editor' | 'split' | 'preview';
 
@@ -63,6 +65,11 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [compileError, setCompileError] = useState<string | null>(null);
+  
+  // Modal states
+  const [showTitleModal, setShowTitleModal] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorModalMessage, setErrorModalMessage] = useState('');
 
   useEffect(() => {
     if (initialDocument) {
@@ -131,6 +138,8 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     } catch (error: any) {
       console.error('Save error:', error);
       setSaveError(error.message);
+      setErrorModalMessage(error.message);
+      setShowErrorModal(true);
       return false;
     } finally {
       setIsSaving(false);
@@ -182,6 +191,8 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     } catch (error: any) {
       console.error('Compile error:', error);
       setCompileError(error.message);
+      setErrorModalMessage(error.message);
+      setShowErrorModal(true);
     } finally {
       setIsCompiling(false);
     }
@@ -202,10 +213,12 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   };
 
   const handleTitleEdit = () => {
-    const newTitle = prompt('Enter document title:', title);
-    if (newTitle && newTitle.trim()) {
-      setTitle(newTitle.trim());
-    }
+    setShowTitleModal(true);
+  };
+
+  const handleTitleSubmit = (newTitle: string) => {
+    setTitle(newTitle);
+    setShowTitleModal(false);
   };
 
   // Auto-save every 30 seconds if there are unsaved changes
@@ -257,30 +270,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         hasUnsavedChanges={hasUnsavedChanges}
       />
 
-      {saveError && (
-        <div className="bg-red-500 text-white px-4 py-2 text-sm">
-          Error saving: {saveError}
-          <button 
-            onClick={() => setSaveError(null)}
-            className="ml-4 underline"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      {compileError && (
-        <div className="bg-red-500 text-white px-4 py-2 text-sm">
-          Compilation error: {compileError}
-          <button 
-            onClick={() => setCompileError(null)}
-            className="ml-4 underline"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
       <div className="flex-1 relative overflow-hidden">
         <FileTree
           isOpen={showFileTree}
@@ -311,6 +300,37 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           )}
         </div>
       </div>
+
+      {/* Modals */}
+      <InputModal
+        isOpen={showTitleModal}
+        onClose={() => setShowTitleModal(false)}
+        onSubmit={handleTitleSubmit}
+        title="Edit Document Title"
+        description="Enter a new title for your document"
+        placeholder="e.g., Research Paper, Resume, Report..."
+        defaultValue={title}
+        submitText="Save"
+        maxLength={30}
+        validation={(value) => {
+          if (value.length < 3) {
+            return 'Title must be at least 3 characters';
+          }
+          return null;
+        }}
+      />
+
+      <AlertModal
+        isOpen={showErrorModal}
+        onClose={() => {
+          setShowErrorModal(false);
+          setSaveError(null);
+          setCompileError(null);
+        }}
+        title="Error"
+        message={errorModalMessage}
+        variant="error"
+      />
     </div>
   );
 }
