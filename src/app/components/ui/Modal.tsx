@@ -1,5 +1,7 @@
+// src/app/components/ui/Modal.tsx
 import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
+import Button from './Button';
 
 interface ModalProps {
   isOpen: boolean;
@@ -54,10 +56,11 @@ export default function Modal({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop */}
+      {/* Backdrop with blur */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+        className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-all"
         onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Modal */}
