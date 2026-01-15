@@ -1,4 +1,5 @@
-import { Zap, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
+import Image from 'next/image';
 import Button from '../ui/Button';
 
 interface DashboardHeaderProps {
@@ -7,15 +8,18 @@ interface DashboardHeaderProps {
 
 export default function DashboardHeader({ onCreateDocument }: DashboardHeaderProps) {
   return (
-    <header className="border-b border-white/5 backdrop-blur-xl bg-black/40 sticky top-0 z-40">
+    <header className="border-b border-white/5 backdrop-blur-xl bg-[#2d2d2d] sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
-            <Zap className="w-6 h-6 text-emerald-400" />
-            <h1 className="text-lg font-semibold">
-              Runes<span className="text-emerald-400">AI</span>
-            </h1>
-          </div>
+          <button className="flex gap-2 hover:opacity-80 transition-opacity cursor-pointer w-48">
+            <Image
+              src="/logo.png"
+              alt="RunesAI Logo"
+              width={200}
+              height={32}
+              className="object-contain"
+            />
+          </button>
           <Button
             variant="primary"
             size="sm"

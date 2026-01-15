@@ -51,7 +51,7 @@ export default function DashboardPage() {
 
   if (status === 'loading' || loading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen bg-[#1e1e1e] flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-10 w-10 border-2 border-emerald-500 border-t-transparent mx-auto mb-4" />
           <p className="text-gray-500 text-sm">Loading...</p>
@@ -61,7 +61,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white">
+    <div className="min-h-screen bg-[#1e1e1e] text-white">
       <DashboardHeader onCreateDocument={() => setShowCreateModal(true)} />
 
       <main className="max-w-7xl mx-auto px-6 lg:px-8 py-12">

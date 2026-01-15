@@ -1,5 +1,6 @@
-import { Menu, FileText, Save, Play, Settings, Zap, Edit2 } from 'lucide-react';
+import { Menu, FileText, Save, Play, Settings, Edit2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import Button from '../ui/Button';
 import IconButton from '../ui/IconButton';
 import ViewModeToggle from './ViewModeToggle';
@@ -47,12 +48,17 @@ export default function TopNavBar({
         />
         
         <div className="flex items-center gap-2">
-          <Zap className="w-6 h-6 text-emerald-500" />
           <button
             onClick={() => router.push('/document')}
-            className="font-bold text-lg text-white hover:text-emerald-400 transition-colors cursor-pointer"
+            className="flex gap-2 hover:opacity-80 transition-opacity cursor-pointer w-48"
           >
-            Runes<span className="text-emerald-500">AI</span>
+            <Image
+              src="/logo.png"
+              alt="RunesAI Logo"
+              width={200}
+              height={32}
+              className="object-contain"
+            />
           </button>
         </div>
         
