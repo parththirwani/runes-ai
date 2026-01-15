@@ -1,5 +1,5 @@
-import DocumentsPage from "../components/document/documentPage";
+import DocumentEditor from "../components/editor/DocumentEditor";
 
-export default function document(){
-    return <DocumentsPage/>
+export default function DocumentPage() {
+  return <DocumentEditor />;
 }
