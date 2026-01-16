@@ -1,5 +1,28 @@
 import redis from '@/src/lib/redis';
 import { worker } from './worker';
+import express from 'express';
+
+const app = express();
+const port = process.env.WORKER_PORT || 3001;
+
+// Health check endpoint
+app.get('/health', async (req, res) => {
+  try {
+    const stats = await worker.getStats();
+    res.json({
+      status: 'healthy',
+      isRunning: worker['isRunning'], // Access private field for health check
+      ...stats,
+    });
+  } catch (error) {
+    res.status(500).json({ status: 'unhealthy', error: (error as Error).message });
+  }
+});
+
+// Start health check server
+app.listen(port, () => {
+  console.log(`[WORKER] Health check server running on port ${port}`);
+});
 
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
@@ -26,4 +49,3 @@ process.on('SIGINT', async () => {
     process.exit(1);
   }
 })();
-

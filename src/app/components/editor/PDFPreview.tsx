@@ -20,6 +20,8 @@ export default function PDFPreview({
 }: PDFPreviewProps) {
   const [zoom, setZoom] = useState(100);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // NEW: Track if we've ever started compiling → hide empty state after first attempt
+  const [hasStartedCompilation, setHasStartedCompilation] = useState(false);
 
   const handleFullscreen = async () => {
     try {
@@ -37,7 +39,6 @@ export default function PDFPreview({
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
-
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
@@ -54,6 +55,12 @@ export default function PDFPreview({
     setZoom(100);
   };
 
+  // NEW: Call this when user clicks Compile (instead of directly calling onCompile)
+  const handleCompileClick = () => {
+    setHasStartedCompilation(true); // Once true, stays true
+    onCompile?.();
+  };
+
   return (
     <div className="h-full w-full bg-[#2a2a2e] flex flex-col">
       {/* Preview Toolbar */}
@@ -67,7 +74,6 @@ export default function PDFPreview({
             </div>
           )}
         </div>
-        
         <div className="flex items-center gap-1">
           {/* Zoom Controls */}
           <IconButton
@@ -93,9 +99,7 @@ export default function PDFPreview({
             disabled={zoom >= 200}
             className="cursor-pointer"
           />
-          
           <div className="h-6 w-px bg-[#3e3e3e] mx-1" />
-          
           {/* Fullscreen Toggle */}
           <IconButton
             icon={isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -104,7 +108,6 @@ export default function PDFPreview({
             tooltip={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
             className="cursor-pointer"
           />
-          
           {/* Download */}
           <IconButton
             icon={<Download className="w-4 h-4" />}
@@ -118,19 +121,10 @@ export default function PDFPreview({
       </div>
 
       {/* Preview Area */}
-      <div className="flex-1 overflow-auto bg-[#2a2a2e] flex items-center justify-center p-8 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-[#2a2a2e] hover:scrollbar-thumb-gray-500">
-        {isLoading ? (
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto mb-4" />
-            <p className="text-gray-400 text-sm mb-2">
-              {statusMessage || 'Compiling your document...'}
-            </p>
-            <p className="text-gray-600 text-xs">
-              This may take a few moments
-            </p>
-          </div>
-        ) : pdfUrl ? (
-          <div 
+      <div className="flex-1 overflow-auto bg-[#2a2a2e] flex items-center justify-center p-8 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-[#2a2a2e] hover:scrollbar-thumb-gray-500 relative">
+        {/* Show PDF if available */}
+        {pdfUrl && (
+          <div
             className="shadow-2xl transition-all duration-300"
             style={{
               transform: `scale(${zoom / 100})`,
@@ -143,7 +137,10 @@ export default function PDFPreview({
               title="PDF Preview"
             />
           </div>
-        ) : (
+        )}
+
+        {/* Empty state - only show if NEVER started compiling AND no PDF */}
+        {!pdfUrl && !hasStartedCompilation && (
           <div className="text-center max-w-md">
             <div className="w-48 h-64 bg-gray-700 rounded-lg shadow-lg mx-auto mb-6 flex items-center justify-center">
               <FileText className="w-20 h-20 text-gray-600" />
@@ -156,11 +153,37 @@ export default function PDFPreview({
             </p>
             <Button
               variant="primary"
-              onClick={onCompile}
+              onClick={handleCompileClick}  // ← changed to our wrapper
               icon={<FileText className="w-4 h-4" />}
             >
               Compile Document
             </Button>
+          </div>
+        )}
+
+        {/* Loading overlay - shown when compiling (for first compile AND recompiles) */}
+        {isLoading && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-10">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto mb-4" />
+              <p className="text-white text-sm font-medium mb-2">
+                {statusMessage || 'Compiling your document...'}
+              </p>
+              <p className="text-gray-400 text-xs">
+                This may take a few moments
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Optional: During queue/waiting (isLoading false but hasStarted=true & no pdfUrl) show a waiting message */}
+        {!pdfUrl && hasStartedCompilation && !isLoading && (
+          <div className="text-center text-gray-300">
+            <div className="animate-pulse mb-4">
+              <Clock className="w-12 h-12 mx-auto text-emerald-400" />
+            </div>
+            <p className="text-lg">Job queued – waiting for compilation...</p>
+            <p className="text-sm mt-2">Your PDF will appear here once ready</p>
           </div>
         )}
       </div>

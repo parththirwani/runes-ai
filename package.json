@@ -6,8 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "worker": "bun run worker/server.ts",
-    "worker:dev": "bun --watch worker/server.ts",
+    "worker": "bun run worker/index.ts",
+    "worker:dev": "bun --watch worker/index.ts",
     "dev:all": "concurrently \"bun run dev\" \"bun run worker:dev\""
   },
   "dependencies": {

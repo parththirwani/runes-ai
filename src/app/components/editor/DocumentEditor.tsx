@@ -159,6 +159,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       
+      // Clean up old PDF URL
       if (pdfUrl) {
         URL.revokeObjectURL(pdfUrl);
       }
@@ -243,6 +244,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     setIsCompiling(true);
     setCompileError(null);
     setCompilationStatus('Queueing compilation...');
+    // Don't clear pdfUrl here - keep showing the old PDF while compiling
 
     try {
       const response = await fetch(`/api/document/${slug}`, {
