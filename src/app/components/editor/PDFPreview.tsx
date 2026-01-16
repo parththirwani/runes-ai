@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Download, ZoomIn, ZoomOut, Maximize2, Minimize2 } from 'lucide-react';
+import { FileText, Download, ZoomIn, ZoomOut, Maximize2, Minimize2, Clock } from 'lucide-react';
 import Button from '../ui/Button';
 import IconButton from '../ui/IconButton';
 
@@ -8,13 +8,15 @@ interface PDFPreviewProps {
   isLoading?: boolean;
   onCompile?: () => void;
   onDownload?: () => void;
+  statusMessage?: string;
 }
 
 export default function PDFPreview({
   pdfUrl,
   isLoading = false,
   onCompile,
-  onDownload
+  onDownload,
+  statusMessage = ''
 }: PDFPreviewProps) {
   const [zoom, setZoom] = useState(100);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -58,6 +60,12 @@ export default function PDFPreview({
       <div className="h-12 bg-[#2d2d2d] border-b border-[#3e3e3e] flex items-center justify-between px-4">
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-400">PDF Preview</span>
+          {isLoading && statusMessage && (
+            <div className="flex items-center gap-2 text-xs text-emerald-400">
+              <Clock className="w-3 h-3 animate-pulse" />
+              <span>{statusMessage}</span>
+            </div>
+          )}
         </div>
         
         <div className="flex items-center gap-1">
@@ -114,7 +122,12 @@ export default function PDFPreview({
         {isLoading ? (
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto mb-4" />
-            <p className="text-gray-400 text-sm">Compiling your document...</p>
+            <p className="text-gray-400 text-sm mb-2">
+              {statusMessage || 'Compiling your document...'}
+            </p>
+            <p className="text-gray-600 text-xs">
+              This may take a few moments
+            </p>
           </div>
         ) : pdfUrl ? (
           <div 

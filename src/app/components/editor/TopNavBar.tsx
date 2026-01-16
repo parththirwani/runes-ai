@@ -19,6 +19,7 @@ interface TopNavBarProps {
   isSaving?: boolean;
   isCompiling?: boolean;
   hasUnsavedChanges?: boolean;
+  compilationStatus?: string;
 }
 
 export default function TopNavBar({
@@ -32,7 +33,8 @@ export default function TopNavBar({
   onTitleEdit,
   isSaving = false,
   isCompiling = false,
-  hasUnsavedChanges = false
+  hasUnsavedChanges = false,
+  compilationStatus = ''
 }: TopNavBarProps) {
   const router = useRouter();
 
@@ -102,8 +104,9 @@ export default function TopNavBar({
           icon={<Play className="w-4 h-4" />}
           onClick={onCompile}
           loading={isCompiling}
+          disabled={isCompiling}
         >
-          {isCompiling ? 'Compiling...' : 'Compile'}
+          {isCompiling ? compilationStatus || 'Compiling...' : 'Compile'}
         </Button>
 
         <IconButton

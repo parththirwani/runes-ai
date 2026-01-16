@@ -1,7 +1,7 @@
 import { prisma } from "@/src/lib/db";
-import { compileLatexToPDF, validateLatexContent } from "@/src/lib/latex";
 import { withAuth } from "@/src/lib/withAuth";
 import { documentSchema, updateDocumentSchema } from "@/src/schema/documentSchema";
+import { compilationProducer } from "@/producer/queue";
 import { NextResponse } from "next/server";
 
 export const GET = withAuth(async (req, session, context) => {
@@ -191,7 +191,7 @@ export const PATCH = withAuth(async (req, session, context) => {
   }
 });
 
-
+// POST endpoint now queues a compilation job
 export const POST = withAuth(async (req, session, context) => {
   try {
     const { slug } = await context.params;
@@ -212,63 +212,32 @@ export const POST = withAuth(async (req, session, context) => {
       );
     }
 
-    console.log(`[PDF_COMPILE] Starting compilation for document: ${document.title} (user: ${userId})`);
+    console.log(`[PDF_COMPILE] Queueing compilation for document: ${document.title} (user: ${userId})`);
 
-    // Validate LaTeX content
-    const validation = validateLatexContent(document.content);
-    if (!validation.isValid) {
-      console.warn(`[PDF_COMPILE] Validation failed: ${validation.error}`);
-      return NextResponse.json(
-        { 
-          message: "Invalid LaTeX content",
-          error: validation.error
-        },
-        { status: 400 }
-      );
-    }
-
-    // Compile LaTeX to PDF
-    const result = await compileLatexToPDF(
-      document.content,
-      document.slug,
-      { timeout: 90000 } 
-    );
-
-    if (!result.success) {
-      console.error(`[PDF_COMPILE] Compilation failed: ${result.error}`);
-      return NextResponse.json(
-        { 
-          message: "LaTeX compilation failed",
-          error: result.error,
-          duration: result.duration
-        },
-        { status: 422 }
-      );
-    }
-
-    console.log(`[PDF_COMPILE] Success! Generated PDF (${result.pdfBuffer!.length} bytes) in ${result.duration}ms`);
-
-    // Log warnings if any
-    if (result.warnings) {
-      console.warn(`[PDF_COMPILE] Compilation warnings: ${result.warnings}`);
-    }
-
-    // Return PDF as response
-    return new NextResponse(new Uint8Array(result.pdfBuffer!), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${document.slug}.pdf"`,
-        'Content-Length': result.pdfBuffer!.length.toString(),
-        'X-Compilation-Duration': result.duration.toString(),
-      },
+    // Add job to queue
+    const jobId = await compilationProducer.addJob({
+      documentId: document.id,
+      userId: userId,
+      slug: document.slug,
+      content: document.content,
     });
+
+    console.log(`[PDF_COMPILE] Job ${jobId} queued successfully`);
+
+    // Return job ID for polling
+    return NextResponse.json(
+      { 
+        message: "Compilation job queued",
+        jobId: jobId
+      },
+      { status: 202 } // 202 Accepted
+    );
 
   } catch (error: any) {
     console.error("[PDF_COMPILE_ERROR]", error);
     return NextResponse.json(
       { 
-        message: "Failed to compile document",
+        message: "Failed to queue compilation",
         error: error.message || "Internal server error"
       },
       { status: 500 }

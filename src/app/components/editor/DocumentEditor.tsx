@@ -8,6 +8,7 @@ import MonacoEditorWrapper from './MonacoEditorWrapper';
 import PDFPreview from './PDFPreview';
 import InputModal from '../ui/InputModal';
 import AlertModal from '../ui/AlertModal';
+import { JobStatus } from '@/src/types/compilation';
 
 type ViewMode = 'editor' | 'split' | 'preview';
 
@@ -66,6 +67,10 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const [saveError, setSaveError] = useState<string | null>(null);
   const [compileError, setCompileError] = useState<string | null>(null);
   
+  // Job polling
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [compilationStatus, setCompilationStatus] = useState<string>('');
+  
   // Modal states
   const [showTitleModal, setShowTitleModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
@@ -89,6 +94,84 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       setHasUnsavedChanges(true);
     }
   }, [code, title, initialDocument]);
+
+  // Poll job status
+  useEffect(() => {
+    if (!currentJobId) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/job/${currentJobId}`);
+        
+        if (!response.ok) {
+          clearInterval(pollInterval);
+          setIsCompiling(false);
+          setCompileError('Job status check failed');
+          setCurrentJobId(null);
+          return;
+        }
+
+        const status = await response.json();
+        
+        switch (status.status) {
+          case JobStatus.PENDING:
+            setCompilationStatus('Queued...');
+            break;
+          case JobStatus.PROCESSING:
+            setCompilationStatus('Compiling...');
+            break;
+          case JobStatus.COMPLETED:
+            clearInterval(pollInterval);
+            setCompilationStatus('');
+            setIsCompiling(false);
+            await downloadPDF(currentJobId);
+            setCurrentJobId(null);
+            break;
+          case JobStatus.FAILED:
+            clearInterval(pollInterval);
+            setCompilationStatus('');
+            setIsCompiling(false);
+            setCompileError(status.result?.error || 'Compilation failed');
+            setErrorModalMessage(status.result?.error || 'Compilation failed');
+            setShowErrorModal(true);
+            setCurrentJobId(null);
+            break;
+        }
+      } catch (error: any) {
+        console.error('Polling error:', error);
+        clearInterval(pollInterval);
+        setIsCompiling(false);
+        setCurrentJobId(null);
+      }
+    }, 2000); // Poll every 2 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [currentJobId]);
+
+  const downloadPDF = async (jobId: string) => {
+    try {
+      const response = await fetch(`/api/pdf/${jobId}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to download PDF');
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      
+      if (pdfUrl) {
+        URL.revokeObjectURL(pdfUrl);
+      }
+      
+      setPdfUrl(url);
+      console.log('PDF downloaded successfully');
+    } catch (error: any) {
+      console.error('PDF download error:', error);
+      setCompileError(error.message);
+      setErrorModalMessage(error.message);
+      setShowErrorModal(true);
+    }
+  };
 
   const handleSave = async (): Promise<boolean> => {
     setIsSaving(true);
@@ -148,7 +231,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     }
 
     if (hasUnsavedChanges) {
-      setCompileError('Saving changes before compiling...');
+      setCompilationStatus('Saving changes...');
       const saveSuccess = await handleSave();
       if (!saveSuccess) {
         setCompileError('Failed to save document. Please try saving manually.');
@@ -159,6 +242,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
     setIsCompiling(true);
     setCompileError(null);
+    setCompilationStatus('Queueing compilation...');
 
     try {
       const response = await fetch(`/api/document/${slug}`, {
@@ -167,25 +251,19 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || error.message || 'Compilation failed');
+        throw new Error(error.error || error.message || 'Failed to queue compilation');
       }
 
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      
-      if (pdfUrl) {
-        URL.revokeObjectURL(pdfUrl);
-      }
-      
-      setPdfUrl(url);
-      console.log('Document compiled successfully');
+      const data = await response.json();
+      setCurrentJobId(data.jobId);
+      setCompilationStatus('Queued...');
+      console.log(`Compilation job queued: ${data.jobId}`);
     } catch (error: any) {
       console.error('Compile error:', error);
+      setIsCompiling(false);
       setCompileError(error.message);
       setErrorModalMessage(error.message);
       setShowErrorModal(true);
-    } finally {
-      setIsCompiling(false);
     }
   };
 
@@ -214,7 +292,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   const handleSettingsToggle = () => {
     setShowSettings(!showSettings);
-    // You can implement settings panel here
     console.log('Settings toggled');
   };
 
@@ -265,6 +342,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         isSaving={isSaving}
         isCompiling={isCompiling}
         hasUnsavedChanges={hasUnsavedChanges}
+        compilationStatus={compilationStatus}
       />
 
       <div className="flex-1 relative overflow-hidden">
@@ -292,6 +370,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                 isLoading={isCompiling}
                 onCompile={handleCompile}
                 onDownload={handleDownload}
+                statusMessage={compilationStatus}
               />
             </div>
           )}
