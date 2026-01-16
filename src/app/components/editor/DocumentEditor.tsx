@@ -66,11 +66,11 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [compileError, setCompileError] = useState<string | null>(null);
-  
+
   // Job polling
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [compilationStatus, setCompilationStatus] = useState<string>('');
-  
+
   // Modal states
   const [showTitleModal, setShowTitleModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
@@ -86,8 +86,8 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   useEffect(() => {
     if (initialDocument) {
-      const hasChanged = 
-        code !== initialDocument.content || 
+      const hasChanged =
+        code !== initialDocument.content ||
         title !== initialDocument.title;
       setHasUnsavedChanges(hasChanged);
     } else if (code !== initialCode || title !== 'Untitled Document') {
@@ -102,7 +102,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     const pollInterval = setInterval(async () => {
       try {
         const response = await fetch(`/api/job/${currentJobId}`);
-        
+
         if (!response.ok) {
           clearInterval(pollInterval);
           setIsCompiling(false);
@@ -112,7 +112,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         }
 
         const status = await response.json();
-        
+
         switch (status.status) {
           case JobStatus.PENDING:
             setCompilationStatus('Queued...');
@@ -151,19 +151,19 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const downloadPDF = async (jobId: string) => {
     try {
       const response = await fetch(`/api/pdf/${jobId}`);
-      
+
       if (!response.ok) {
         throw new Error('Failed to download PDF');
       }
 
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
-      
+
       // Clean up old PDF URL
       if (pdfUrl) {
         URL.revokeObjectURL(pdfUrl);
       }
-      
+
       setPdfUrl(url);
       console.log('PDF downloaded successfully');
     } catch (error: any) {
@@ -209,7 +209,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         const data = await response.json();
         setSlug(data.slug);
         setHasUnsavedChanges(false);
-        
+
         router.push(`/document/${data.slug}`);
         console.log('Document created successfully');
         return true;
@@ -244,12 +244,26 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     setIsCompiling(true);
     setCompileError(null);
     setCompilationStatus('Queueing compilation...');
-    // Don't clear pdfUrl here - keep showing the old PDF while compiling
 
     try {
       const response = await fetch(`/api/document/${slug}`, {
         method: 'POST'
       });
+
+      // Handle rate limit error
+      if (response.status === 429) {
+        const error = await response.json();
+        const resetAt = new Date(error.resetAt);
+        const secondsUntilReset = Math.ceil((resetAt.getTime() - Date.now()) / 1000);
+
+        const rateLimitMessage = `${error.message}\nPlease wait ${secondsUntilReset} seconds before trying again.\nRemaining compilations: ${error.remaining}`;
+
+        setCompileError(rateLimitMessage);
+        setErrorModalMessage(rateLimitMessage);
+        setShowErrorModal(true);
+        setIsCompiling(false);
+        return;
+      }
 
       if (!response.ok) {
         const error = await response.json();
@@ -257,6 +271,12 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       }
 
       const data = await response.json();
+
+      // Log rate limit info
+      if (data.rateLimit) {
+        console.log(`[COMPILE] Remaining compilations: ${data.rateLimit.remaining}`);
+      }
+
       setCurrentJobId(data.jobId);
       setCompilationStatus('Queued...');
       console.log(`Compilation job queued: ${data.jobId}`);
@@ -268,6 +288,46 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       setShowErrorModal(true);
     }
   };
+
+  // Add this helper component to show rate limit status
+  interface RateLimitBadgeProps {
+    remaining: number;
+    resetAt: number;
+  }
+
+  function RateLimitBadge({ remaining, resetAt }: RateLimitBadgeProps) {
+    const [secondsLeft, setSecondsLeft] = React.useState(
+      Math.ceil((resetAt - Date.now()) / 1000)
+    );
+
+    React.useEffect(() => {
+      const interval = setInterval(() => {
+        setSecondsLeft(Math.ceil((resetAt - Date.now()) / 1000));
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }, [resetAt]);
+
+    if (remaining <= 0) {
+      return (
+        <div className="text-xs text-red-400 flex items-center gap-1">
+          <span>Rate limit reached</span>
+          <span>•</span>
+          <span>Reset in {secondsLeft}s</span>
+        </div>
+      );
+    }
+
+    if (remaining <= 3) {
+      return (
+        <div className="text-xs text-yellow-400 flex items-center gap-1">
+          <span>{remaining} compilations left</span>
+        </div>
+      );
+    }
+
+    return null;
+  }
 
   const handleDownload = async () => {
     if (!pdfUrl) {

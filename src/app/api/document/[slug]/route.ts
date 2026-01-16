@@ -1,7 +1,9 @@
+// src/app/api/document/[slug]/route.ts
 import { prisma } from "@/src/lib/db";
 import { withAuth } from "@/src/lib/withAuth";
 import { documentSchema, updateDocumentSchema } from "@/src/schema/documentSchema";
 import { compilationProducer } from "@/producer/queue";
+import { checkRateLimit } from "@/src/lib/rateLimit";
 import { NextResponse } from "next/server";
 
 export const GET = withAuth(async (req, session, context) => {
@@ -191,7 +193,7 @@ export const PATCH = withAuth(async (req, session, context) => {
   }
 });
 
-// POST endpoint now queues a compilation job
+// POST endpoint with rate limiting - queues a compilation job
 export const POST = withAuth(async (req, session, context) => {
   try {
     const { slug } = await context.params;
@@ -212,7 +214,30 @@ export const POST = withAuth(async (req, session, context) => {
       );
     }
 
-    console.log(`[PDF_COMPILE] Queueing compilation for document: ${document.title} (user: ${userId})`);
+    const rateLimitResult = await checkRateLimit(document.id);
+
+    if (!rateLimitResult.allowed) {
+      console.log(`[PDF_COMPILE] Rate limit exceeded for document ${document.id} (user: ${userId})`);
+      
+      return NextResponse.json(
+        { 
+          message: rateLimitResult.error,
+          remaining: rateLimitResult.remaining,
+          resetAt: rateLimitResult.resetAt
+        },
+        { 
+          status: 429, 
+          headers: {
+            'X-RateLimit-Limit': '10',
+            'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
+            'X-RateLimit-Reset': new Date(rateLimitResult.resetAt).toISOString(),
+            'Retry-After': Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000).toString()
+          }
+        }
+      );
+    }
+
+    console.log(`[PDF_COMPILE] Queueing compilation for document: ${document.title} (user: ${userId}, remaining: ${rateLimitResult.remaining})`);
 
     // Add job to queue
     const jobId = await compilationProducer.addJob({
@@ -224,13 +249,23 @@ export const POST = withAuth(async (req, session, context) => {
 
     console.log(`[PDF_COMPILE] Job ${jobId} queued successfully`);
 
-    // Return job ID for polling
     return NextResponse.json(
       { 
         message: "Compilation job queued",
-        jobId: jobId
+        jobId: jobId,
+        rateLimit: {
+          remaining: rateLimitResult.remaining,
+          resetAt: rateLimitResult.resetAt
+        }
       },
-      { status: 202 } // 202 Accepted
+      { 
+        status: 202, 
+        headers: {
+          'X-RateLimit-Limit': '10',
+          'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
+          'X-RateLimit-Reset': new Date(rateLimitResult.resetAt).toISOString()
+        }
+      }
     );
 
   } catch (error: any) {
