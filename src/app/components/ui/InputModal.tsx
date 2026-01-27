@@ -111,7 +111,7 @@ export default function InputModal({
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             maxLength={maxLength}
-            className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
+            className={`w-full px-4 py-2.5 text-black border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
               error
                 ? 'border-red-300 focus:ring-red-500 focus:border-red-500'
                 : 'border-gray-300 focus:ring-emerald-500 focus:border-emerald-500'
@@ -123,7 +123,7 @@ export default function InputModal({
             ) : (
               <div />
             )}
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-black">
               {value.length}/{maxLength}
             </p>
           </div>

@@ -55,7 +55,7 @@ export default function ConfirmModal({
       footer={
         <>
           <Button
-            variant="ghost"
+            variant="secondary"
             onClick={onClose}
             disabled={isLoading}
           >
