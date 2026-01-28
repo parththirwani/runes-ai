@@ -1,11 +1,24 @@
-import { auth } from "../lib/auth";
+import CTA from "./components/landing/CTA";
+import Features from "./components/landing/features";
+import Footer from "./components/landing/footer";
+import Hero from "./components/landing/hero";
+import HowItWorks from "./components/landing/howItWorks";
+import Navbar from "./components/landing/navbar";
+import Pricing from "./components/landing/pricing";
 
-export default async function() {
-  const session = await auth();
 
-  if (!session?.user) {
-    return <div>Please sign in</div>;
-  }
+const Home = () => {
+  return (
+    <main className="min-h-screen bg-background">
+      <Navbar />
+      <Hero />
+      <Features />
+      <HowItWorks />
+      <Pricing />
+      <CTA />
+      <Footer />
+    </main>
+  );
+};
 
-  return <div>Welcome {session.user.name} ({session.user.email})</div>;
-}
+export default Home;

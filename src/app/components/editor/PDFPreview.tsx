@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { FileText, Download, ZoomIn, ZoomOut, Maximize2, Minimize2, Clock } from 'lucide-react';
-import Button from '../ui/Button';
-import IconButton from '../ui/IconButton';
+import Button from '../design/Button';
+import IconButton from '../design/IconButton';
 
 interface PDFPreviewProps {
   pdfUrl?: string;

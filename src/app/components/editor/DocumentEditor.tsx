@@ -6,8 +6,8 @@ import TopNavBar from './TopNavBar';
 import FileTree from './FileTree';
 import MonacoEditorWrapper from './MonacoEditorWrapper';
 import PDFPreview from './PDFPreview';
-import InputModal from '../ui/InputModal';
-import AlertModal from '../ui/AlertModal';
+import InputModal from '../design/InputModal';
+import AlertModal from '../design/AlertModal';
 import { JobStatus } from '@/src/types/compilation';
 
 type ViewMode = 'editor' | 'split' | 'preview';

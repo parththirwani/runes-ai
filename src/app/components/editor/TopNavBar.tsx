@@ -1,8 +1,8 @@
 import { Menu, FileText, Save, Play, Settings, Edit2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import Button from '../ui/Button';
-import IconButton from '../ui/IconButton';
+import Button from '../design/Button';
+import IconButton from '../design/IconButton';
 import ViewModeToggle from './ViewModeToggle';
 
 type ViewMode = 'editor' | 'split' | 'preview';

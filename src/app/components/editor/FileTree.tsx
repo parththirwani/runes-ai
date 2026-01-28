@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Plus, FileText, FolderOpen, Folder, ChevronRight, ChevronDown, Image, File } from 'lucide-react';
-import Button from '../ui/Button';
-import IconButton from '../ui/IconButton';
+import Button from '../design/Button';
+import IconButton from '../design/IconButton';
 
 interface FileNode {
   id: string;

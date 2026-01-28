@@ -1,6 +1,6 @@
 import { Plus } from 'lucide-react';
 import Image from 'next/image';
-import Button from '../ui/Button';
+import Button from '../design/Button';
 
 interface DashboardHeaderProps {
   onCreateDocument: () => void;

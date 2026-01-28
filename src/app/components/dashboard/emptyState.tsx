@@ -1,5 +1,5 @@
 import { FileText, Plus } from 'lucide-react';
-import Button from '../ui/Button';
+import Button from '../design/Button';
 
 interface EmptyStateProps {
   searchQuery?: string;

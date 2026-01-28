@@ -1,23 +1,209 @@
 @import "tailwindcss";
 
-/* Dark theme as default */
-:root {
-  --background: 3 7 18;
-  --foreground: 229 231 235;
-  --card: 17 24 39;
-  --border: 55 65 81;
+@theme {
+  /* Colors */
+  --color-background: oklch(0.145 0 0);
+  --color-foreground: oklch(0.985 0 0);
+  --color-card: oklch(0.205 0 0);
+  --color-card-foreground: oklch(0.985 0 0);
+  --color-popover: oklch(0.205 0 0);
+  --color-popover-foreground: oklch(0.985 0 0);
+  --color-primary: oklch(0.65 0.25 160);
+  --color-primary-foreground: oklch(0.145 0 0);
+  --color-secondary: oklch(0.269 0 0);
+  --color-secondary-foreground: oklch(0.985 0 0);
+  --color-muted: oklch(0.269 0 0);
+  --color-muted-foreground: oklch(0.708 0 0);
+  --color-accent: oklch(0.65 0.25 160);
+  --color-accent-foreground: oklch(0.145 0 0);
+  --color-destructive: oklch(0.704 0.191 22.216);
+  --color-destructive-foreground: oklch(0.985 0 0);
+  --color-border: oklch(0.269 0 0);
+  --color-input: oklch(0.269 0 0);
+  --color-ring: oklch(0.65 0.25 160);
+  
+  /* Custom colors */
+  --color-surface: oklch(0.12 0 0);
+  --color-surface-hover: oklch(0.18 0 0);
+  --color-glow: oklch(0.65 0.25 160);
+  
+  /* Radius */
+  --radius: 0.75rem;
+  --radius-sm: calc(var(--radius) - 0.25rem);
+  --radius-md: calc(var(--radius) - 0.125rem);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 0.25rem);
+  
+  /* Font family */
+  --font-family-sans: 'Inter', system-ui, sans-serif;
+  
+  /* Animations */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-pulse: pulse 2s ease-in-out infinite;
+  --animate-shimmer: shimmer 3s linear infinite;
+  --animate-fade-up: fadeUp 0.6s ease-out forwards;
 }
 
-/* Optional: light theme if you ever want it */
-.light {
-  --background: 255 255 255;
-  --foreground: 17 24 39;
-  --card: 255 255 255;
-  --border: 229 231 235;
+@layer theme {
+  @font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400 900;
+    font-display: swap;
+    src: url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+  }
 }
 
-/* Apply globally */
-body {
-  background-color: rgb(var(--background));
-  color: rgb(var(--foreground));
+@keyframes accordion-down {
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
+}
+
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes logo-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-family-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* App.css styles - Vite default */
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+/* Landing page utilities */
+@utility text-gradient {
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  background-image: linear-gradient(to right, var(--color-primary), oklch(0.696 0.17 162.48), var(--color-primary));
+}
+
+@utility glow {
+  box-shadow: 
+    0 0 40px color-mix(in oklch, var(--color-primary) 30%, transparent),
+    0 0 80px color-mix(in oklch, var(--color-primary) 15%, transparent);
+}
+
+@utility glow-sm {
+  box-shadow: 
+    0 0 20px color-mix(in oklch, var(--color-primary) 20%, transparent),
+    0 0 40px color-mix(in oklch, var(--color-primary) 10%, transparent);
+}
+
+@utility glass {
+  background-color: color-mix(in oklch, var(--color-card) 50%, transparent);
+  backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in oklch, var(--color-border) 50%, transparent);
+}
+
+@utility gradient-border {
+  position: relative;
+  background: var(--color-card);
+  border-radius: var(--radius);
+  
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, color-mix(in oklch, var(--color-primary) 50%, transparent), transparent 50%);
+    -webkit-mask: 
+      linear-gradient(#fff 0 0) content-box, 
+      linear-gradient(#fff 0 0);
+    mask: 
+      linear-gradient(#fff 0 0) content-box, 
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+}
+
+@utility fade-up {
+  animation: fadeUp 0.6s ease-out forwards;
+}
+
+@utility grid-pattern {
+  background-image: 
+    linear-gradient(to right, color-mix(in oklch, var(--color-border) 30%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklch, var(--color-border) 30%, transparent) 1px, transparent 1px);
+  background-size: 60px 60px;
 }
