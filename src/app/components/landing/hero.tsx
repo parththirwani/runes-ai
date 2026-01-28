@@ -14,7 +14,7 @@ const Hero = () => {
   ];
 
   return (
-    <section className="relative min-h-screen flex items-center justify-center pt-16 overflow-hidden">
+    <section className="relative min-h-screen flex items-center justify-center pt-16 overflow-hidden mt-2">
       {/* Background Effects */}
       <div className="absolute inset-0 grid-pattern opacity-50" />
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-150 h-150 bg-primary/20 rounded-full blur-[120px]" />
@@ -30,7 +30,7 @@ const Hero = () => {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-primary/30 bg-primary/5 mb-8"
           >
             <Sparkles className="w-4 h-4 text-primary" />
-            <span className="text-sm text-muted-foreground">Now with GPT-4o integration</span>
+            <span className="text-sm text-muted-foreground">Now with AI integration</span>
           </motion.div>
 
           {/* Headline */}
@@ -68,7 +68,7 @@ const Hero = () => {
                 <ArrowRight className="ml-2 w-5 h-5" />
               </Button>
             </Link>
-            <Button size="lg" variant="outline" className="text-lg px-8 py-6 border-border hover:bg-secondary">
+            <Button size="lg" variant="outline" className="text-lg px-8 py-6 border-border hover:bg-secondary hover:text-slate-300">
               View Demo
             </Button>
           </motion.div>
@@ -126,7 +126,7 @@ const Hero = () => {
                 </div>
                 <div className="mt-4 pl-4">
                   <span className="text-foreground">The quantum entanglement phenomenon...</span>
-                  <span className="inline-block w-2 h-5 bg-primary animate-pulse ml-1" />
+                  <span className="inline-block w-2 h-5 bg-green-400 ml-0.5 animate-blink" />
                 </div>
                 <div className="mt-4 p-3 rounded-lg bg-primary/10 border border-primary/20">
                   <div className="flex items-center gap-2 mb-2">

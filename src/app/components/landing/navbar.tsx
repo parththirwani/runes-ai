@@ -3,6 +3,8 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/src/app/components/ui/button";
 import { Menu, X } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -14,6 +16,15 @@ const Navbar = () => {
     { label: "Docs", href: "#docs" },
   ];
 
+  const handleSmoothScroll = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    e.preventDefault();
+    const element = document.querySelector(href);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    setIsOpen(false);
+  };
+
   return (
     <motion.nav
       initial={{ y: -100 }}
@@ -24,11 +35,14 @@ const Navbar = () => {
       <div className="container mx-auto px-6">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <a href="#" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-lg">R</span>
-            </div>
-            <span className="font-bold text-xl text-foreground">Runes AI</span>
+          <a href="#" className="flex items-center">
+            <Image
+              src="/logo.png"
+              alt="RunesAI Logo"
+              width={200}
+              height={32}
+              className="object-contain"
+            />
           </a>
 
           {/* Desktop Navigation */}
@@ -37,6 +51,7 @@ const Navbar = () => {
               <a
                 key={item.label}
                 href={item.href}
+                onClick={(e) => handleSmoothScroll(e, item.href)}
                 className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium"
               >
                 {item.label}
@@ -46,12 +61,16 @@ const Navbar = () => {
 
           {/* Desktop CTAs */}
           <div className="hidden md:flex items-center gap-4">
-            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-              Sign In
-            </Button>
-            <Button size="sm" className="glow-sm">
-              Get Started Free
-            </Button>
+            <Link href="/signin">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+                Sign In
+              </Button>
+            </Link>
+            <Link href="/chat">
+              <Button size="sm" className="glow-sm">
+                Get Started Free
+              </Button>
+            </Link>
           </div>
 
           {/* Mobile Menu Button */}
@@ -76,19 +95,23 @@ const Navbar = () => {
                 <a
                   key={item.label}
                   href={item.href}
+                  onClick={(e) => handleSmoothScroll(e, item.href)}
                   className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium"
-                  onClick={() => setIsOpen(false)}
                 >
                   {item.label}
                 </a>
               ))}
               <div className="flex flex-col gap-2 pt-4">
-                <Button variant="ghost" size="sm" className="justify-start">
-                  Sign In
-                </Button>
-                <Button size="sm" className="glow-sm">
-                  Get Started Free
-                </Button>
+                <Link href="/signin">
+                  <Button variant="ghost" size="sm" className="justify-start w-full">
+                    Sign In
+                  </Button>
+                </Link>
+                <Link href="/chat">
+                  <Button size="sm" className="glow-sm w-full">
+                    Get Started Free
+                  </Button>
+                </Link>
               </div>
             </div>
           </motion.div>

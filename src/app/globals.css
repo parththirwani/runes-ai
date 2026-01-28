@@ -21,22 +21,22 @@
   --color-border: oklch(0.269 0 0);
   --color-input: oklch(0.269 0 0);
   --color-ring: oklch(0.65 0.25 160);
-  
+
   /* Custom colors */
   --color-surface: oklch(0.12 0 0);
   --color-surface-hover: oklch(0.18 0 0);
   --color-glow: oklch(0.65 0.25 160);
-  
+
   /* Radius */
   --radius: 0.75rem;
   --radius-sm: calc(var(--radius) - 0.25rem);
   --radius-md: calc(var(--radius) - 0.125rem);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 0.25rem);
-  
+
   /* Font family */
   --font-family-sans: 'Inter', system-ui, sans-serif;
-  
+
   /* Animations */
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
@@ -57,28 +57,57 @@
 }
 
 @keyframes accordion-down {
-  from { height: 0; }
-  to { height: var(--radix-accordion-content-height); }
+  from {
+    height: 0;
+  }
+
+  to {
+    height: var(--radix-accordion-content-height);
+  }
 }
 
 @keyframes accordion-up {
-  from { height: var(--radix-accordion-content-height); }
-  to { height: 0; }
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+
+  to {
+    height: 0;
+  }
 }
 
 @keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
 }
 
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 @keyframes fadeUp {
@@ -86,6 +115,7 @@
     opacity: 0;
     transform: translateY(30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -93,15 +123,20 @@
 }
 
 @keyframes logo-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @layer base {
   * {
     border-color: var(--color-border);
   }
-  
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
@@ -110,6 +145,56 @@
     -moz-osx-font-smoothing: grayscale;
   }
 }
+
+@layer base {
+  :root {
+    --background: 0 0% 6%;
+    --foreground: 0 0% 98%;
+
+    --card: 0 0% 10%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 0 0% 10%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 160 85% 45%;
+    --primary-foreground: 0 0% 6%;
+
+    --secondary: 0 0% 14%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 0 0% 14%;
+    --muted-foreground: 0 0% 55%;
+
+    --accent: 160 85% 45%;
+    --accent-foreground: 0 0% 6%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --ring: 160 85% 45%;
+
+    --radius: 0.75rem;
+
+    /* Neon glow colors */
+    --neon-primary: 160 85% 50%;
+    --neon-glow: 160 100% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
 
 /* App.css styles - Vite default */
 #root {
@@ -157,13 +242,13 @@
 }
 
 @utility glow {
-  box-shadow: 
+  box-shadow:
     0 0 40px color-mix(in oklch, var(--color-primary) 30%, transparent),
     0 0 80px color-mix(in oklch, var(--color-primary) 15%, transparent);
 }
 
 @utility glow-sm {
-  box-shadow: 
+  box-shadow:
     0 0 20px color-mix(in oklch, var(--color-primary) 20%, transparent),
     0 0 40px color-mix(in oklch, var(--color-primary) 10%, transparent);
 }
@@ -178,7 +263,7 @@
   position: relative;
   background: var(--color-card);
   border-radius: var(--radius);
-  
+
   &::before {
     content: '';
     position: absolute;
@@ -186,11 +271,11 @@
     border-radius: inherit;
     padding: 1px;
     background: linear-gradient(135deg, color-mix(in oklch, var(--color-primary) 50%, transparent), transparent 50%);
-    -webkit-mask: 
-      linear-gradient(#fff 0 0) content-box, 
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
       linear-gradient(#fff 0 0);
-    mask: 
-      linear-gradient(#fff 0 0) content-box, 
+    mask:
+      linear-gradient(#fff 0 0) content-box,
       linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
@@ -202,8 +287,96 @@
 }
 
 @utility grid-pattern {
-  background-image: 
+  background-image:
     linear-gradient(to right, color-mix(in oklch, var(--color-border) 30%, transparent) 1px, transparent 1px),
     linear-gradient(to bottom, color-mix(in oklch, var(--color-border) 30%, transparent) 1px, transparent 1px);
   background-size: 60px 60px;
+}
+
+@keyframes blink {
+
+  0%,
+  49% {
+    opacity: 1;
+  }
+
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Neon utilities */
+@layer utilities {
+  .text-neon {
+    color: hsl(var(--neon-primary));
+    text-shadow:
+      0 0 10px hsl(var(--neon-glow) / 0.5),
+      0 0 20px hsl(var(--neon-glow) / 0.3),
+      0 0 40px hsl(var(--neon-glow) / 0.2),
+      0 0 80px hsl(var(--neon-glow) / 0.1);
+  }
+
+  .neon-glow {
+    box-shadow:
+      0 0 20px hsl(var(--neon-glow) / 0.3),
+      0 0 40px hsl(var(--neon-glow) / 0.2),
+      0 0 60px hsl(var(--neon-glow) / 0.1);
+  }
+
+  .neon-border {
+    border-color: hsl(var(--neon-primary) / 0.5);
+    box-shadow:
+      inset 0 0 20px hsl(var(--neon-glow) / 0.1),
+      0 0 20px hsl(var(--neon-glow) / 0.2);
+  }
+
+  /* Mirror reflection effect */
+  .mirror-text {
+    position: relative;
+  }
+
+  .mirror-text::after {
+    content: attr(data-text);
+    position: absolute;
+    left: 0;
+    top: 100%;
+    width: 100%;
+    transform: scaleY(-1);
+    background: linear-gradient(to bottom,
+        hsl(var(--foreground) / 0.3) 0%,
+        hsl(var(--foreground) / 0.1) 30%,
+        transparent 80%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    pointer-events: none;
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.4) 0%, transparent 60%);
+    -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.4) 0%, transparent 60%);
+  }
+
+  .gradient-line {
+    background: linear-gradient(90deg,
+        transparent 0%,
+        hsl(var(--neon-primary) / 0.3) 20%,
+        hsl(var(--neon-primary)) 50%,
+        hsl(var(--neon-primary) / 0.3) 80%,
+        transparent 100%);
+  }
+
+  /* styles/global.css or components.css */
+  .grey-social-icon {
+    filter: grayscale(100%) brightness(0.85);
+    /* makes colorful logos grey */
+    transition: filter 0.3s ease;
+  }
+
+  .grey-social-icon:hover {
+    filter: grayscale(0%) brightness(1.1);
+    /* optional: full color on hover */
+  }
 }
