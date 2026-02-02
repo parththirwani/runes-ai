@@ -1,4 +1,3 @@
-// src/app/api/document/[slug]/route.ts
 import { prisma } from "@/src/lib/db";
 import { withAuth } from "@/src/lib/withAuth";
 import { documentSchema, updateDocumentSchema } from "@/src/schema/documentSchema";
