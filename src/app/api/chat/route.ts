@@ -1,29 +1,33 @@
-
-import { z } from "zod";
 import { NextRequest, NextResponse } from "next/server";
-import { ChatCompletion, DiffResponse } from "@/src/lib/openrouter";
 import { chatSchema } from "@/src/schema/chatSchema";
 import { prisma } from "@/src/lib/db";
+import { ChatCompletion, DiffResponse } from "@/src/lib/openrouter";
 
+function formatZodError(error: any) {
+  return error.issues.map((e: any) => ({
+    path: e.path.join("."),
+    message: e.message,
+  }));
+}
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const parsedData = chatSchema.safeParse(body);
 
-    if (!parsedData.success) {
+    const parsed = chatSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
         {
-          message: "Invalid input",
-          errors: parsedData.error,
+          error: "Invalid input",
+          details: formatZodError(parsed.error),
         },
         { status: 400 }
       );
     }
 
-    const { message, documentId } = parsedData.data;
+    const { message, documentId } = parsed.data;
 
-    // Fetch the document from database
+    // Fetch document (minimal fields only)
     const document = await prisma.document.findUnique({
       where: { id: documentId },
       select: { content: true, title: true },
@@ -31,12 +35,12 @@ export async function POST(req: NextRequest) {
 
     if (!document) {
       return NextResponse.json(
-        { message: "Document not found" },
+        { error: "Document not found" },
         { status: 404 }
       );
     }
 
-    // Get structured diff response
+    // AI Call
     const diffResponse: DiffResponse = await ChatCompletion(
       message.trim(),
       document.content,
@@ -44,30 +48,16 @@ export async function POST(req: NextRequest) {
     );
 
     return NextResponse.json(
-      {
-        data: diffResponse,
-        status: 200,
-      },
+      { data: diffResponse },
       { status: 200 }
     );
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      return NextResponse.json(
-        {
-          error: "Validation failed",
-          details: err.issues.map((e) => ({
-            path: e.path.join("."),
-            message: e.message,
-          })),
-        },
-        { status: 400 }
-      );
-    }
 
-    console.error("Chat API error:", err);
+  } catch (error) {
+    console.error("[CHAT_API_ERROR]", error);
+
     return NextResponse.json(
       {
-        error: err instanceof Error ? err.message : "Something went wrong",
+        error: error instanceof Error ? error.message : "Internal server error",
       },
       { status: 500 }
     );
