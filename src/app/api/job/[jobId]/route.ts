@@ -1,3 +1,4 @@
+// app/api/compilation/[jobId]/status/route.ts
 import { withAuth } from "@/src/lib/withAuth";
 import { compilationProducer } from "@/producer/queue";
 import { NextResponse } from "next/server";
@@ -5,9 +6,16 @@ import { NextResponse } from "next/server";
 export const GET = withAuth(async (req, session, context) => {
   try {
     const { jobId } = await context.params;
-    
+
+    if (!jobId) {
+      return NextResponse.json(
+        { message: "Job ID is required" },
+        { status: 400 }
+      );
+    }
+
     const status = await compilationProducer.getJobStatus(jobId);
-    
+
     if (!status) {
       return NextResponse.json(
         { message: "Job not found" },
@@ -25,16 +33,24 @@ export const GET = withAuth(async (req, session, context) => {
   }
 });
 
+// app/api/compilation/[jobId]/cancel/route.ts  (or keep in same file if you prefer)
 export const DELETE = withAuth(async (req, session, context) => {
   try {
     const { jobId } = await context.params;
-    
+
+    if (!jobId) {
+      return NextResponse.json(
+        { message: "Job ID is required" },
+        { status: 400 }
+      );
+    }
+
     const cancelled = await compilationProducer.cancelJob(jobId);
-    
+
     if (!cancelled) {
       return NextResponse.json(
-        { message: "Job not found or already processing" },
-        { status: 404 }
+        { message: "Job not found or cannot be cancelled (already processing/completed)" },
+        { status: 400 }   // Changed from 404 → 400 is more semantic here
       );
     }
 
