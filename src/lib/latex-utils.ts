@@ -24,6 +24,38 @@ const PROTECTED_PATTERNS: RegExp[] = [
   /\\(?:[a-zA-Z]+)(?:\{[^}]*\})?/g,
 ];
 
+// -- Helpers ----------------------------------------------------------------
+
+/**
+ * Scan backward from `before` (the text before offset) to determine whether
+ * the cursor is inside inline $...$ or display $$...$$ math delimiters.
+ *
+ * Tokenizes $$ as a single display-math delimiter and $ as an inline
+ * delimiter.  Odd total depth means we are inside an unclosed pair.
+ * Escaped \$ is stripped first so it does not count.
+ */
+function scanMathDelimiters(before: string): boolean {
+  // Strip escaped \$ so they don't confuse counting.
+  // The regex /\$/g matches a literal backslash followed by a dollar sign.
+  // In JS source: /\\$/g  (one esc backslash + $)
+  const cleaned = before.replace(/\\\$/g, '');
+  let depth = 0;
+  for (let i = 0; i < cleaned.length; ) {
+    if (cleaned[i] === '$') {
+      if (i + 1 < cleaned.length && cleaned[i + 1] === '$') {
+        depth++;
+        i += 2;
+      } else {
+        depth++;
+        i += 1;
+      }
+    } else {
+      i++;
+    }
+  }
+  return depth % 2 === 1;
+}
+
 // -- Context scanner -------------------------------------------------------
 
 export type ScanContext = {
@@ -44,9 +76,14 @@ export function scanContext(fullSource: string, offset: number): ScanContext {
 
   // Comment detection
   const lastNewline = before.lastIndexOf('\n');
-  const linePrefix = before.slice(lastNewline + 1);
-  const commentIdx = linePrefix.indexOf('%');
-  const inComment = commentIdx >= 0;
+  const lineUpToCursor = before.slice(lastNewline + 1);
+  // Check if there's an unescaped % on this line up to the cursor.
+  // Escaped \% is not a comment start.
+  const commentIdx = lineUpToCursor.search(/(?<!\\)%/);
+  const atPercent = offset < fullSource.length && fullSource[offset] === '%';
+  // Only treat cursor-on-% as comment if the % is not escaped
+  const inComment = commentIdx >= 0 ||
+    (atPercent && !(offset > 0 && fullSource[offset - 1] === '\\'));
 
   // Preamble detection
   const docStart = fullSource.match(documentBegin);
@@ -62,8 +99,12 @@ export function scanContext(fullSource: string, offset: number): ScanContext {
 
   // Environment stack
   const envStack = scanEnvStack(fullSource, offset);
-  const inMath = envStack.some(e => MATH_ENV_NAMES.has(e));
+  const inMathEnv = envStack.some(e => MATH_ENV_NAMES.has(e));
   const inVerbatim = envStack.some(e => VERBATIM_ENV_NAMES.has(e));
+
+  // Inline/display math via $...$ / $$...$$ delimiters (not caught by env stack)
+  const inMathDelim = scanMathDelimiters(before);
+  const isInMath = inMathEnv || inMathDelim;
 
   // Command name check
   const precedingText = before.slice(Math.max(0, before.length - 100));
@@ -71,7 +112,7 @@ export function scanContext(fullSource: string, offset: number): ScanContext {
   const inCommandName = cmdMatch !== null && offset >= (before.length - cmdMatch[0].length) && offset <= before.length;
   const inCommandArg = checkCommandArg(before);
 
-  return { isInDocument: inDocument && !pastDocEnd, isInPreamble: inPreamble, isInComment: inComment, isInMath: inMath, isInVerbatim: inVerbatim, isInCommandName: inCommandName, isInCommandArg: inCommandArg };
+  return { isInDocument: inDocument && !pastDocEnd, isInPreamble: inPreamble, isInComment: inComment, isInMath, isInVerbatim: inVerbatim, isInCommandName: inCommandName, isInCommandArg: inCommandArg };
 }
 
 function scanEnvStack(source: string, offset: number): string[] {

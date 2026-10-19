@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import Editor, { OnMount, OnChange } from '@monaco-editor/react';
-import type { editor } from 'monaco-editor';
+import type { editor, languages } from 'monaco-editor';
 
 interface MonacoEditorWrapperProps {
   value: string;
@@ -166,13 +166,13 @@ export default function MonacoEditorWrapper({
   fileName = 'main.tex',
   readOnly = false,
   onEditorReady,
-  autocompleteEnabled = true,
 }: MonacoEditorWrapperProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof import('monaco-editor') | null>(null);
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional SSR guard: this runs once on mount to ensure Monaco renders client-side only
     setIsMounted(true);
   }, []);
 
@@ -183,7 +183,7 @@ export default function MonacoEditorWrapper({
     // Register LaTeX language if not already registered
     if (!monaco.languages.getEncodedLanguageId('latex')) {
       monaco.languages.register({ id: 'latex' });
-      monaco.languages.setMonarchTokensProvider('latex', latexLanguageDef as any);
+      monaco.languages.setMonarchTokensProvider('latex', latexLanguageDef as unknown as languages.IMonarchLanguage);
       monaco.languages.setLanguageConfiguration('latex', {
         brackets: [
           ['{', '}'],
