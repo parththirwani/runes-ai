@@ -56,6 +56,13 @@ export class CompilationProducer {
   }
 
   /**
+   * Get raw job data (used for ownership verification)
+   */
+  async getRawJobData(jobId: string): Promise<string | null> {
+    return await redis.get(`${JOB_PREFIX}${jobId}`);
+  }
+
+  /**
    * Get PDF buffer if compilation succeeded
    */
   async getPDF(jobId: string): Promise<Buffer | null> {
