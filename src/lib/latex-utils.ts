@@ -68,7 +68,7 @@ export function scanContext(fullSource: string, offset: number): ScanContext {
   // Command name check
   const precedingText = before.slice(Math.max(0, before.length - 100));
   const cmdMatch = precedingText.match(/(\\(?:[a-zA-Z]+))$/);
-  const inCommandName = cmdMatch !== null && offset >= (before.length - cmdMatch[0].length) && offset < before.length;
+  const inCommandName = cmdMatch !== null && offset >= (before.length - cmdMatch[0].length) && offset <= before.length;
   const inCommandArg = checkCommandArg(before);
 
   return { isInDocument: inDocument && !pastDocEnd, isInPreamble: inPreamble, isInComment: inComment, isInMath: inMath, isInVerbatim: inVerbatim, isInCommandName: inCommandName, isInCommandArg: inCommandArg };
@@ -104,6 +104,7 @@ function scanEnvStack(source: string, offset: number): string[] {
 function checkCommandArg(before: string): boolean {
   const trimmed = before.replace(/\s+$/, '');
   if (trimmed.endsWith('}')) {
+    // Inside closing braces — check if preceded by a command
     let depth = 0;
     for (let i = trimmed.length - 1; i >= 0; i--) {
       if (trimmed[i] === '}') depth++;
@@ -112,6 +113,10 @@ function checkCommandArg(before: string): boolean {
         if (depth === 0) return /\\([a-zA-Z]+)\s*\{[^}]*$/.test(trimmed.slice(0, i + 1));
       }
     }
+  }
+  // Also check if we just opened a command brace (ends with '{')
+  if (trimmed.endsWith('{')) {
+    return /\\([a-zA-Z]+)\s*\{$/.test(trimmed);
   }
   return false;
 }
