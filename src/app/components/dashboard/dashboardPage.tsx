@@ -143,6 +143,7 @@ export default function DashboardPage() {
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onSubmit={handleCreateDocument}
+        label="Document title"
         title="Create new document"
         description="Names are unique across your workspace and become the file title."
         placeholder="e.g. Research paper, Lab report, Thesis chapter"

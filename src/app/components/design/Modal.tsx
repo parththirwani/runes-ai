@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -34,31 +35,74 @@ export default function Modal({
     if (!isOpen) return undefined;
 
     previouslyFocused.current = document.activeElement as HTMLElement | null;
-    const focusTarget = panelRef.current?.querySelector<HTMLElement>(
-      'input, textarea, select, button, [href], [tabindex]:not([tabindex="-1"])'
-    );
-    focusTarget?.focus();
+
+    const FOCUSABLE =
+      'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const focusables = () =>
+      Array.from(panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []).filter(
+        (el) => el.offsetParent !== null || el === document.activeElement
+      );
+
+    const initial = focusables()[0];
+    initial?.focus();
+
+    // Everything outside the dialog subtree stops receiving pointer,
+    // keyboard and screen-reader interaction while it is open.
+    const background = Array.from(document.body.children).filter(
+      (node) => node instanceof HTMLElement && !node.contains(panelRef.current)
+    ) as HTMLElement[];
+    background.forEach((node) => node.setAttribute('inert', ''));
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.stopPropagation();
-      onClose();
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const items = focusables();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey && (active === first || !panelRef.current?.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !panelRef.current?.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
     };
 
-    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keydown', onKeyDown, true);
     const { overflow } = document.body.style;
     document.body.style.overflow = 'hidden';
 
     return () => {
-      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('keydown', onKeyDown, true);
       document.body.style.overflow = overflow;
-      previouslyFocused.current?.focus();
+      background.forEach((node) => node.removeAttribute('inert'));
+      if (previouslyFocused.current?.isConnected) {
+        previouslyFocused.current.focus();
+      } else {
+        // The trigger unmounted while the dialog was open (e.g. an error
+        // dialog raised from another dialog). Land on the page main region.
+        const main = document.querySelector('main');
+        if (main) {
+          main.setAttribute('tabindex', '-1');
+          (main as HTMLElement).focus({ preventScroll: true });
+        }
+      }
     };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
-  return (
+  // Portalled to <body> so every sibling of the dialog can be marked inert
+  // and the page behind it cannot be interacted with at all.
+  return createPortal(
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div
         className="fixed inset-0 bg-black/60 backdrop-blur-[2px]"
@@ -105,6 +149,7 @@ export default function Modal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

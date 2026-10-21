@@ -78,6 +78,7 @@ export default function DocumentActions({ document: doc, onDelete }: DocumentAct
             role="menuitem"
             onClick={() => {
               setOpen(false);
+              buttonRef.current?.focus();
               onDelete(doc);
             }}
             className="flex w-full items-center gap-2 border-t border-border-subtle px-3 py-2.5 text-left text-sm text-destructive transition-colors hover:bg-destructive-subtle"
