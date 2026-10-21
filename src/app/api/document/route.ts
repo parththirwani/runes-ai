@@ -1,5 +1,6 @@
 import { prisma } from "@/src/lib/db";
 import { generateSlug } from "@/src/lib/slug";
+import { summarizeLatex } from "@/src/lib/latex-summary";
 import { withAuth } from "@/src/lib/withAuth";
 import { documentSchema } from "@/src/schema/documentSchema";
 import { NextResponse } from "next/server";
@@ -70,7 +71,8 @@ export const GET = withAuth(async (_req, session) => {
 
     const documents = await prisma.document.findMany({
       where: { userId },
-      orderBy: { createdAt: "desc" }, // useful UX improvement
+      // Newest work first, matching the "updated" label shown on each card.
+      orderBy: { updatedAt: "desc" },
       select: {
         id: true,
         title: true,
@@ -78,11 +80,21 @@ export const GET = withAuth(async (_req, session) => {
         content: true,
         createdAt: true,
         updatedAt: true,
-      }, // avoid sending full content unnecessarily
+      },
     });
 
+    // The list view never needs the full LaTeX source, only a safe excerpt.
     return NextResponse.json(
-      { documents },
+      {
+        documents: documents.map((document) => ({
+          id: document.id,
+          title: document.title,
+          slug: document.slug,
+          createdAt: document.createdAt,
+          updatedAt: document.updatedAt,
+          summary: summarizeLatex(document.content),
+        })),
+      },
       { status: 200 }
     );
 

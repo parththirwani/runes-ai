@@ -1,62 +1,58 @@
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
-
-interface Document {
-  id: string;
-  title: string;
-  slug: string;
-  content?: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import type { DashboardDocument } from "@/src/types/dashboard";
+import { DOCUMENTS_PATH, signInPath } from "@/src/lib/paths";
 
 export function useDashboard() {
   const router = useRouter();
   const { status } = useSession();
-  const [documents, setDocuments] = useState<Document[]>([]);
+  const [documents, setDocuments] = useState<DashboardDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  // Modal states
+
+  // Modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
-  const [documentToDelete, setDocumentToDelete] = useState<Document | null>(null);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [documentToDelete, setDocumentToDelete] = useState<DashboardDocument | null>(null);
+  const [errorMessage, setErrorMessage] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  useEffect(() => {
-    if (status === 'authenticated') {
-      fetchDocuments();
-    }
-  }, [status]);
-
-  const fetchDocuments = async () => {
+  const fetchDocuments = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      const response = await fetch('/api/document');
-      
+      const response = await fetch("/api/document");
       if (!response.ok) {
-        throw new Error('Failed to fetch documents');
+        if (response.status === 401) {
+          router.push(signInPath(DOCUMENTS_PATH));
+          return;
+        }
+        throw new Error("We could not load your documents.");
       }
-
       const data = await response.json();
       setDocuments(data.documents || []);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "We could not load your documents.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [router]);
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      void fetchDocuments();
+    }
+  }, [status, fetchDocuments]);
 
   const handleCreateDocument = async (title: string) => {
     setIsCreating(true);
     try {
-      const response = await fetch('/api/document', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/document", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
           content: `\\documentclass{article}
@@ -80,15 +76,15 @@ Start writing your document here.
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to create document');
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || "We could not create that document.");
       }
 
       const newDoc = await response.json();
       setShowCreateModal(false);
       router.push(`/document/${newDoc.slug}`);
-    } catch (err: any) {
-      setErrorMessage(err.message);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "We could not create that document.");
       setShowCreateModal(false);
       setShowErrorModal(true);
     } finally {
@@ -96,7 +92,7 @@ Start writing your document here.
     }
   };
 
-  const handleDeleteClick = (doc: Document) => {
+  const handleDeleteClick = (doc: DashboardDocument) => {
     setDocumentToDelete(doc);
     setShowDeleteModal(true);
   };
@@ -107,18 +103,18 @@ Start writing your document here.
     setIsDeleting(true);
     try {
       const response = await fetch(`/api/document/${documentToDelete.slug}`, {
-        method: 'DELETE'
+        method: "DELETE"
       });
 
       if (!response.ok) {
-        throw new Error('Failed to delete document');
+        throw new Error(`“${documentToDelete.title}” is still in your workspace. Try again in a moment.`);
       }
 
-      setDocuments(documents.filter(doc => doc.slug !== documentToDelete.slug));
+      setDocuments((current) => current.filter((doc) => doc.slug !== documentToDelete.slug));
       setShowDeleteModal(false);
       setDocumentToDelete(null);
-    } catch (err: any) {
-      setErrorMessage(err.message);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "The delete did not go through.");
       setShowDeleteModal(false);
       setShowErrorModal(true);
     } finally {
@@ -140,6 +136,7 @@ Start writing your document here.
     setShowCreateModal,
     setShowDeleteModal,
     setShowErrorModal,
+    fetchDocuments,
     handleCreateDocument,
     handleDeleteClick,
     handleDeleteConfirm
