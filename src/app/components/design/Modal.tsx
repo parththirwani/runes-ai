@@ -1,7 +1,5 @@
-// src/app/components/ui/Modal.tsx
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
-import Button from './Button';
 
 interface ModalProps {
   isOpen: boolean;
@@ -13,6 +11,13 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
+const sizeClasses = {
+  sm: 'max-w-md',
+  md: 'max-w-lg',
+  lg: 'max-w-2xl',
+  xl: 'max-w-4xl'
+};
+
 export default function Modal({
   isOpen,
   onClose,
@@ -22,81 +27,79 @@ export default function Modal({
   footer,
   size = 'md'
 }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
+    if (!isOpen) return undefined;
+
+    previouslyFocused.current = document.activeElement as HTMLElement | null;
+    const focusTarget = panelRef.current?.querySelector<HTMLElement>(
+      'input, textarea, select, button, [href], [tabindex]:not([tabindex="-1"])'
+    );
+    focusTarget?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      onClose();
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    const { overflow } = document.body.style;
+    document.body.style.overflow = 'hidden';
 
     return () => {
-      document.body.style.overflow = 'unset';
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = overflow;
+      previouslyFocused.current?.focus();
     };
-  }, [isOpen]);
-
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
-  const sizeClasses = {
-    sm: 'max-w-md',
-    md: 'max-w-lg',
-    lg: 'max-w-2xl',
-    xl: 'max-w-4xl'
-  };
-
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop with blur */}
       <div
-        className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-all"
+        className="fixed inset-0 bg-black/60 backdrop-blur-[2px]"
         onClick={onClose}
         aria-hidden="true"
       />
 
-      {/* Modal */}
       <div className="flex min-h-full items-center justify-center p-4">
         <div
-          className={`relative w-full ${sizeClasses[size]} bg-white rounded-lg shadow-xl transform transition-all`}
-          onClick={(e) => e.stopPropagation()}
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-title"
+          aria-describedby={description ? 'modal-description' : undefined}
+          className={`relative w-full ${sizeClasses[size]} overflow-hidden rounded-xl border border-border bg-surface shadow-overlay`}
         >
-          {/* Header */}
-          <div className="flex items-start justify-between p-6 border-b border-gray-200">
+          <div className="flex items-start justify-between gap-4 border-b border-border-subtle px-5 py-4">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">
+              <h2 id="modal-title" className="text-base font-semibold text-foreground">
                 {title}
-              </h3>
+              </h2>
               {description && (
-                <p className="mt-1 text-sm text-gray-500">
+                <p id="modal-description" className="mt-1 text-sm leading-relaxed text-muted-foreground">
                   {description}
                 </p>
               )}
             </div>
             <button
+              type="button"
               onClick={onClose}
-              className="ml-4 text-gray-400 hover:text-gray-500 transition-colors"
+              aria-label="Close dialog"
+              className="-mr-1 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-meta transition-colors hover:bg-surface-raised hover:text-foreground"
             >
-              <X className="w-5 h-5" />
+              <X className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
 
-          {/* Content */}
-          <div className="p-6">
-            {children}
-          </div>
+          <div className="px-5 py-5">{children}</div>
 
-          {/* Footer */}
           {footer && (
-            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-200 rounded-b-lg">
+            <div className="flex items-center justify-end gap-2 border-t border-border-subtle bg-surface-raised/40 px-5 py-4">
               {footer}
             </div>
           )}

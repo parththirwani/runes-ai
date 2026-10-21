@@ -1,8 +1,7 @@
-// src/app/components/ui/ConfirmModal.tsx
 import React from 'react';
+import { Info, TriangleAlert } from 'lucide-react';
 import Modal from './Modal';
 import Button from './Button';
-import { AlertTriangle, Trash2, Info } from 'lucide-react';
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -16,6 +15,24 @@ interface ConfirmModalProps {
   isLoading?: boolean;
 }
 
+const icons = {
+  danger: TriangleAlert,
+  warning: TriangleAlert,
+  info: Info
+};
+
+const iconColors = {
+  danger: 'bg-destructive-subtle text-destructive',
+  warning: 'bg-warning-subtle text-warning',
+  info: 'bg-primary-subtle text-primary'
+};
+
+const confirmVariants: Record<ConfirmModalProps['variant'] & string, 'danger' | 'secondary' | 'primary'> = {
+  danger: 'danger',
+  warning: 'secondary',
+  info: 'primary'
+};
+
 export default function ConfirmModal({
   isOpen,
   onClose,
@@ -27,24 +44,7 @@ export default function ConfirmModal({
   variant = 'danger',
   isLoading = false
 }: ConfirmModalProps) {
-  const icons = {
-    danger: <Trash2 className="w-6 h-6 text-red-600" />,
-    warning: <AlertTriangle className="w-6 h-6 text-yellow-600" />,
-    info: <Info className="w-6 h-6 text-blue-600" />
-  };
-
-  const iconBgColors = {
-    danger: 'bg-red-100',
-    warning: 'bg-yellow-100',
-    info: 'bg-blue-100'
-  };
-
-  // Map modal variants to button variants
-  const buttonVariants: Record<typeof variant, 'danger' | 'secondary' | 'primary'> = {
-    danger: 'danger',
-    warning: 'secondary',
-    info: 'primary'
-  };
+  const Icon = icons[variant];
 
   return (
     <Modal
@@ -54,32 +54,23 @@ export default function ConfirmModal({
       size="sm"
       footer={
         <>
-          <Button
-            variant="secondary"
-            onClick={onClose}
-            disabled={isLoading}
-          >
+          <Button variant="ghost" onClick={onClose} disabled={isLoading}>
             {cancelText}
           </Button>
-          <Button
-            variant={buttonVariants[variant]}
-            onClick={onConfirm}
-            loading={isLoading}
-          >
+          <Button variant={confirmVariants[variant]} onClick={onConfirm} loading={isLoading}>
             {confirmText}
           </Button>
         </>
       }
     >
-      <div className="flex gap-4">
-        <div className={`shrink-0 w-12 h-12 rounded-full ${iconBgColors[variant]} flex items-center justify-center`}>
-          {icons[variant]}
-        </div>
-        <div className="flex-1">
-          <p className="text-sm text-gray-600">
-            {message}
-          </p>
-        </div>
+      <div className="flex gap-3">
+        <span
+          className={`inline-flex size-8 shrink-0 items-center justify-center rounded-md ${iconColors[variant]}`}
+          aria-hidden="true"
+        >
+          <Icon className="h-4 w-4" />
+        </span>
+        <p className="text-sm leading-relaxed text-muted-foreground">{message}</p>
       </div>
     </Modal>
   );

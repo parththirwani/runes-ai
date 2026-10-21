@@ -87,6 +87,7 @@ export default function PDFPreview({
             icon={<ZoomOut className="w-4 h-4" />}
             size="sm"
             onClick={handleZoomOut}
+            label="Zoom out"
             tooltip="Zoom out"
             disabled={zoom <= 50}
             className="cursor-pointer"
@@ -102,6 +103,7 @@ export default function PDFPreview({
             icon={<ZoomIn className="w-4 h-4" />}
             size="sm"
             onClick={handleZoomIn}
+            label="Zoom in"
             tooltip="Zoom in"
             disabled={zoom >= 200}
             className="cursor-pointer"
@@ -112,6 +114,7 @@ export default function PDFPreview({
             icon={isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             size="sm"
             onClick={handleFullscreen}
+            label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
             tooltip={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
             className="cursor-pointer"
           />
@@ -120,6 +123,7 @@ export default function PDFPreview({
             icon={<Download className="w-4 h-4" />}
             size="sm"
             onClick={onDownload}
+            label="Download PDF"
             tooltip="Download PDF"
             disabled={!pdfUrl}
             className="cursor-pointer"
