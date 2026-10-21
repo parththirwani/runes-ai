@@ -3,7 +3,18 @@
 //
 // Security properties:
 // - No shell interpolation: execFile with an argument array only.
-// - Pandoc runs with --sandbox inside a unique per-job working directory.
+// - Pandoc is wrapped in a private network namespace (`unshare --net
+//   --kill-child`) whenever the kernel allows it, so the compiler process
+//   tree has no network at all (verified by tests). `COMPILER_REQUIRE_NETNS=1`
+//   turns an unavailable namespace into a hard failure; without it the
+//   compiler degrades to best-effort mode with a warning. Docker's default
+//   seccomp profile blocks this, so the worker needs
+//   `cap_add: [SYS_ADMIN]` (or an equivalent custom seccomp profile) to get
+//   the namespace; memory limits remain the container runtime's job.
+// - Timeout kills use SIGKILL and `--kill-child` sets PDEATHSIG on Pandoc,
+//   so timed-out jobs tear down the process tree instead of leaking it.
+// - Pandoc runs in a unique per-job working directory (pandoc's own
+//   --sandbox is unusable: it blocks the external pdf-engine process).
 // - Only the saved Markdown snapshot and the document's own validated assets
 //   are materialized in the job directory. Remote images (http/https/ftp),
 //   file:, data:, and other schemes are rejected before Pandoc runs.
@@ -65,23 +76,86 @@ function stripCodeAndMath(source: string): string {
     .replace(/(?<!\\)\$[^$\n]*(?<!\\)\$/g, ' ');
 }
 
-function imageReferences(source: string): string[] {
-  const refs: string[] = [];
-  const inline = /!\[[^\]]*\]\(\s*([^)\s]+)/g;
-  const definition = /^\s{0,3}\[[^\]]+\]:\s*<?([^\s>]+)>?/gm;
+const DEFINITION_RE = /^[ \t]{0,3}\[([^\]]+)\]:[ \t]*(\S+)/gm;
+
+function extractDefinitions(scannable: string): Map<string, string> {
+  const defs = new Map<string, string>();
+  const re = new RegExp(DEFINITION_RE.source, 'gm');
   let m: RegExpExecArray | null;
-  while ((m = inline.exec(source)) !== null) refs.push(m[1]);
-  while ((m = definition.exec(source)) !== null) refs.push(m[1]);
-  return refs;
+  while ((m = re.exec(scannable)) !== null) {
+    let dest = m[2];
+    if (dest.startsWith('<')) {
+      const wrapped = dest.match(/^<([^>\s]*)>/);
+      dest = wrapped ? wrapped[1] : dest.slice(1);
+    }
+    if (dest) defs.set(m[1].toLowerCase(), dest);
+  }
+  return defs;
+}
+
+function skipDefinitions(scannable: string): string {
+  // Remove definition lines so their brackets are not mistaken for uses.
+  return scannable.replace(new RegExp(DEFINITION_RE.source, 'gm'), ' ');
+}
+
+function imageDestinations(source: string): string[] {
+  const text = skipDefinitions(source);
+  const defs = extractDefinitions(source);
+  const dests: string[] = [];
+  const inline = /!\[[^\]]*\]\(\s*([^)\s]+)/g;
+  const fullRef = /!\[([^\]]*)\]\[([^\]]*)\]/g;
+  const shortcut = /!\[([^[\]]+)\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = inline.exec(text)) !== null) dests.push(m[1]);
+  const pendingLabels: string[] = [];
+  const matchedFull = new Set<number>();
+  while ((m = fullRef.exec(text)) !== null) {
+    matchedFull.add(m.index);
+    pendingLabels.push((m[2] || m[1]).toLowerCase());
+  }
+  while ((m = shortcut.exec(text)) !== null) {
+    // `![a][b]` is a full reference, not two shortcuts; a shortcut is a plain
+    // `![label]` not followed by ( or [.
+    const next = text[m.index + m[0].length];
+    if (next === '(' || next === '[') continue;
+    if (matchedFull.has(m.index)) continue;
+    pendingLabels.push(m[1].toLowerCase());
+  }
+  for (const label of pendingLabels) {
+    const dest = defs.get(label);
+    if (dest) dests.push(dest);
+    // Unresolved reference-image labels render as literal text: never fetched.
+  }
+  return dests;
 }
 
 function linkDestinations(source: string): string[] {
+  const text = skipDefinitions(source);
+  const defs = extractDefinitions(source);
   const dests: string[] = [];
   const inline = /(?<!!)\[[^\]]*\]\(\s*([^)\s]+)/g;
   const autolink = /<([A-Za-z][A-Za-z0-9+.-]*:[^>\s]+)>/g;
+  const fullRef = /(?<!!)\[([^\]]*)\]\[([^\]]*)\]/g;
+  const shortcut = /(?<!!)\[([^[\]]+)\]/g;
   let m: RegExpExecArray | null;
-  while ((m = inline.exec(source)) !== null) dests.push(m[1]);
-  while ((m = autolink.exec(source)) !== null) dests.push(m[1]);
+  while ((m = inline.exec(text)) !== null) dests.push(m[1]);
+  while ((m = autolink.exec(text)) !== null) dests.push(m[1]);
+  const pendingLabels: string[] = [];
+  const matchedFull = new Set<number>();
+  while ((m = fullRef.exec(text)) !== null) {
+    matchedFull.add(m.index);
+    pendingLabels.push((m[2] || m[1]).toLowerCase());
+  }
+  while ((m = shortcut.exec(text)) !== null) {
+    const next = text[m.index + m[0].length];
+    if (next === '(' || next === '[') continue;
+    if (matchedFull.has(m.index)) continue;
+    pendingLabels.push(m[1].toLowerCase());
+  }
+  for (const label of pendingLabels) {
+    const dest = defs.get(label);
+    if (dest) dests.push(dest);
+  }
   return dests;
 }
 
@@ -117,7 +191,7 @@ export function validateMarkdownSource(source: string, assets: SnapshotAsset[]):
 
   const assetPaths = new Set(assets.map((a) => a.path));
 
-  for (const ref of imageReferences(scannable)) {
+  for (const ref of imageDestinations(scannable)) {
     const { ok, scheme } = classifyUrl(ref);
     if (!ok) {
       if (scheme === 'http' || scheme === 'https' || scheme === 'ftp') {
@@ -187,6 +261,47 @@ export interface MarkdownCompileOptions extends CompilationOptions {
  * Compile a Markdown snapshot to PDF. The returned buffer is the complete
  * artifact stored for the job; temporary files are removed in all paths.
  */
+const ASSET_URL_RE = /\/api\/document\/[A-Za-z0-9-]+\/assets\//g;
+
+/**
+ * Canonical local-image syntax (shared with the reading preview and the
+ * editor upload flow) is the document's own asset URL:
+ *   ![alt](/api/document/<slug>/assets/<path>)
+ * Pandoc receives the document's assets materialized at those relative
+ * paths inside the job directory, so the API prefix is rewritten to the
+ * relative form before compilation. Fenced code blocks are left untouched.
+ */
+export function rewriteAssetUrlsForEngine(source: string): string {
+  let inFence = false;
+  return source
+    .split('\n')
+    .map((line) => {
+      if (/^[ \t]{0,3}(```|~~~)/.test(line)) {
+        inFence = !inFence;
+        return line;
+      }
+      if (inFence) return line;
+      return line.replace(ASSET_URL_RE, '');
+    })
+    .join('\n');
+}
+
+const UNSHARE_BIN = process.env.COMPILER_UNSHARE_BIN || '/usr/bin/unshare';
+const REQUIRE_NETNS = process.env.COMPILER_REQUIRE_NETNS === '1';
+
+// Cached probe: the worker asks the kernel once whether a private network
+// namespace can be created here (unshare --net), then reuses the verdict.
+let isolationProbe: Promise<string[] | null> | null = null;
+
+export function detectCompilerIsolation(): Promise<string[] | null> {
+  if (!isolationProbe) {
+    isolationProbe = execFile(UNSHARE_BIN, ['--net', '--kill-child', '--', 'true'], { timeout: 5_000 })
+      .then(() => [UNSHARE_BIN, '--net', '--kill-child'])
+      .catch(() => null);
+  }
+  return isolationProbe;
+}
+
 export async function compileMarkdownToPDF(
   markdownSource: string,
   _slug: string,
@@ -212,7 +327,7 @@ export async function compileMarkdownToPDF(
 
   try {
     await fs.mkdir(tempDir, { recursive: true });
-    await fs.writeFile(path.join(tempDir, 'main.md'), markdownSource, 'utf-8');
+    await fs.writeFile(path.join(tempDir, 'main.md'), rewriteAssetUrlsForEngine(markdownSource), 'utf-8');
 
     for (const asset of assets) {
       const normalized = normalizeAssetPath(asset.path);
@@ -235,9 +350,22 @@ export async function compileMarkdownToPDF(
       `--pdf-engine=${PDF_ENGINE_BIN}`,
     ];
 
-    await execFile(PANDOC_BIN, args, {
+    const isolation = await detectCompilerIsolation();
+    if (!isolation && REQUIRE_NETNS) {
+      return {
+        success: false,
+        error: 'Compiler network isolation unavailable: unshare --net could not run and COMPILER_REQUIRE_NETNS=1 is set. Run the worker with the capability for private network namespaces (e.g. cap_add: SYS_ADMIN) or unset the requirement.',
+        duration: Date.now() - startTime,
+      };
+    }
+    if (!isolation) {
+      console.warn('[MD_COMPILER] WARNING: unshare --net unavailable — Pandoc runs WITHOUT a private network namespace (best-effort mode).');
+    }
+
+    await execFile(isolation ? isolation[0] : PANDOC_BIN, isolation ? [...isolation.slice(1), PANDOC_BIN, ...args] : args, {
       cwd: tempDir,
       timeout,
+      killSignal: 'SIGKILL',
       maxBuffer: MAX_CAPTURED_OUTPUT,
       // Deliberately inherit the worker environment (HOME must exist so the
       // engine can use its package cache). Bun's child_process hangs when the

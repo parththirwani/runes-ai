@@ -295,6 +295,7 @@ with sync_playwright() as playwright:
         assert md_status["status"] == "completed", md_status
         md_pdf = context.request.get(f"{BASE}/api/pdf/{md_job}")
         assert md_pdf.status == 200 and md_pdf.body().startswith(b"%PDF"), (md_pdf.status, md_pdf.text()[:300])
+        assert b"/Subtype" in md_pdf.body() and b"/Image" in md_pdf.body(), "uploaded image XObject missing from compiled PDF"
         page.get_by_role("button", name="Reading", exact=True).click()
         page.get_by_role("tab", name="Reading preview").wait_for(timeout=10000)
         page.get_by_role("tab", name="PDF").click()
@@ -308,7 +309,37 @@ with sync_playwright() as playwright:
         expect(page.locator("span", has_text="Markdown .md").first).to_be_visible(timeout=10000)
         expect(page.get_by_role("group", name="Filter documents by format")).to_be_visible()
         assert page.get_by_text(md_title, exact=False).count() >= 1
-        print("browser smoke passed: latex edit/review/compile + markdown create, assets, reading preview, remote-image block, real markdown PDF, source download, dashboard format badge")
+
+        # ---- Editor upload flow: insert an image via the toolbar button ----
+        png_path = "/tmp/logo-ui.png"
+        with open(png_path, "wb") as handle:
+            handle.write(PNG_1PX)
+        page.goto(f"{BASE}/document/{md_slug}", wait_until="domcontentloaded")
+        page.locator(".monaco-editor").first.wait_for(timeout=20000)
+        page.get_by_role("button", name="Source", exact=True).click()
+        insert_button = page.get_by_role("button", name="Insert image", exact=True)
+        expect(insert_button).to_be_visible()
+        page.locator('input[type="file"]').set_input_files(png_path)
+        expect(page.get_by_role("status").filter(has_text="Inserted logo-ui.png")).to_be_visible(timeout=15000)
+        value_after_upload = source_value(page)
+        assert "![logo-ui](" in value_after_upload and f"/api/document/{md_slug}/assets/logo-ui.png" in value_after_upload, value_after_upload[-200:]
+        page.keyboard.press("Control+s")
+        page.wait_for_timeout(800)
+        ui_pdf_ok = None
+        with page.expect_response(lambda response: response.url.endswith(f"/api/document/{md_slug}") and response.request.method == "POST", timeout=20000) as ui_queued:
+            page.get_by_role("button", name="Compile", exact=True).click()
+        ui_job = ui_queued.value.json()["jobId"]
+        for _ in range(90):
+            ui_status = context.request.get(f"{BASE}/api/job/{ui_job}").json()
+            if ui_status["status"] in ("completed", "failed"):
+                break
+            time.sleep(2)
+        assert ui_status["status"] == "completed", ui_status
+        ui_pdf = context.request.get(f"{BASE}/api/pdf/{ui_job}").body()
+        assert b"/Image" in ui_pdf, "uploaded image missing from PDF objects"
+        ui_pdf_ok = True
+        os.unlink(png_path)
+        print("browser smoke passed: latex edit/review/compile + markdown create, asset API + editor upload UI, reading preview, remote-image block, markdown PDF with embedded images, source download, dashboard badge/filter")
     finally:
         if created_slug:
             context.request.delete(f"{BASE}/api/document/{created_slug}")

@@ -52,6 +52,13 @@ services:
       tectonic:
         condition: service_healthy
     working_dir: /workspace
+    # Real compiler network isolation: the Markdown compiler wraps Pandoc in
+    # a private network namespace (unshare --net). Docker's default seccomp
+    # profile blocks this, so uncomment to grant it (or ship a custom seccomp
+    # profile that allows clone/unshare with CLONE_NEWNET). Without it the
+    # compiler logs a warning and runs without the namespace.
+    # cap_add:
+    #   - SYS_ADMIN
     environment:
       NODE_ENV: development
       REDIS_HOST: redis

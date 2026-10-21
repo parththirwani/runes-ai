@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'child_process';
-import { validateMarkdownSource } from '@/worker/markdown-compiler';
+import { validateMarkdownSource, rewriteAssetUrlsForEngine, detectCompilerIsolation } from '@/worker/markdown-compiler';
 import { normalizeAssetPath } from '@/src/lib/markdown-assets';
 
 const PNG_ASSET = { path: 'images/a.png', mediaType: 'image/png', data: 'iVBORw0KGgo=' };
@@ -40,6 +40,30 @@ describe('validateMarkdownSource — resource security', () => {
     expect(validateMarkdownSource('![a](/api/document/doc-9/assets/images/a.png)', [PNG_ASSET]).length).toBe(0);
   });
 
+  it('allows ordinary reference-style links with a following definition', () => {
+    expect(validateMarkdownSource('See [example][site].\n\n[site]: https://example.com', []).length).toBe(0);
+    expect(validateMarkdownSource('See [example][].\n\n[example]: https://example.com', []).length).toBe(0);
+    expect(validateMarkdownSource('See [site].\n\n[site]: https://example.com', []).length).toBe(0);
+    expect(validateMarkdownSource('See <https://example.com> and [example][site].\n\n[site]: https://example.com/docs', []).length).toBe(0);
+  });
+
+  it('still blocks unsafe destinations reached through reference definitions', () => {
+    expect(validateMarkdownSource('![a][pic]\n\n[pic]: https://evil.example/x.png', []).some((i) => i.code === 'remote-resource')).toBe(true);
+    expect(validateMarkdownSource('![a][pic]\n\n[pic]: file:///etc/passwd', []).some((i) => i.code === 'unsafe-scheme')).toBe(true);
+    expect(validateMarkdownSource('[click][j]\n\n[j]: javascript:alert(1)', []).some((i) => i.code === 'unsafe-scheme')).toBe(true);
+    expect(validateMarkdownSource('![a][pic]\n\n[pic]: images/missing.png', []).some((i) => i.code === 'missing-asset')).toBe(true);
+    expect(validateMarkdownSource('![a][pic]\n\n[pic]: images/a.png', [PNG_ASSET]).length).toBe(0);
+    expect(validateMarkdownSource('![a][pic]\n\n[pic]: /api/document/doc-9/assets/images/a.png', [PNG_ASSET]).length).toBe(0);
+  });
+
+  it('ignores unresolved reference labels (they render as literal text)', () => {
+    expect(validateMarkdownSource('![a][undeclared] and [b][missing]', []).length).toBe(0);
+  });
+
+  it('treats definitions inside fenced code as literal text', () => {
+    expect(validateMarkdownSource('```\n![a][pic]\n\n[pic]: https://evil.example/x.png\n```', []).length).toBe(0);
+  });
+
   it('rejects path traversal attempts in image references', () => {
     expect(validateMarkdownSource('![a](../../etc/passwd)', []).some((i) => i.code === 'invalid-path')).toBe(true);
     expect(validateMarkdownSource('![a](/etc/passwd)', []).some((i) => i.code === 'invalid-path')).toBe(true);
@@ -74,6 +98,39 @@ describe('normalizeAssetPath', () => {
 // Integration: the pinned Pandoc + Tectonic toolchain. Skipped when the
 // binaries are not installed so unit runs stay portable.
 // ---------------------------------------------------------------------------
+
+describe('rewriteAssetUrlsForEngine', () => {
+  it('rewrites canonical asset URLs to the job-relative paths pandoc receives', () => {
+    const src = '![Logo](/api/document/abc-123/assets/images/logo.png)\n\nsee [doc](/api/document/abc-123/assets/notes.md)\n\n[pic]: /api/document/abc-123/assets/imgs/p.png';
+    expect(rewriteAssetUrlsForEngine(src)).toBe('![Logo](images/logo.png)\n\nsee [doc](notes.md)\n\n[pic]: imgs/p.png');
+  });
+
+  it('leaves fenced code blocks untouched', () => {
+    const src = 'before\n```\n/api/document/abc/assets/keep.png\n```\nafter /api/document/abc/assets/x.png';
+    const out = rewriteAssetUrlsForEngine(src);
+    expect(out).toContain('/api/document/abc/assets/keep.png');
+    expect(out.endsWith('after x.png')).toBe(true);
+  });
+});
+
+describe('compiler process isolation', () => {
+  it('detects whether a private network namespace is available', async () => {
+    const mode = await detectCompilerIsolation();
+    expect(mode === null || Array.isArray(mode)).toBe(true);
+    if (mode) {
+      expect(mode[1]).toBe('--net');
+      const { execFile } = await import('child_process');
+      const { promisify } = await import('util');
+      const { stdout } = await promisify(execFile)(mode[0], [...mode.slice(1), 'sh', '-c', 'cat /proc/net/dev'], { timeout: 10_000 });
+      // A fresh network namespace exposes only the loopback interface.
+      const devices = stdout
+        .split('\n')
+        .filter((line: string) => /^\s*\S+:/.test(line))
+        .map((line: string) => line.split(':')[0].trim());
+      expect(devices).toEqual(['lo']);
+    }
+  });
+});
 
 const PANDOC = process.env.PANDOC_BIN || 'pandoc';
 const ENGINE = process.env.PDF_ENGINE_BIN || 'tectonic';
@@ -146,6 +203,35 @@ describe.skipIf(!toolchain)('markdown PDF integration (pinned pandoc + tectonic)
       console.log('pdftotext unavailable — skipped text-level assertions');
     }
   }, 180_000);
+
+  it('embeds an uploaded image referenced with the canonical asset URL syntax', async () => {
+    const { compileMarkdownToPDF } = await import('@/worker/markdown-compiler');
+    const slug = 'doc-embed-check';
+    const withImage = [
+      '# Embedded Image Check',
+      '',
+      `![Logo](/api/document/${slug}/assets/images/a.png)`,
+      '',
+      'Paragraph after the image.',
+    ].join('\n');
+    const withoutImage = '# Embedded Image Check\n\nParagraph after the image.\n';
+    const assets = [{ path: 'images/a.png', mediaType: 'image/png', data: PNG_BYTES.toString('base64') }];
+
+    const control = await compileMarkdownToPDF(withoutImage, slug, { timeout: 170_000, assets: [] });
+    expect(control.success).toBe(true);
+    const controlText = control.pdfBuffer!.toString('latin1');
+    expect(controlText).not.toContain('/Subtype /Image');
+
+    const result = await compileMarkdownToPDF(withImage, slug, { timeout: 170_000, assets });
+    expect(result.error).toBeUndefined();
+    expect(result.success).toBe(true);
+    const pdf = result.pdfBuffer!;
+    expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    // An embedded raster image appears as an image XObject in the PDF objects.
+    const text = pdf.toString('latin1');
+    expect(text).toMatch(/\/Subtype\s*\/Image/);
+    expect(pdf.length).toBeGreaterThan(control.pdfBuffer!.length);
+  }, 360_000);
 
   it('fails with a useful error before invoking the compiler on unsafe input', async () => {
     const { compileMarkdownToPDF } = await import('@/worker/markdown-compiler');

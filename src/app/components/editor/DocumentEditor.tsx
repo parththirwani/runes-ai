@@ -20,7 +20,7 @@ import { buildLatexOutline } from '@/src/lib/latex-outline';
 import { buildMarkdownOutline } from '@/src/lib/markdown-outline';
 import MarkdownPreviewPane from './MarkdownPreviewPane';
 import type { editor } from 'monaco-editor';
-import { Wand2, RefreshCw } from 'lucide-react';
+import { Wand2, RefreshCw, ImagePlus } from 'lucide-react';
 
 type ViewMode = 'editor' | 'split' | 'preview';
 
@@ -113,6 +113,10 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const [aiError, setAiError] = useState<string | null>(null);
   const [autocompleteNotice, setAutocompleteNotice] = useState<string | null>(null);
   const autocompleteNoticeShownRef = useRef(false);
+  const assetInputRef = useRef<HTMLInputElement | null>(null);
+  const [assetUploadBusy, setAssetUploadBusy] = useState(false);
+  const [assetNotice, setAssetNotice] = useState<string | null>(null);
+  const [assetError, setAssetError] = useState<string | null>(null);
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(true);
   const autocompleteEnabledRef = useRef(true);
   const [paraphraseDisabledReason, setParaphraseDisabledReason] = useState<string | null>('Select prose to paraphrase');
@@ -735,6 +739,44 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     URL.revokeObjectURL(url);
   };
 
+  // --- Image upload (Markdown): POST to the document asset store, then
+  // insert the canonical asset URL at the caret as a single undoable edit. ---
+  const handleAssetFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !slug) return;
+    setAssetUploadBusy(true);
+    setAssetNotice(null);
+    setAssetError(null);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const response = await fetch(`/api/document/${slug}/assets`, { method: 'POST', body: form });
+      const payload = await response.json().catch(() => ({})) as { asset?: { path: string }; message?: string };
+      if (!response.ok) throw new Error(payload?.message || 'Image upload failed');
+      const assetPath = payload.asset?.path;
+      if (!assetPath) throw new Error('Image upload failed');
+      const alt = file.name.replace(/\.[A-Za-z0-9]+$/, '') || 'image';
+      const insertion = `![${alt}](/api/document/${slug}/assets/${assetPath})`;
+      const editorInstance = editorRef.current;
+      const editorModel = editorInstance?.getModel();
+      if (editorInstance && editorModel) {
+        const selection = editorInstance.getSelection();
+        const range = selection ?? editorModel.getFullModelRange();
+        const text = selection ? insertion : `${editorModel.getValue()}\n\n${insertion}\n`;
+        editorInstance.executeEdits('asset-upload', [{ range, text }]);
+        editorInstance.focus();
+      } else {
+        setCode((prev) => `${prev}\n\n${insertion}\n`);
+      }
+      setAssetNotice(`Inserted ${assetPath}`);
+    } catch (error) {
+      setAssetError(error instanceof Error ? error.message : 'Image upload failed');
+    } finally {
+      setAssetUploadBusy(false);
+    }
+  };
+
   // --- Download handler ---
   const handleDownload = async () => {
     if (!pdfUrl) {
@@ -907,6 +949,30 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                     <span className="text-xs text-yellow-400">{aiError}</span>
                   )}
                   {autocompleteNotice && <span role="status" className="text-xs text-yellow-400">{autocompleteNotice}</span>}
+
+                  {isMarkdown && (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        ref={assetInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        className="hidden"
+                        aria-label="Upload image"
+                        onChange={(e) => void handleAssetFileSelected(e)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => assetInputRef.current?.click()}
+                        disabled={assetUploadBusy}
+                        className="flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded text-gray-400 hover:text-white hover:bg-[#3e3e3e] transition-colors disabled:opacity-40 cursor-pointer"
+                      >
+                        <ImagePlus className="w-3 h-3" />
+                        {assetUploadBusy ? 'Uploading…' : 'Insert image'}
+                      </button>
+                      {assetNotice && <span role="status" className="text-xs text-emerald-400">{assetNotice}</span>}
+                      {assetError && <span role="alert" className="text-xs text-red-400">{assetError}</span>}
+                    </div>
+                  )}
 
                   <label className="hidden sm:flex items-center gap-1.5 text-[11px] text-gray-500 cursor-pointer">
                     <input
