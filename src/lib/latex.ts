@@ -1,9 +1,46 @@
 import { promisify } from 'util';
-import { exec as execCallback } from 'child_process';
+import { execFile as execFileCallback } from 'child_process';
 import { promises as fs } from 'fs';
 import path from 'path';
 
-const exec = promisify(execCallback);
+const execFile = promisify(execFileCallback);
+
+const TECTONIC_IMAGE = process.env.TECTONIC_IMAGE || 'dxjoke/tectonic-docker:latest';
+
+async function runTectonic(tempDir: string, filename: string, timeout: number) {
+  const tectonicContainerName = process.env.TECTONIC_CONTAINER_NAME?.trim();
+
+  if (tectonicContainerName) {
+    console.log(`[LATEX] Using tectonic container ${tectonicContainerName}`);
+    return execFile(
+      'docker',
+      ['exec', '-w', tempDir, tectonicContainerName, 'tectonic', '--outdir', 'output', `${filename}.tex`],
+      { timeout },
+    );
+  }
+
+  return execFile(
+    'docker',
+    [
+      'run',
+      '--rm',
+      '--dns',
+      '8.8.8.8',
+      '--dns',
+      '8.8.4.4',
+      '-v',
+      `${tempDir}:/tex:Z`,
+      '-w',
+      '/tex',
+      TECTONIC_IMAGE,
+      'tectonic',
+      '--outdir',
+      'output',
+      `${filename}.tex`,
+    ],
+    { timeout },
+  );
+}
 
 export interface CompilationResult {
   success: boolean;
@@ -51,21 +88,10 @@ export async function compileLatexToPDF(
     await fs.writeFile(texPath, latexContent, 'utf-8');
     console.log(`[LATEX] Created ${texPath}`);
 
-    // Build Docker command
-    const dockerCmd = [
-      'docker', 'run', '--rm',
-      '--dns', '8.8.8.8',
-      '--dns', '8.8.4.4',
-      '-v', `${tempDir}:/tex:Z`,
-      '-w', '/tex',
-      'dxjoke/tectonic-docker:latest',
-      'tectonic', '--outdir', 'output', `${filename}.tex`
-    ].join(' ');
-
     console.log(`[LATEX] Compiling ${filename}.tex`);
     
     // Execute compilation
-    const { stdout, stderr } = await exec(dockerCmd, { timeout });
+    const { stderr } = await runTectonic(tempDir, filename, timeout);
     
     const duration = Date.now() - startTime;
     console.log(`[LATEX] Compilation completed in ${duration}ms`);

@@ -1,8 +1,6 @@
 import { withAuth } from "@/src/lib/withAuth";
 import { compilationProducer } from "@/producer/queue";
 import { NextResponse } from "next/server";
-import { JobStatus } from "@/src/types/compilation";
-import { prisma } from "@/src/lib/db";
 
 // Helper: verify job belongs to user.
 // Job data stores userId at creation time (field: job.userId).

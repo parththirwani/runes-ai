@@ -60,13 +60,10 @@ export const GET = withAuth(async (req, session, context) => {
         Expires: "0",
       },
     });
-  } catch (error: any) {
-    console.error("[PDF_DOWNLOAD_ERROR]", error);
+  } catch {
+    console.error("[PDF_DOWNLOAD_ERROR] Request failed");
     return NextResponse.json(
-      {
-        message: "Failed to download PDF",
-        ...(process.env.NODE_ENV === "development" && { error: error.message }),
-      },
+      { message: "Failed to download PDF" },
       { status: 500 }
     );
   }

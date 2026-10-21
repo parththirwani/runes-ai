@@ -1,6 +1,6 @@
 
 import redis, { QUEUE_NAME, PROCESSING_SET, JOB_PREFIX, PDF_PREFIX, RESULT_TTL, RESULT_PREFIX } from '@/src/lib/redis';
-import { JobStatus, CompilationJob } from '@/src/types/compilation';
+import { JobStatus, CompilationJob, JobStatusResponse } from '@/src/types/compilation';
 import { compileLatexToPDF } from './latex-compiler';
 
 export class CompilationWorker {
@@ -70,13 +70,13 @@ export class CompilationWorker {
       return; // No job available
     }
 
-    const [_, jobId] = result;
+    const jobId = result[1];
 
     try {
       await this.processJob(jobId);
-    } catch (error: any) {
-      console.error(`[WORKER] Failed to process job ${jobId}:`, error);
-      await this.markJobFailed(jobId, error.message || 'Unknown error');
+    } catch (error: unknown) {
+      console.error(`[WORKER] Failed to process job ${jobId}`);
+      await this.markJobFailed(jobId, error instanceof Error ? error.message : 'Unknown error');
     }
   }
 
@@ -118,6 +118,7 @@ export class CompilationWorker {
         RESULT_TTL,
         result.pdfBuffer
       );
+      await redis.expire(`${JOB_PREFIX}${jobId}`, RESULT_TTL);
 
       // Mark job as completed
       await this.markJobCompleted(jobId, {
@@ -157,7 +158,7 @@ export class CompilationWorker {
   /**
    * Mark job as completed
    */
-  private async markJobCompleted(jobId: string, result: any): Promise<void> {
+  private async markJobCompleted(jobId: string, result: NonNullable<JobStatusResponse['result']>): Promise<void> {
     const currentData = await redis.get(`${RESULT_PREFIX}${jobId}`);
     const data = currentData ? JSON.parse(currentData) : {};
 
@@ -192,6 +193,7 @@ export class CompilationWorker {
       RESULT_TTL,
       JSON.stringify(data)
     );
+    await redis.expire(`${JOB_PREFIX}${jobId}`, RESULT_TTL);
   }
 
   /**

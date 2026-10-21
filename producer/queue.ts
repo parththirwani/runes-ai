@@ -98,6 +98,7 @@ export class CompilationProducer {
           completedAt: Date.now(),
         })
       );
+      await redis.expire(`${JOB_PREFIX}${jobId}`, RESULT_TTL);
       
       console.log(`[PRODUCER] Job ${jobId} cancelled`);
       return true;

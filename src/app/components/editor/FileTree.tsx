@@ -1,15 +1,10 @@
 import React, { useState } from 'react';
-import { X, Plus, FileText, FolderOpen, Folder, ChevronRight, ChevronDown, Image, File } from 'lucide-react';
+import { X, Plus, FileText, ChevronRight, ChevronDown, ListTree } from 'lucide-react';
 import Button from '../design/Button';
 import IconButton from '../design/IconButton';
+import type { LatexOutlineNode } from '@/src/lib/latex-outline';
 
-interface FileNode {
-  id: string;
-  name: string;
-  type: 'file' | 'folder';
-  active?: boolean;
-  children?: FileNode[];
-}
+type FileNode = LatexOutlineNode;
 
 interface FileTreeProps {
   isOpen: boolean;
@@ -17,16 +12,13 @@ interface FileTreeProps {
   files?: FileNode[];
   onFileSelect?: (file: FileNode) => void;
   onNewFile?: () => void;
+  title?: string;
+  emptyMessage?: string;
 }
 
-const FileIcon = ({ name, type }: { name: string; type: string }) => {
-  if (type === 'folder') return <FolderOpen className="w-4 h-4 text-yellow-500" />;
-  
-  const ext = name.split('.').pop()?.toLowerCase();
-  if (ext === 'tex') return <FileText className="w-4 h-4 text-blue-400" />;
-  if (['png', 'jpg', 'jpeg', 'svg'].includes(ext || '')) return <Image className="w-4 h-4 text-green-400" />;
-  if (ext === 'bib') return <FileText className="w-4 h-4 text-purple-400" />;
-  return <File className="w-4 h-4 text-gray-400" />;
+const FileIcon = ({ type }: { type: string }) => {
+  if (type === 'file') return <FileText className="w-4 h-4 text-blue-400" />;
+  return <ListTree className="w-4 h-4 text-emerald-400" />;
 };
 
 const FileTreeItem = ({ 
@@ -38,8 +30,9 @@ const FileTreeItem = ({
   level?: number; 
   onSelect?: (file: FileNode) => void;
 }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(file.expanded || file.active || level < 2);
   const hasChildren = file.children && file.children.length > 0;
+  const effectiveExpanded = hasChildren && (file.expanded || file.active || isExpanded);
 
   return (
     <div>
@@ -52,24 +45,29 @@ const FileTreeItem = ({
           }
         }}
         className={`w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 hover:bg-[#2a2d2e] transition-colors ${
-          file.active ? 'bg-[#37373d] text-white' : 'text-gray-300'
+          file.active ? 'bg-[#37373d] text-white ring-1 ring-emerald-500/40' : 'text-gray-300'
         }`}
         style={{ paddingLeft: `${12 + level * 16}px` }}
+        title={file.type === 'section' ? `Jump to line ${file.lineNumber}` : file.name}
       >
         {hasChildren && (
-          <span className="shrink-0">
-            {isExpanded ? (
+          <span className="shrink-0 text-gray-500">
+            {effectiveExpanded ? (
               <ChevronDown className="w-3 h-3" />
             ) : (
               <ChevronRight className="w-3 h-3" />
             )}
           </span>
         )}
-        <FileIcon name={file.name} type={file.type} />
+        {!hasChildren && <span className="w-3 shrink-0" />}
+        <FileIcon type={file.type} />
         <span className="truncate flex-1">{file.name}</span>
+        {file.type === 'section' && (
+          <span className="text-[10px] text-gray-500 tabular-nums">L{file.lineNumber}</span>
+        )}
       </button>
       
-      {hasChildren && isExpanded && (
+      {hasChildren && effectiveExpanded && (
         <div>
           {file.children?.map((child) => (
             <FileTreeItem
@@ -90,24 +88,12 @@ export default function FileTree({
   onClose,
   files = [],
   onFileSelect,
-  onNewFile
+  onNewFile,
+  title = 'Outline',
+  emptyMessage = 'Add a section heading to generate a document outline.'
 }: FileTreeProps) {
-  const defaultFiles: FileNode[] = [
-    { id: '1', name: 'main.tex', type: 'file', active: true },
-    { id: '2', name: 'references.bib', type: 'file' },
-    {
-      id: '3',
-      name: 'images',
-      type: 'folder',
-      children: [
-        { id: '3-1', name: 'figure1.png', type: 'file' },
-        { id: '3-2', name: 'logo.svg', type: 'file' }
-      ]
-    },
-    { id: '4', name: 'chapters', type: 'folder', children: [] }
-  ];
-
-  const fileList = files.length > 0 ? files : defaultFiles;
+  const fileList = files;
+  const canCreate = typeof onNewFile === 'function';
 
   return (
     <div
@@ -118,7 +104,7 @@ export default function FileTree({
       <div className="h-full flex flex-col">
         {/* Header */}
         <div className="h-14 border-b border-[#3e3e3e] flex items-center justify-between px-4">
-          <span className="text-white font-semibold text-sm">Files</span>
+          <span className="text-white font-semibold text-sm">{title}</span>
           <IconButton
             icon={<X className="w-4 h-4" />}
             variant="ghost"
@@ -129,9 +115,15 @@ export default function FileTree({
 
         {/* File List */}
         <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
-          {fileList.map((file) => (
-            <FileTreeItem key={file.id} file={file} onSelect={onFileSelect} />
-          ))}
+          {fileList.length > 0 ? (
+            fileList.map((file) => (
+              <FileTreeItem key={file.id} file={file} onSelect={onFileSelect} />
+            ))
+          ) : (
+            <div className="px-3 py-4 text-xs leading-5 text-gray-500">
+              {emptyMessage}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -142,8 +134,9 @@ export default function FileTree({
             icon={<Plus className="w-4 h-4" />}
             onClick={onNewFile}
             className="w-full"
+            disabled={!canCreate}
           >
-            New File
+            New Document
           </Button>
         </div>
       </div>

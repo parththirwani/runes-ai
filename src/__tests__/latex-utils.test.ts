@@ -57,6 +57,30 @@ function offsetOf(text: string, search: string): number {
 }
 
 describe('scanContext', () => {
+  it('ignores a dollar sign in a prior comment', () => {
+    const source = '\\begin{document}\n% $ not math\nProse here';
+    expect(scanContext(source, source.length).isInMath).toBe(false);
+  });
+
+  it('treats percent after two backslashes as a comment', () => {
+    const source = '\\begin{document}\nProse \\\\% comment';
+    expect(scanContext(source, source.length).isInComment).toBe(true);
+  });
+
+  it('ignores fake math environments inside verbatim', () => {
+    const source = '\\begin{document}\n\\begin{verbatim}\n\\begin{equation}\n\\end{verbatim}\nProse';
+    const context = scanContext(source, source.length);
+    expect(context.isInVerbatim).toBe(false);
+    expect(context.isInMath).toBe(false);
+  });
+
+  it('suppresses completion throughout command arguments', () => {
+    const source = '\\begin{document}\n\\emph{formatted words here} plain prose';
+    expect(scanContext(source, source.indexOf('words') + 3).isInCommandArg).toBe(true);
+    expect(scanContext(source, source.indexOf('plain') + 3).isInCommandArg).toBe(false);
+    const optional = '\\begin{document}\n\\cite[see page 2]{key} prose';
+    expect(scanContext(optional, optional.indexOf('page') + 2).isInCommandArg).toBe(true);
+  });
   it('detects preamble (before \\begin{document})', () => {
     const pos = offsetOf(SAMPLE_DOC, '\\title');
     const ctx = scanContext(SAMPLE_DOC, pos);
@@ -186,21 +210,6 @@ describe('scanContext', () => {
 
 describe('analyzeSelection', () => {
   const docCtx: ScanContext = { isInDocument: true, isInPreamble: false, isInComment: false, isInMath: false, isInVerbatim: false, isInCommandName: false, isInCommandArg: false };
-
-  const fullDoc = `\\begin{document}
-
-The value $E = mc^2$ is important.
-According to \\cite{smith2020}, the result holds.
-See \\ref{fig:results} for details.
-
-\\begin{equation}
-    x^2 + y^2 = z^2
-\\end{equation}
-
-The area command uses \\texttt{mono} text.
-
-More prose here.
-\\end{document}`;
 
   it('rejects empty selection', () => {
     const result = analyzeSelection('', docCtx);
@@ -345,11 +354,29 @@ More prose here.
     expect(result.protectedTokens[2].placeholder).toBe('@@PROTECTED_2__');
   });
 
-  it('handles selection with only protected tokens', () => {
+  it('rejects a selection with only protected tokens', () => {
     const text = '$E=mc^2$';
     const result = analyzeSelection(text, docCtx);
-    expect(result.eligible).toBe(true);
-    expect(result.protectedTokens.length).toBe(1);
+    expect(result.eligible).toBe(false);
+    expect(result.reason).toContain('prose');
+  });
+
+  it('rejects braces that close before they open', () => {
+    expect(analyzeSelection('} prose {', docCtx).eligible).toBe(false);
+  });
+
+  it('rejects unsupported nested command braces', () => {
+    expect(analyzeSelection('Read \\emph{nested {text}} now.', docCtx).eligible).toBe(false);
+  });
+
+  it('masks escaped LaTeX characters and rejects a new escape', () => {
+    const analysis = analyzeSelection('A 50\\% increase is useful.', docCtx);
+    expect(analysis.eligible).toBe(true);
+    expect(analysis.protectedTokens[0].original).toBe('\\%');
+    const safe = verifyAndRestore(analysis.maskedSelection, 'The @@PROTECTED_0__ increase helps.', analysis.protectedTokens);
+    expect(safe.success).toBe(true);
+    const unsafe = verifyAndRestore(analysis.maskedSelection, 'The @@PROTECTED_0__ increase \\_ helps.', analysis.protectedTokens);
+    expect(unsafe.success).toBe(false);
   });
 });
 
@@ -440,13 +467,11 @@ describe('verifyAndRestore', () => {
     }
   });
 
-  it('allows \\input when it was in the original raw response (not introduced)', () => {
-    // If \\input{other} was already in modelResponse (the "raw" before placeholder restore),
-    // it's not "introduced" — the dangerous-command check compares restored vs raw.
+  it('rejects a new \\input command in the model response', () => {
     const tokens: { placeholder: string; original: string }[] = [];
     const response = 'We could \\input{other} directly.';
     const result = verifyAndRestore('', response, tokens);
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
   });
 
   it('restores with no tokens unchanged', () => {

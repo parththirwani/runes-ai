@@ -24,6 +24,14 @@ function makeProposal(overrides: Partial<EditProposal> = {}): EditProposal {
 }
 
 describe('computeDiff', () => {
+  it('falls back to a full comparison for large selections', () => {
+    const original = 'a'.repeat(6_000);
+    const replacement = 'b'.repeat(6_000);
+    expect(computeDiff(original, replacement)).toEqual([
+      { value: original, type: 'remove' },
+      { value: replacement, type: 'add' },
+    ]);
+  });
   it('detects additions', () => {
     const tokens = computeDiff('Hello world.', 'Hello beautiful world.');
     const additions = tokens.filter(t => t.type === 'add');
@@ -102,7 +110,7 @@ describe('verifyAcceptance', () => {
   });
 
   it('rejects when original text no longer matches', () => {
-    const p = makeProposal({ originalText: 'Old text' });
+    const p = makeProposal({ range: { startOffset: 0, endOffset: 5 }, originalText: 'Old text' });
     const result = verifyAcceptance(p, 'Completely different content');
     expect(result.applied).toBe(false);
     expect(result.reason).toContain('no longer matches');
@@ -114,12 +122,21 @@ describe('verifyAcceptance', () => {
     expect(result.applied).toBe(false);
   });
 
+  it('rejects malformed ranges, including empty text at a negative offset', () => {
+    const negative = makeProposal({ range: { startOffset: -1, endOffset: 0 }, originalText: '' });
+    expect(verifyAcceptance(negative, 'document').applied).toBe(false);
+    const inverted = makeProposal({ range: { startOffset: 4, endOffset: 2 }, originalText: '' });
+    expect(verifyAcceptance(inverted, 'document').applied).toBe(false);
+    const pastEnd = makeProposal({ range: { startOffset: 0, endOffset: 99 }, originalText: 'document' });
+    expect(verifyAcceptance(pastEnd, 'document').applied).toBe(false);
+  });
+
   it('handles repeated identical text correctly', () => {
     // Two identical sentences; proposal targets the second one
     const doc = 'This is text. This is text.';
-    // "This is text." = 14 chars. First: 0-14, second: 14-28
+    // "This is text." = 13 chars. First: 0-13, second: 14-27
     const p = makeProposal({
-      range: { startOffset: 14, endOffset: 28 },
+      range: { startOffset: 14, endOffset: 27 },
       originalText: 'This is text.',
       replacementText: 'This is revised.',
     });

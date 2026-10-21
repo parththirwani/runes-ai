@@ -1,11 +1,48 @@
 import { promisify } from 'util';
-import { exec as execCallback } from 'child_process';
+import { execFile as execFileCallback } from 'child_process';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { CompilationOptions, CompilationResult } from '@/src/lib/latex';
 
 
-const exec = promisify(execCallback);
+const execFile = promisify(execFileCallback);
+
+const TECTONIC_IMAGE = process.env.TECTONIC_IMAGE || 'dxjoke/tectonic-docker:latest';
+
+async function runTectonic(tempDir: string, filename: string, timeout: number) {
+  const tectonicContainerName = process.env.TECTONIC_CONTAINER_NAME?.trim();
+
+  if (tectonicContainerName) {
+    console.log(`[COMPILER] Using tectonic container ${tectonicContainerName}`);
+    return execFile(
+      'docker',
+      ['exec', '-w', tempDir, tectonicContainerName, 'tectonic', '--outdir', 'output', `${filename}.tex`],
+      { timeout },
+    );
+  }
+
+  return execFile(
+    'docker',
+    [
+      'run',
+      '--rm',
+      '--dns',
+      '8.8.8.8',
+      '--dns',
+      '8.8.4.4',
+      '-v',
+      `${tempDir}:/tex:Z`,
+      '-w',
+      '/tex',
+      TECTONIC_IMAGE,
+      'tectonic',
+      '--outdir',
+      'output',
+      `${filename}.tex`,
+    ],
+    { timeout },
+  );
+}
 
 /**
  * Compiles LaTeX content to PDF using Tectonic Docker
@@ -36,30 +73,10 @@ export async function compileLatexToPDF(
     await fs.writeFile(texPath, latexContent, 'utf-8');
     console.log(`[COMPILER] Created ${texPath}`);
 
-    // Build Docker command
-    const dockerCmd = [
-      'docker',
-      'run',
-      '--rm',
-      '--dns',
-      '8.8.8.8',
-      '--dns',
-      '8.8.4.4',
-      '-v',
-      `${tempDir}:/tex:Z`,
-      '-w',
-      '/tex',
-      'dxjoke/tectonic-docker:latest',
-      'tectonic',
-      '--outdir',
-      'output',
-      `${filename}.tex`,
-    ].join(' ');
-
     console.log(`[COMPILER] Compiling ${filename}.tex`);
 
     // Execute compilation
-    const { stdout, stderr } = await exec(dockerCmd, { timeout });
+    const { stderr } = await runTectonic(tempDir, filename, timeout);
 
     const duration = Date.now() - startTime;
     console.log(`[COMPILER] Compilation completed in ${duration}ms`);
@@ -84,7 +101,7 @@ export async function compileLatexToPDF(
       warnings: stderr.trim() || undefined,
       duration,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     const duration = Date.now() - startTime;
 
     // Cleanup on error if requested
@@ -97,11 +114,13 @@ export async function compileLatexToPDF(
       }
     }
 
-    console.error('[COMPILER] Compilation failed:', error.message);
+    const message = error instanceof Error ? error.message : 'Unknown compilation error';
+    const stderr = error && typeof error === 'object' && 'stderr' in error && typeof error.stderr === 'string' ? error.stderr : undefined;
+    console.error('[COMPILER] Compilation failed');
 
     return {
       success: false,
-      error: error.stderr || error.message || 'Unknown compilation error',
+      error: stderr || message,
       duration,
     };
   }

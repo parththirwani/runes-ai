@@ -9,6 +9,7 @@ interface PDFPreviewProps {
   onCompile?: () => void;
   onDownload?: () => void;
   statusMessage?: string;
+  isStale?: boolean;
 }
 
 export default function PDFPreview({
@@ -16,7 +17,8 @@ export default function PDFPreview({
   isLoading = false,
   onCompile,
   onDownload,
-  statusMessage = ''
+  statusMessage = '',
+  isStale = false,
 }: PDFPreviewProps) {
   const [zoom, setZoom] = useState(100);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -67,6 +69,11 @@ export default function PDFPreview({
       <div className="h-12 bg-[#2d2d2d] border-b border-[#3e3e3e] flex items-center justify-between px-4">
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-400">PDF Preview</span>
+          {pdfUrl && !isLoading && (
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isStale ? 'bg-yellow-900/30 text-yellow-300' : 'bg-emerald-900/30 text-emerald-300'}`}>
+              {isStale ? 'Outdated' : 'Up to date'}
+            </span>
+          )}
           {isLoading && statusMessage && (
             <div className="flex items-center gap-2 text-xs text-emerald-400">
               <Clock className="w-3 h-3 animate-pulse" />

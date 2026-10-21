@@ -7,12 +7,14 @@ import FileTree from './FileTree';
 import MonacoEditorWrapper from './MonacoEditorWrapper';
 import PDFPreview from './PDFPreview';
 import DiffReview from './DiffReview';
+import AiWorkspacePanel from './AiWorkspacePanel';
 import InputModal from '../design/InputModal';
 import AlertModal from '../design/AlertModal';
 import Button from '../design/Button';
 import { JobStatus } from '@/src/types/compilation';
-import { EditProposal, verifyAcceptance, generateProposalId } from '@/src/lib/proposal-engine';
-import { analyzeSelection, scanContext } from '@/src/lib/latex-utils';
+import { EditProposal, verifyAcceptance, checkStale, generateProposalId } from '@/src/lib/proposal-engine';
+import { analyzeSelection, scanContext, selectionCutsWord } from '@/src/lib/latex-utils';
+import { buildLatexOutline } from '@/src/lib/latex-outline';
 import type { editor } from 'monaco-editor';
 import { Wand2, RefreshCw } from 'lucide-react';
 
@@ -60,7 +62,7 @@ interface DocumentEditorProps {
 
 export default function DocumentEditor({ initialDocument }: DocumentEditorProps) {
   const router = useRouter();
-  const [code, setCode] = useState(initialDocument?.content || initialCode);
+  const [code, setCode] = useState(initialDocument?.content ?? initialCode);
   const [title, setTitle] = useState(initialDocument?.title || 'Untitled Document');
   const [slug, setSlug] = useState(initialDocument?.slug || '');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
@@ -69,7 +71,13 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const [isSaving, setIsSaving] = useState(false);
   const [isCompiling, setIsCompiling] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string>();
+  const pdfUrlRef = useRef<string | undefined>(undefined);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const savedSnapshotRef = useRef({ content: initialDocument?.content ?? initialCode, title: initialDocument?.title ?? 'Untitled Document' });
+  const latestRef = useRef({ content: code, title });
+  latestRef.current = { content: code, title };
+  const saveRef = useRef<() => Promise<boolean>>(async () => false);
+  const downloadPdfRef = useRef<(jobId: string) => Promise<void>>(async () => {});
   const [compileError, setCompileError] = useState<string | null>(null);
 
   // Document ID for proposals
@@ -78,6 +86,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   // Job polling
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [compilationStatus, setCompilationStatus] = useState('');
+  const [currentLineNumber, setCurrentLineNumber] = useState(1);
 
   // Modal states
   const [showTitleModal, setShowTitleModal] = useState(false);
@@ -92,9 +101,13 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const [proposal, setProposal] = useState<EditProposal | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [autocompleteNotice, setAutocompleteNotice] = useState<string | null>(null);
+  const autocompleteNoticeShownRef = useRef(false);
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(true);
   const autocompleteEnabledRef = useRef(true);
-  const [paraphraseDisabledReason, setParaphraseDisabledReason] = useState<string | null>(null);
+  const [paraphraseDisabledReason, setParaphraseDisabledReason] = useState<string | null>('Select prose to paraphrase');
+  const selectionListenerRef = useRef<{ dispose(): void } | null>(null);
+  const cursorListenerRef = useRef<{ dispose(): void } | null>(null);
 
   // Sync state → refs for closure-safe reads inside the Monaco provider
   useEffect(() => { autocompleteEnabledRef.current = autocompleteEnabled; }, [autocompleteEnabled]);
@@ -103,62 +116,54 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   // Autocomplete: debounce timer, abort controller, request ID, and provider disposable
   const completeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const completeDebounceResolverRef = useRef<((v: { items: [] }) => void) | null>(null);
   const completeAbortRef = useRef<AbortController | null>(null);
   const completeRequestIdRef = useRef(0);
   const completeProviderDisposableRef = useRef<{ dispose(): void } | null>(null);
 
   // Staleness tracking for paraphrase
   const pendingParaphraseStaleRef = useRef(false);
+  const paraphraseAbortRef = useRef<AbortController | null>(null);
+  const paraphraseRequestIdRef = useRef(0);
 
   // Proposal verification
   const [stalenessReason, setStalenessReason] = useState<string | null>(null);
-  const lastModelVersionRef = useRef(-1);
 
   // Track PDF staleness
   const [pdfIsStale, setPdfIsStale] = useState(false);
+  const compileSourceRef = useRef<string | null>(null);
 
   // Store the most recent tone used for paraphrase
   const lastToneRef = useRef('Clearer');
-
-  // --- Init from initialDocument ---
-  useEffect(() => {
-    if (initialDocument) {
-      setCode(initialDocument.content);
-      setTitle(initialDocument.title);
-      setSlug(initialDocument.slug);
-    }
-  }, [initialDocument]);
+  const fileName = `${slug || 'untitled'}.tex`;
+  const outline = buildLatexOutline(code, fileName, currentLineNumber);
 
   // --- Dirty tracking ---
   useEffect(() => {
-    if (initialDocument) {
-      const hasChanged = code !== initialDocument.content || title !== initialDocument.title;
-      setHasUnsavedChanges(hasChanged);
-      if (hasChanged && pdfUrl) setPdfIsStale(true);
-    } else if (code !== initialCode || title !== 'Untitled Document') {
-      setHasUnsavedChanges(true);
-    }
-  }, [code, title, initialDocument, pdfUrl]);
+    const hasChanged = code !== savedSnapshotRef.current.content || title !== savedSnapshotRef.current.title;
+    setHasUnsavedChanges(hasChanged);
+    if (code !== savedSnapshotRef.current.content && pdfUrl) setPdfIsStale(true);
+  }, [code, title, pdfUrl]);
 
   // --- Key handlers ---
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        handleSave();
+        saveRef.current();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [title, code, slug]);
+  }, []);
 
   // --- Autosave ---
   useEffect(() => {
     if (hasUnsavedChanges && slug) {
-      const timer = setTimeout(() => { handleSave(); }, 30000);
+      const timer = setTimeout(() => { saveRef.current(); }, 30000);
       return () => clearTimeout(timer);
     }
-  }, [hasUnsavedChanges, slug]);
+  }, [hasUnsavedChanges, slug, code, title]);
 
   // --- Job polling ---
   useEffect(() => {
@@ -185,7 +190,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
             clearInterval(pollInterval);
             setCompilationStatus('');
             setIsCompiling(false);
-            await downloadPDF(currentJobId);
+            await downloadPdfRef.current(currentJobId);
             setCurrentJobId(null);
             break;
           case JobStatus.FAILED:
@@ -212,6 +217,28 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const handleEditorReady = useCallback((editorInstance: editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) => {
     editorRef.current = editorInstance;
     monacoRef.current = monaco;
+    selectionListenerRef.current?.dispose();
+    cursorListenerRef.current?.dispose();
+    selectionListenerRef.current = editorInstance.onDidChangeCursorSelection(() => {
+      const model = editorInstance.getModel();
+      const selection = editorInstance.getSelection();
+      if (!model || !selection || selection.isEmpty()) {
+        setParaphraseDisabledReason('Select prose to paraphrase');
+        return;
+      }
+      const full = model.getValue();
+      const start = model.getOffsetAt(selection.getStartPosition());
+      const end = model.getOffsetAt(selection.getEndPosition());
+      const selected = full.slice(start, end);
+      const analysis = analyzeSelection(selected, scanContext(full, start));
+      setParaphraseDisabledReason(
+        !analysis.eligible ? analysis.reason || 'Unsupported selection' :
+        selectionCutsWord(full.slice(0, start), selected, full.slice(end)) ? 'Select complete words' : null,
+      );
+    });
+    cursorListenerRef.current = editorInstance.onDidChangeCursorPosition((event) => {
+      setCurrentLineNumber(event.position.lineNumber);
+    });
 
     // Dispose any previous provider (e.g. after re-mount)
     if (completeProviderDisposableRef.current) {
@@ -219,14 +246,13 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       completeProviderDisposableRef.current = null;
     }
 
-    // Resolver for the previous debounce promise, so we can resolve it when
-    // a newer keystroke arrives before the debounce fires.
-    let pendingDebounceResolver: ((v: { items: [] }) => void) | null = null;
-
     const provider = monaco.languages.registerInlineCompletionsProvider('latex', {
-      provideInlineCompletions: async (model, position) => {
+      provideInlineCompletions: async (model, position, _context, token) => {
         // Read live state from refs (the provider closure is created once at mount)
-        if (!autocompleteEnabledRef.current || proposalRef.current) return { items: [] };
+        if (!autocompleteEnabledRef.current || proposalRef.current || token.isCancellationRequested || model !== editorInstance.getModel()) return { items: [] };
+
+        const requestId = ++completeRequestIdRef.current;
+        completeAbortRef.current?.abort();
 
         const offset = model.getOffsetAt(position);
         const fullSource = model.getValue();
@@ -245,21 +271,26 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         // hold a dangling unresolved promise.
         if (completeDebounceRef.current) {
           clearTimeout(completeDebounceRef.current);
-          if (pendingDebounceResolver) {
-            pendingDebounceResolver({ items: [] });
-            pendingDebounceResolver = null;
+          if (completeDebounceResolverRef.current) {
+            completeDebounceResolverRef.current({ items: [] });
+            completeDebounceResolverRef.current = null;
           }
         }
 
         return new Promise((resolve) => {
-          pendingDebounceResolver = resolve as (v: { items: [] }) => void;
+          completeDebounceResolverRef.current = resolve as (v: { items: [] }) => void;
 
           completeDebounceRef.current = setTimeout(async () => {
-            pendingDebounceResolver = null;
+            completeDebounceResolverRef.current = null;
+            completeDebounceRef.current = null;
+
+            if (token.isCancellationRequested || requestId !== completeRequestIdRef.current) {
+              resolve({ items: [] });
+              return;
+            }
 
             if (completeAbortRef.current) completeAbortRef.current.abort();
 
-            const requestId = ++completeRequestIdRef.current;
             const abortCtrl = new AbortController();
             completeAbortRef.current = abortCtrl;
             const modelVersion = model.getVersionId();
@@ -277,16 +308,23 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                 signal: abortCtrl.signal,
               });
 
-              if (!res.ok || requestId !== completeRequestIdRef.current) { resolve({ items: [] }); return; }
+              if (!res.ok || token.isCancellationRequested || requestId !== completeRequestIdRef.current) {
+                if (!token.isCancellationRequested && requestId === completeRequestIdRef.current &&
+                    (res.status === 429 || res.status >= 500) && !autocompleteNoticeShownRef.current) {
+                  autocompleteNoticeShownRef.current = true;
+                  setAutocompleteNotice(res.status === 429 ? 'AI completion rate limit reached' : 'AI completion unavailable');
+                }
+                resolve({ items: [] }); return;
+              }
 
               const data = await res.json();
-              if (!data.insertion || requestId !== completeRequestIdRef.current) { resolve({ items: [] }); return; }
+              if (!data.insertion || token.isCancellationRequested || requestId !== completeRequestIdRef.current) { resolve({ items: [] }); return; }
 
               const curPos = editorInstance.getPosition();
               if (model.getVersionId() !== modelVersion ||
                   curPos?.lineNumber !== position.lineNumber ||
                   curPos?.column !== position.column ||
-                  proposalRef.current) {
+                  proposalRef.current || !autocompleteEnabledRef.current || editorInstance.getModel() !== model) {
                 resolve({ items: [] }); return;
               }
 
@@ -296,7 +334,13 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
               resolve({
                 items: [{ insertText: insertion, range: { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: position.column, endColumn: position.column } }],
               });
-            } catch { resolve({ items: [] }); }
+            } catch (error: unknown) {
+              if (!(error instanceof Error && error.name === 'AbortError') && !autocompleteNoticeShownRef.current) {
+                autocompleteNoticeShownRef.current = true;
+                setAutocompleteNotice('AI completion unavailable');
+              }
+              resolve({ items: [] });
+            }
           }, 400);
         });
       },
@@ -305,16 +349,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
     completeProviderDisposableRef.current = provider;
   }, [documentId]);
-
-  // Cleanup provider on unmount
-  useEffect(() => {
-    return () => {
-      if (completeProviderDisposableRef.current) {
-        completeProviderDisposableRef.current.dispose();
-        completeProviderDisposableRef.current = null;
-      }
-    };
-  }, []);
 
   // --- Paraphrase action ---
   const handleParaphrase = useCallback(async (tone: string = 'Clearer') => {
@@ -340,8 +374,8 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     // Context analysis
     const ctx = scanContext(model.getValue(), startOffset);
     const analysis = analyzeSelection(selectedText, ctx);
-    if (!analysis.eligible) {
-      setParaphraseDisabledReason(analysis.reason || 'Selection not eligible for paraphrase');
+    if (!analysis.eligible || selectionCutsWord(model.getValue().slice(0, startOffset), selectedText, model.getValue().slice(endOffset))) {
+      setParaphraseDisabledReason(analysis.reason || 'Select complete words');
       return;
     }
 
@@ -350,7 +384,12 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     const before = fullText.slice(Math.max(0, startOffset - 1000), startOffset);
     const after = fullText.slice(endOffset, endOffset + 1000);
     const modelVersion = model.getVersionId();
-    lastModelVersionRef.current = modelVersion;
+
+    paraphraseAbortRef.current?.abort();
+    const requestId = ++paraphraseRequestIdRef.current;
+    const controller = new AbortController();
+    paraphraseAbortRef.current = controller;
+    setProposal(null);
 
     setIsAiLoading(true);
     setAiError(null);
@@ -369,18 +408,21 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           documentId,
-          selectedText: analysis.maskedSelection || selectedText,
+          selectedText,
           before,
           after,
           tone,
-          requestId: generateProposalId(),
+          requestId: String(requestId),
         }),
+        signal: controller.signal,
       });
 
       contentChangeListener.dispose();
 
       // If user edited while we were waiting, discard
-      if (pendingParaphraseStaleRef.current) {
+      if (requestId !== paraphraseRequestIdRef.current ||
+          pendingParaphraseStaleRef.current ||
+          editor.getModel() !== model || model.getVersionId() !== modelVersion) {
         setAiError('Response discarded — document was edited while AI was working');
         setIsAiLoading(false);
         return;
@@ -404,18 +446,11 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         return;
       }
 
-      let replacementText = data.replacementText;
-
-      // If we used masking, restore protected tokens
-      if (analysis.protectedTokens.length > 0) {
-        const { verifyAndRestore } = await import('@/src/lib/latex-utils');
-        const result = verifyAndRestore(analysis.maskedSelection, replacementText, analysis.protectedTokens);
-        if (!result.success) {
-          setAiError(result.reason);
-          setIsAiLoading(false);
-          return;
-        }
-        replacementText = result.restored;
+      const replacementText = data.replacementText;
+      if (typeof replacementText !== 'string' || replacementText.length > 12_000) {
+        setAiError('Invalid AI response');
+        setIsAiLoading(false);
+        return;
       }
 
       const prop: EditProposal = {
@@ -434,6 +469,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       setIsAiLoading(false);
     } catch (err: unknown) {
       contentChangeListener.dispose();
+      if (requestId !== paraphraseRequestIdRef.current) return;
       if (err instanceof Error && err.name !== 'AbortError') {
         setAiError('Network error. Please try again.');
       }
@@ -449,6 +485,16 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
     const model = editor.getModel();
     if (!model) return;
+
+    const stale = checkStale(
+      proposal, documentId, model.getVersionId(),
+      model.getValue().slice(proposal.range.startOffset, proposal.range.endOffset),
+    );
+    if (stale.isStale) {
+      setStalenessReason(stale.reason || 'Proposal is stale');
+      setProposal({ ...proposal, state: 'stale' });
+      return;
+    }
 
     // Verify acceptance — check state and original text match
     const fullText = model.getValue();
@@ -496,7 +542,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     setStalenessReason(null);
     setHasUnsavedChanges(true);
     setPdfIsStale(true);
-  }, [proposal]);
+  }, [proposal, documentId]);
 
   // --- Reject proposal ---
   const handleReject = useCallback(() => {
@@ -522,9 +568,10 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       if (!response.ok) throw new Error('Failed to download PDF');
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
+      pdfUrlRef.current = url;
       setPdfUrl(url);
-      setPdfIsStale(false);
+      setPdfIsStale(latestRef.current.content !== compileSourceRef.current);
     } catch (error: unknown) {
       console.error('PDF download error:', error);
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -533,29 +580,32 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       setShowErrorModal(true);
     }
   };
+  downloadPdfRef.current = downloadPDF;
 
   // --- Save ---
   const handleSave = useCallback(async (): Promise<boolean> => {
     setIsSaving(true);
+    const { content: contentToSave, title: titleToSave } = latestRef.current;
 
     try {
       if (slug) {
         const response = await fetch(`/api/document/${slug}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, content: code }),
+          body: JSON.stringify({ title: titleToSave, content: contentToSave }),
         });
         if (!response.ok) {
           const error = await response.json();
           throw new Error(error.message || 'Failed to save document');
         }
-        setHasUnsavedChanges(false);
+        savedSnapshotRef.current = { content: contentToSave, title: titleToSave };
+        setHasUnsavedChanges(latestRef.current.content !== contentToSave || latestRef.current.title !== titleToSave);
         return true;
       } else {
         const response = await fetch('/api/document', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, content: code }),
+          body: JSON.stringify({ title: titleToSave, content: contentToSave }),
         });
         if (!response.ok) {
           const error = await response.json();
@@ -563,7 +613,8 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         }
         const data = await response.json();
         setSlug(data.slug);
-        setHasUnsavedChanges(false);
+        savedSnapshotRef.current = { content: contentToSave, title: titleToSave };
+        setHasUnsavedChanges(latestRef.current.content !== contentToSave || latestRef.current.title !== titleToSave);
         router.push(`/document/${data.slug}`);
         return true;
       }
@@ -576,7 +627,8 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     } finally {
       setIsSaving(false);
     }
-  }, [slug, title, code, router]);
+  }, [slug, router]);
+  saveRef.current = handleSave;
 
   // --- Compile ---
   const handleCompile = async () => {
@@ -591,15 +643,22 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       setStalenessReason(null);
     }
 
-    if (hasUnsavedChanges) {
+    if (latestRef.current.content !== savedSnapshotRef.current.content || latestRef.current.title !== savedSnapshotRef.current.title) {
       setCompilationStatus('Saving changes...');
       const saveSuccess = await handleSave();
       if (!saveSuccess) {
         setCompileError('Failed to save document. Please try saving manually.');
         return;
       }
+      if (latestRef.current.content !== savedSnapshotRef.current.content || latestRef.current.title !== savedSnapshotRef.current.title) {
+        setCompileError('Source changed while saving. Please recompile.');
+        setCompilationStatus('');
+        return;
+      }
       setCompileError(null);
     }
+
+    compileSourceRef.current = savedSnapshotRef.current.content;
 
     setIsCompiling(true);
     setCompileError(null);
@@ -640,7 +699,8 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   // --- Download handler ---
   const handleDownload = async () => {
     if (!pdfUrl) {
-      alert('Please compile the document first');
+      setErrorModalMessage('Please compile the document first');
+      setShowErrorModal(true);
       return;
     }
     const link = document.createElement('a');
@@ -656,6 +716,17 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     setTitle(newTitle);
     setShowTitleModal(false);
   };
+
+  const handleOutlineSelect = useCallback((node: { lineNumber: number }) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    editor.revealLineInCenter(node.lineNumber);
+    editor.setPosition({ lineNumber: node.lineNumber, column: 1 });
+    editor.focus();
+    setCurrentLineNumber(node.lineNumber);
+    setShowFileTree(false);
+  }, []);
 
   // --- Code change from editor ---
   const handleCodeChange = useCallback((newValue: string) => {
@@ -679,16 +750,25 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   // --- Cleanup ---
   useEffect(() => {
+    const paraphraseRequestId = paraphraseRequestIdRef;
     return () => {
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
       if (completeAbortRef.current) completeAbortRef.current.abort();
+      paraphraseAbortRef.current?.abort();
+      paraphraseRequestId.current++;
       if (completeDebounceRef.current) clearTimeout(completeDebounceRef.current);
+      completeDebounceResolverRef.current?.({ items: [] });
+      completeDebounceResolverRef.current = null;
       if (completeProviderDisposableRef.current) {
         completeProviderDisposableRef.current.dispose();
         completeProviderDisposableRef.current = null;
       }
+      selectionListenerRef.current?.dispose();
+      selectionListenerRef.current = null;
+      cursorListenerRef.current?.dispose();
+      cursorListenerRef.current = null;
     };
-  }, [pdfUrl]);
+  }, []);
 
   return (
     <div className="h-screen flex flex-col bg-[#1e1e1e] overflow-hidden">
@@ -711,24 +791,50 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         <FileTree
           isOpen={showFileTree}
           onClose={() => setShowFileTree(false)}
+          files={outline}
+          onFileSelect={handleOutlineSelect}
           onNewFile={() => router.push('/document')}
+          title="Document outline"
+          emptyMessage="Use \\section, \\subsection, or related headings to build a navigable outline."
         />
 
-        <div className="h-full flex">
+        <AiWorkspacePanel
+          isOpen={showSettings}
+          onClose={() => setShowSettings(false)}
+          autocompleteEnabled={autocompleteEnabled}
+          onAutocompleteEnabledChange={(enabled) => setAutocompleteEnabled(enabled)}
+          onParaphrase={handleParaphrase}
+          paraphraseDisabledReason={paraphraseDisabledReason}
+          isAiLoading={isAiLoading}
+          aiError={aiError}
+          autocompleteNotice={autocompleteNotice}
+          hasProposal={!!proposal}
+          lastTone={lastToneRef.current}
+          pdfIsStale={pdfIsStale}
+          hasPdf={!!pdfUrl}
+          hasUnsavedChanges={hasUnsavedChanges}
+          onCompile={handleCompile}
+          onSave={() => { void handleSave(); }}
+          onDownloadPdf={() => { void handleDownload(); }}
+        />
+
+        <div className={`h-full flex transition-[padding] duration-300 ${showSettings ? 'pr-80 max-[500px]:pr-[90vw]' : ''}`}>
           {(viewMode === 'editor' || viewMode === 'split') && (
-            <div className={`${viewMode === 'split' ? 'w-1/2' : 'w-full'} border-r border-[#3e3e3e] flex flex-col`}>
+            <div className={`${viewMode === 'split' ? 'w-full md:w-1/2' : 'w-full'} border-r border-[#3e3e3e] flex flex-col`}>
               {/* AI Toolbar */}
-              <div className="h-10 bg-[#2d2d2d] border-b border-[#3e3e3e] flex items-center px-3 gap-2 shrink-0">
+              <div className="min-h-10 bg-[#2d2d2d] border-b border-[#3e3e3e] flex flex-wrap items-center px-3 py-1 gap-2 shrink-0">
+                <span title={paraphraseDisabledReason || 'Paraphrase selection'}>
                 <Button
                   variant="secondary"
                   size="sm"
                   onClick={() => handleParaphrase('Clearer')}
-                  disabled={isAiLoading}
+                  disabled={isAiLoading || !!proposal || !!paraphraseDisabledReason}
                   icon={<Wand2 className="w-3.5 h-3.5" />}
                   title={paraphraseDisabledReason || 'Paraphrase selection (Clearer)'}
                 >
                   Paraphrase
                 </Button>
+                </span>
 
                 <div className="h-4 w-px bg-[#3e3e3e]" />
 
@@ -738,7 +844,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                     <button
                       key={t}
                       onClick={() => handleParaphrase(t)}
-                      disabled={isAiLoading}
+                      disabled={isAiLoading || !!proposal || !!paraphraseDisabledReason}
                       className="text-[11px] px-1.5 py-0.5 rounded text-gray-400 hover:text-white hover:bg-[#3e3e3e] transition-colors disabled:opacity-40"
                     >
                       {t}
@@ -756,8 +862,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                   {aiError && !proposal && (
                     <span className="text-xs text-yellow-400">{aiError}</span>
                   )}
+                  {autocompleteNotice && <span role="status" className="text-xs text-yellow-400">{autocompleteNotice}</span>}
 
-                  <label className="flex items-center gap-1.5 text-[11px] text-gray-500 cursor-pointer">
+                  <label className="hidden sm:flex items-center gap-1.5 text-[11px] text-gray-500 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={autocompleteEnabled}
@@ -772,9 +879,10 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
               {/* Editor */}
               <div className="flex-1 overflow-hidden">
                 <MonacoEditorWrapper
+                  key={documentId}
                   value={code}
                   onChange={handleCodeChange}
-                  fileName={`${slug || 'untitled'}.tex`}
+                  fileName={fileName}
                   onEditorReady={handleEditorReady}
                 />
               </div>
@@ -802,13 +910,14 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           )}
 
           {(viewMode === 'preview' || viewMode === 'split') && (
-            <div className={`${viewMode === 'split' ? 'w-1/2' : 'w-full'}`}>
+            <div className={`${viewMode === 'split' ? 'hidden md:block md:w-1/2' : 'w-full'}`}>
               <PDFPreview
                 pdfUrl={pdfUrl}
                 isLoading={isCompiling}
                 onCompile={handleCompile}
                 onDownload={handleDownload}
                 statusMessage={compilationStatus}
+                isStale={pdfIsStale}
               />
             </div>
           )}

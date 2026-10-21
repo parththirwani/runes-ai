@@ -52,15 +52,16 @@ export default function DiffReview({
 
         {/* Diff view */}
         <div className="text-[10px] text-gray-500 uppercase mb-1 font-semibold">Changes</div>
+        <p className="text-[11px] text-gray-400 mb-1">Underlined text is added. Struck-through text is removed.</p>
         <div className="bg-[#1e1e1e] border border-[#3e3e3e] rounded p-2 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words">
           {diffTokens.length === 0 ? (
             <span className="text-gray-500 italic">No changes</span>
           ) : (
             diffTokens.map((token, i) => {
-              const bg = token.type === 'add' ? 'bg-green-900/40 text-green-300' :
+              const bg = token.type === 'add' ? 'bg-green-900/40 text-green-300 underline' :
                 token.type === 'remove' ? 'bg-red-900/40 text-red-300 line-through' : 'text-gray-300';
               return (
-                <span key={i} className={`${bg} rounded-sm px-0.5`}>
+                <span key={i} className={`${bg} rounded-sm px-0.5`} aria-label={token.type === 'equal' ? undefined : `${token.type === 'add' ? 'Added' : 'Removed'}: ${token.value}`}>
                   {token.value}
                 </span>
               );

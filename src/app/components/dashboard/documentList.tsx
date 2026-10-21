@@ -4,7 +4,7 @@ interface Document {
   id: string;
   title: string;
   slug: string;
-  content: string;
+  content?: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -169,6 +169,7 @@ export default function MonacoEditorWrapper({
 }: MonacoEditorWrapperProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof import('monaco-editor') | null>(null);
+  const snippetProviderRef = useRef<{ dispose(): void } | null>(null);
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -201,7 +202,8 @@ export default function MonacoEditorWrapper({
     }
 
     // Register snippet completion provider
-    createLatexCompletionProvider(monaco);
+    snippetProviderRef.current?.dispose();
+    snippetProviderRef.current = createLatexCompletionProvider(monaco);
 
     if (onEditorReady) {
       onEditorReady(editorInstance, monaco);
@@ -213,6 +215,11 @@ export default function MonacoEditorWrapper({
       onChange(newValue);
     }
   }, [onChange]);
+
+  useEffect(() => () => {
+    snippetProviderRef.current?.dispose();
+    snippetProviderRef.current = null;
+  }, []);
 
   if (!isMounted) {
     // SSR-safe placeholder
@@ -271,12 +278,4 @@ export default function MonacoEditorWrapper({
       />
     </div>
   );
-}
-
-// Export helpers for use by DocumentEditor
-export function getEditorApi() {
-  return {
-    getEditor: () => null as editor.IStandaloneCodeEditor | null,
-    getMonaco: () => null as typeof import('monaco-editor') | null,
-  };
 }

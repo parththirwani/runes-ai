@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: runes
       POSTGRES_PASSWORD: runes
@@ -17,6 +18,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     healthcheck:
@@ -25,5 +27,49 @@ services:
       timeout: 3s
       retries: 10
 
+  tectonic:
+    image: dxjoke/tectonic-docker:latest
+    container_name: runes-ai-tectonic
+    restart: unless-stopped
+    entrypoint: ["tail", "-f", "/dev/null"]
+    working_dir: /workspace
+    volumes:
+      - latex-temp:/workspace/temp
+    healthcheck:
+      test: ["CMD", "tectonic", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      tectonic:
+        condition: service_healthy
+    working_dir: /workspace
+    environment:
+      NODE_ENV: development
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      WORKER_PORT: 3001
+      TECTONIC_CONTAINER_NAME: runes-ai-tectonic
+    ports:
+      - "3001:3001"
+    volumes:
+      - latex-temp:/workspace/temp
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3001/health').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   pgdata:
+  latex-temp:

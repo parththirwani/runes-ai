@@ -109,7 +109,7 @@ export const PUT = withAuth(async (req, session, context) => {
     const { title, content } = parsedData.data;
 
     // Single update with only provided fields
-    const updateData: any = {};
+    const updateData: { title?: string; content?: string } = {};
     if (title !== undefined) updateData.title = title;
     if (content !== undefined) updateData.content = content;
 
@@ -267,12 +267,12 @@ export const POST = withAuth(async (req, session, context) => {
       }
     );
 
-  } catch (error: any) {
-    console.error("[PDF_COMPILE_ERROR]", error);
+  } catch {
+    console.error("[PDF_COMPILE_ERROR] Request failed");
     return NextResponse.json(
       { 
         message: "Failed to queue compilation",
-        error: error.message || "Internal server error"
+        error: "Internal server error"
       },
       { status: 500 }
     );

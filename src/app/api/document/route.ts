@@ -3,9 +3,10 @@ import { generateSlug } from "@/src/lib/slug";
 import { withAuth } from "@/src/lib/withAuth";
 import { documentSchema } from "@/src/schema/documentSchema";
 import { NextResponse } from "next/server";
+import type { ZodError } from 'zod';
 
-function formatZodError(error: any) {
-  return error.issues.map((e: any) => ({
+function formatZodError(error: ZodError) {
+  return error.issues.map((e) => ({
     path: e.path.join("."),
     message: e.message,
   }));
@@ -44,16 +45,16 @@ export const POST = withAuth(async (req, session) => {
 
     return NextResponse.json(document, { status: 201 });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Handle unique constraint properly (Prisma error code)
-    if (error.code === "P2002") {
+    if (error instanceof Error && 'code' in error && error.code === "P2002") {
       return NextResponse.json(
         { error: "Document with this title already exists" },
         { status: 409 }
       );
     }
 
-    console.error("[DOCUMENT_POST_ERROR]", error);
+    console.error("[DOCUMENT_POST_ERROR] Request failed");
 
     return NextResponse.json(
       { error: "Internal server error" },
@@ -74,6 +75,7 @@ export const GET = withAuth(async (_req, session) => {
         id: true,
         title: true,
         slug: true,
+        content: true,
         createdAt: true,
         updatedAt: true,
       }, // avoid sending full content unnecessarily

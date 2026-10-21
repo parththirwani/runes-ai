@@ -1,0 +1,15 @@
+.git
+.github
+.next
+.codex
+.cora
+.agents
+.aws
+node_modules
+temp
+coverage
+dist
+dist-worker
+*.log
+tsconfig.tsbuildinfo
+.env

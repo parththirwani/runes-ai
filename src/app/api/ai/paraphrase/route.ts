@@ -2,39 +2,23 @@ import { NextResponse } from 'next/server';
 import { withAuth } from '@/src/lib/withAuth';
 import { prisma } from '@/src/lib/db';
 import { z } from 'zod';
-
-// Rate limiter for AI endpoints — simplified per-user sliding window
-const AI_RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
-const AI_RATE_LIMIT_MAX = 20;
-
-const rateLimitMap = new Map<string, number[]>();
-
-function checkAiRateLimit(userId: string): { allowed: boolean; remaining: number; resetAt: number } {
-  const now = Date.now();
-  const windowStart = now - AI_RATE_LIMIT_WINDOW_MS;
-  const entries = rateLimitMap.get(userId) || [];
-  const recent = entries.filter((t: number) => t > windowStart);
-  rateLimitMap.set(userId, recent);
-  const remaining = Math.max(0, AI_RATE_LIMIT_MAX - recent.length);
-  if (recent.length >= AI_RATE_LIMIT_MAX) {
-    const resetAt = (recent[0] || now) + AI_RATE_LIMIT_WINDOW_MS;
-    return { allowed: false, remaining: 0, resetAt };
-  }
-  recent.push(now);
-  return { allowed: true, remaining, resetAt: now + AI_RATE_LIMIT_WINDOW_MS };
-}
+import { acquireAiSlot, checkAiRateLimit } from '@/src/lib/ai-rate-limit';
+import { analyzeSelection, selectionCutsWord, verifyAndRestore } from '@/src/lib/latex-utils';
 
 const paraphraseSchema = z.object({
-  documentId: z.string().min(1, 'documentId is required'),
+  documentId: z.string().min(1, 'documentId is required').max(128),
   selectedText: z.string().min(1, 'selectedText is required').max(10_000),
-  before: z.string().max(3_000).default(''),
-  after: z.string().max(3_000).default(''),
+  before: z.string().max(1_000).default(''),
+  after: z.string().max(1_000).default(''),
   tone: z.enum(['Clearer', 'Shorter', 'Formal']).default('Clearer'),
-  requestId: z.string().optional(),
+  requestId: z.string().max(128).optional(),
 });
 
 export const POST = withAuth(async (req, session) => {
   try {
+    if (Number(req.headers.get('content-length')) > 20_000) {
+      return NextResponse.json({ error: 'Request too large' }, { status: 413 });
+    }
     const body = await req.json();
     const parsed = paraphraseSchema.safeParse(body);
     if (!parsed.success) {
@@ -45,11 +29,11 @@ export const POST = withAuth(async (req, session) => {
     const userId = session.user.id;
 
     // Rate limit check (Redis fallback if offline)
-    const rl = checkAiRateLimit(userId);
+    const rl = await checkAiRateLimit(userId, 'paraphrase');
     if (!rl.allowed) {
       return NextResponse.json({ error: 'Rate limit exceeded. Try again shortly.' }, {
         status: 429,
-        headers: { 'X-RateLimit-Reset': rl.resetAt.toString(), 'Retry-After': Math.ceil((rl.resetAt - Date.now()) / 1000).toString() },
+        headers: { 'Retry-After': String(rl.retryAfter) },
       });
     }
 
@@ -60,6 +44,17 @@ export const POST = withAuth(async (req, session) => {
     });
     if (!doc) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+    }
+
+    if (selectionCutsWord(before, selectedText, after)) {
+      return NextResponse.json({ error: 'Select complete words' }, { status: 422 });
+    }
+    const analysis = analyzeSelection(selectedText, {
+      isInDocument: true, isInPreamble: false, isInComment: false,
+      isInMath: false, isInVerbatim: false, isInCommandName: false, isInCommandArg: false,
+    });
+    if (!analysis.eligible) {
+      return NextResponse.json({ error: analysis.reason || 'Unsupported selection' }, { status: 422 });
     }
 
     // Build prompt
@@ -74,7 +69,7 @@ export const POST = withAuth(async (req, session) => {
 ${toneInstruction}
 
 Selected text to paraphrase:
-"""${selectedText}"""
+"""${analysis.maskedSelection}"""
 
 Context before the selection:
 """${before}"""
@@ -94,7 +89,11 @@ Rules:
       return NextResponse.json({ error: 'AI provider not configured', replacementText: null, explanation: '' }, { status: 503 });
     }
 
-    const aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const releaseSlot = await acquireAiSlot(userId, 'paraphrase');
+    if (!releaseSlot) return NextResponse.json({ error: 'AI request already in progress' }, { status: 429, headers: { 'Retry-After': '1' } });
+    let aiResponse: Response;
+    try {
+      aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -112,48 +111,57 @@ Rules:
         temperature: 0.5,
       }),
       signal: AbortSignal.timeout(15_000),
-    });
+      });
+    } finally {
+      await releaseSlot();
+    }
 
     if (!aiResponse.ok) {
-      const errText = await aiResponse.text().catch(() => 'Unknown AI error');
-      console.error('[AI_PARAPHRASE] Provider error:', aiResponse.status, errText.slice(0, 200));
+      console.error('[AI_PARAPHRASE] Provider status:', aiResponse.status);
       return NextResponse.json({ error: 'AI service error', replacementText: null, explanation: '' }, { status: 502 });
     }
 
     const aiData = await aiResponse.json();
-    const rawText = aiData?.choices?.[0]?.message?.content?.trim() || '';
+    const rawText: unknown = aiData?.choices?.[0]?.message?.content;
 
     // Validate response
-    if (!rawText) {
+    if (typeof rawText !== 'string' || !rawText.trim()) {
       return NextResponse.json({ error: 'Empty AI response', replacementText: null, explanation: '' }, { status: 502 });
     }
 
     // Check for no-op
-    if (rawText === selectedText.trim()) {
+    if (rawText === analysis.maskedSelection) {
       return NextResponse.json({ replacementText: null, explanation: 'No change suggested', noop: true }, { status: 200 });
     }
 
     // Validate against dangerous content
-    if (/\\documentclass|\\begin\{document\}|\\end\{document\}|\\input\{|\\include\{|\\usepackage\{/.test(rawText)) {
-      return NextResponse.json({ error: 'AI response contains invalid LaTeX structure commands', replacementText: null, explanation: '' }, { status: 422 });
-    }
-
     // Check response isn't drastically different in size
-    if (rawText.length > selectedText.length * 5) {
+    if (rawText.length > Math.min(12_000, selectedText.length * 5 + 100)) {
       return NextResponse.json({ error: 'AI response too large', replacementText: null, explanation: '' }, { status: 422 });
     }
 
+    const restored = verifyAndRestore(analysis.maskedSelection, rawText, analysis.protectedTokens);
+    if (!restored.success) {
+      return NextResponse.json({ error: 'AI response changed protected LaTeX' }, { status: 422 });
+    }
+    if (restored.restored === selectedText) {
+      return NextResponse.json({ replacementText: null, explanation: 'No change suggested', noop: true });
+    }
+
     return NextResponse.json({
-      replacementText: rawText,
+      replacementText: restored.restored,
       explanation: null,
       noop: false,
     }, { status: 200 });
 
-  } catch (error: any) {
-    if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {
+  } catch (error: unknown) {
+    if (error instanceof SyntaxError) {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+    }
+    if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
       return NextResponse.json({ error: 'AI request timed out', replacementText: null, explanation: '' }, { status: 504 });
     }
-    console.error('[AI_PARAPHRASE] Error:', error?.message || error);
+    console.error('[AI_PARAPHRASE] Request failed');
     return NextResponse.json({ error: 'Internal server error', replacementText: null, explanation: '' }, { status: 500 });
   }
 });

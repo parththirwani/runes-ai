@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { verifyDevSession } from '@/src/lib/dev-session';
 
 // Dev-mode auth middleware: when a valid dev-session cookie is present,
 // rewrite the session response to include the dev user.
@@ -14,16 +15,8 @@ export async function middleware(req: NextRequest) {
 
   // Intercept NextAuth session endpoint
   if (url === "/api/auth/session") {
-    const devCookie =
-      req.cookies.get("dev-session")?.value ||
-      req.cookies.get("dev-session-readable")?.value;
-
-    if (devCookie) {
-      try {
-        const payload = JSON.parse(
-          Buffer.from(devCookie, "base64url").toString()
-        );
-        if (payload.id) {
+    const payload = await verifyDevSession(req.cookies.get('dev-session')?.value);
+    if (payload) {
           // Return a fake session response
           return NextResponse.json({
             user: {
@@ -34,10 +27,6 @@ export async function middleware(req: NextRequest) {
             },
             expires: new Date(Date.now() + 86400000).toISOString(),
           });
-        }
-      } catch {
-        // Invalid cookie — pass through
-      }
     }
   }
 

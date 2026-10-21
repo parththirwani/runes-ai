@@ -3,9 +3,10 @@ import { chatSchema } from "@/src/schema/chatSchema";
 import { prisma } from "@/src/lib/db";
 import { ChatCompletion, DiffResponse } from "@/src/lib/openrouter";
 import { auth } from "@/src/lib/auth";
+import type { ZodError } from 'zod';
 
-function formatZodError(error: any) {
-  return error.issues.map((e: any) => ({
+function formatZodError(error: ZodError) {
+  return error.issues.map((e) => ({
     path: e.path.join("."),
     message: e.message,
   }));
@@ -49,10 +50,10 @@ export async function POST(req: NextRequest) {
     );
 
     return NextResponse.json({ data: diffResponse }, { status: 200 });
-  } catch (error) {
-    console.error("[CHAT_API_ERROR]", error);
+  } catch {
+    console.error("[CHAT_API_ERROR] Request failed");
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal server error" },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }

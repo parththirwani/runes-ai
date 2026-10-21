@@ -2,36 +2,21 @@ import { NextResponse } from 'next/server';
 import { withAuth } from '@/src/lib/withAuth';
 import { prisma } from '@/src/lib/db';
 import { z } from 'zod';
+import { acquireAiSlot, checkAiRateLimit } from '@/src/lib/ai-rate-limit';
+import { filterCompletion } from '@/src/lib/latex-utils';
 
 const completeSchema = z.object({
-  documentId: z.string().min(1),
-  prefix: z.string().max(5_000),
-  suffix: z.string().max(5_000),
-  requestId: z.string().optional(),
+  documentId: z.string().min(1).max(128),
+  prefix: z.string().max(2_000),
+  suffix: z.string().max(1_000),
+  requestId: z.string().max(128).optional(),
 });
-
-// In-memory rate limit (same pattern as paraphrase)
-const RL_WINDOW_MS = 60_000;
-const RL_MAX = 60;
-const rateLimitMap = new Map<string, number[]>();
-
-function checkRateLimit(userId: string): { allowed: boolean; remaining: number; resetAt: number } {
-  const now = Date.now();
-  const windowStart = now - RL_WINDOW_MS;
-  const entries = rateLimitMap.get(userId) || [];
-  const recent = entries.filter((t: number) => t > windowStart);
-  rateLimitMap.set(userId, recent);
-  const remaining = Math.max(0, RL_MAX - recent.length);
-  if (recent.length >= RL_MAX) {
-    const resetAt = (recent[0] || now) + RL_WINDOW_MS;
-    return { allowed: false, remaining: 0, resetAt };
-  }
-  recent.push(now);
-  return { allowed: true, remaining, resetAt: now + RL_WINDOW_MS };
-}
 
 export const POST = withAuth(async (req, session) => {
   try {
+    if (Number(req.headers.get('content-length')) > 8_000) {
+      return NextResponse.json({ error: 'Request too large' }, { status: 413 });
+    }
     const body = await req.json();
     const parsed = completeSchema.safeParse(body);
     if (!parsed.success) {
@@ -42,11 +27,11 @@ export const POST = withAuth(async (req, session) => {
     const userId = session.user.id;
 
     // Rate limit
-    const rl = checkRateLimit(userId);
+    const rl = await checkAiRateLimit(userId, 'complete');
     if (!rl.allowed) {
       return NextResponse.json({ error: 'Rate limit exceeded' }, {
         status: 429,
-        headers: { 'Retry-After': Math.ceil((rl.resetAt - Date.now()) / 1000).toString() },
+        headers: { 'Retry-After': String(rl.retryAfter) },
       });
     }
 
@@ -67,7 +52,7 @@ export const POST = withAuth(async (req, session) => {
     // Call AI
     const openRouterKey = process.env.OPENROUTER_API_KEY;
     if (!openRouterKey) {
-      return NextResponse.json({ insertion: null }, { status: 200 }); // quiet failure
+      return NextResponse.json({ insertion: null, error: 'AI completion unavailable' }, { status: 503 });
     }
 
     const lastLine = prefix.split('\n').pop() || '';
@@ -91,7 +76,11 @@ Rules:
 - Do NOT output LaTeX commands like \\section or \\begin.
 - Return only the addition.`;
 
-    const aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const releaseSlot = await acquireAiSlot(userId, 'complete');
+    if (!releaseSlot) return NextResponse.json({ insertion: null }, { status: 429, headers: { 'Retry-After': '1' } });
+    let aiResponse: Response;
+    try {
+      aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -108,31 +97,34 @@ Rules:
         temperature: 0.4,
       }),
       signal: AbortSignal.timeout(10_000),
-    });
+      });
+    } finally {
+      await releaseSlot();
+    }
 
     if (!aiResponse.ok) {
       console.error('[AI_COMPLETE] Provider error:', aiResponse.status);
-      return NextResponse.json({ insertion: null }, { status: 200 }); // quiet failure
+      return NextResponse.json({ insertion: null, error: 'AI completion unavailable' }, { status: 502 });
     }
 
     const aiData = await aiResponse.json();
-    let insertion = (aiData?.choices?.[0]?.message?.content || '').trim();
+    const insertion: unknown = aiData?.choices?.[0]?.message?.content;
 
     // Filter
-    if (!insertion || insertion.length > 200) {
-      return NextResponse.json({ insertion: null }, { status: 200 });
-    }
-    if (/\\documentclass|\\begin\{|\\end\{|\\input\{|\\include\{/.test(insertion)) {
+    if (typeof insertion !== 'string' || !filterCompletion(insertion, prefix).accepted) {
       return NextResponse.json({ insertion: null }, { status: 200 });
     }
 
     return NextResponse.json({ insertion }, { status: 200 });
 
-  } catch (error: any) {
-    if (error?.name === 'AbortError') {
-      return NextResponse.json({ insertion: null }, { status: 200 });
+  } catch (error: unknown) {
+    if (error instanceof SyntaxError) {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
     }
-    console.error('[AI_COMPLETE] Error:', error?.message || error);
-    return NextResponse.json({ insertion: null }, { status: 200 });
+    if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      return NextResponse.json({ insertion: null, error: 'AI completion timed out' }, { status: 504 });
+    }
+    console.error('[AI_COMPLETE] Request failed');
+    return NextResponse.json({ insertion: null, error: 'AI completion unavailable' }, { status: 502 });
   }
 });

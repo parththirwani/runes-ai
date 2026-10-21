@@ -1,4 +1,4 @@
-import { Menu, FileText, Save, Play, Settings, Edit2 } from 'lucide-react';
+import { Menu, FileText, Save, Play, Sparkles, Edit2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Button from '../design/Button';
@@ -39,9 +39,9 @@ export default function TopNavBar({
   const router = useRouter();
 
   return (
-    <div className="h-14 bg-[#2d2d2d] border-b border-[#3e3e3e] flex items-center justify-between px-4 relative z-30">
+    <div className="min-h-14 bg-[#2d2d2d] border-b border-[#3e3e3e] flex flex-wrap items-center justify-between gap-2 px-4 py-2 relative z-30 shrink-0">
       {/* Left Section */}
-      <div className="flex items-center gap-4">
+      <div className="flex min-w-0 flex-wrap items-center gap-4">
         <IconButton
           icon={<Menu className="w-5 h-5" />}
           onClick={onMenuToggle}
@@ -49,17 +49,17 @@ export default function TopNavBar({
           className="cursor-pointer"
         />
         
-        <div className="flex items-center gap-2">
+        <div className="hidden sm:flex items-center gap-2">
           <button
             onClick={() => router.push('/document')}
-            className="flex gap-2 hover:opacity-80 transition-opacity cursor-pointer w-48"
+            className="flex h-8 w-48 items-center overflow-hidden hover:opacity-80 transition-opacity cursor-pointer"
           >
             <Image
               src="/logo.png"
               alt="RunesAI Logo"
               width={200}
               height={32}
-              className="object-contain"
+              className="h-8 w-full object-contain"
             />
           </button>
         </div>
@@ -83,7 +83,7 @@ export default function TopNavBar({
       </div>
 
       {/* Right Section */}
-      <div className="flex items-center gap-2">
+      <div className="flex max-w-full flex-wrap items-center gap-2">
         <ViewModeToggle value={viewMode} onChange={onViewModeChange} />
         
         <div className="h-6 w-px bg-[#3e3e3e]" />
@@ -110,8 +110,8 @@ export default function TopNavBar({
         </Button>
 
         <IconButton
-          icon={<Settings className="w-5 h-5" />}
-          tooltip="Settings"
+          icon={<Sparkles className="w-5 h-5" />}
+          tooltip="AI workspace"
           onClick={onSettingsToggle}
           className="cursor-pointer"
         />

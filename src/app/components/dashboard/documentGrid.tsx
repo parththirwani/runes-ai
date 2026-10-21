@@ -4,7 +4,7 @@ interface Document {
   id: string;
   title: string;
   slug: string;
-  content: string;
+  content?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -20,6 +20,15 @@ export default function DocumentGrid({
   onDocumentClick,
   onDocumentDelete
 }: DocumentGridProps) {
+  const getPreview = (content?: string | null) => {
+    const preview = (content ?? '')
+      .replace(/\\[a-zA-Z]+(\{[^}]*\})?/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return preview.length > 0 ? `${preview.substring(0, 80)}...` : 'No preview available.';
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -62,7 +71,7 @@ export default function DocumentGrid({
           </h3>
           
           <p className="text-sm text-gray-500 line-clamp-2 mb-4 leading-relaxed">
-            {doc.content.replace(/\\[a-zA-Z]+(\{[^}]*\})?/g, '').substring(0, 80)}...
+            {getPreview(doc.content)}
           </p>
           
           <div className="flex items-center gap-2 text-xs text-gray-600">

@@ -35,11 +35,24 @@ export type DiffToken = {
 };
 
 export function computeDiff(original: string, replacement: string): DiffToken[] {
-  const changes = diffWordsWithSpace(original, replacement);
-  return changes.map((part) => ({
-    value: part.value,
-    type: part.added ? 'add' as const : part.removed ? 'remove' as const : 'equal' as const,
-  }));
+  if (original.length + replacement.length > 10_000) {
+    return [
+      ...(original ? [{ value: original, type: 'remove' as const }] : []),
+      ...(replacement ? [{ value: replacement, type: 'add' as const }] : []),
+    ];
+  }
+  try {
+    const changes = diffWordsWithSpace(original, replacement);
+    return changes.map((part) => ({
+      value: part.value,
+      type: part.added ? 'add' as const : part.removed ? 'remove' as const : 'equal' as const,
+    }));
+  } catch {
+    return [
+      ...(original ? [{ value: original, type: 'remove' as const }] : []),
+      ...(replacement ? [{ value: replacement, type: 'add' as const }] : []),
+    ];
+  }
 }
 
 // -------------------------------------------------------------------------
@@ -99,8 +112,17 @@ export function verifyAcceptance(
     return { applied: false, reason: `Proposal was already ${proposal.state}` };
   }
 
+  // Reject malformed ranges before slicing. Without this check, a negative or
+  // inverted range can accidentally pass when originalText is empty (or when
+  // String#slice normalizes the offsets in an unexpected way).
+  const { startOffset, endOffset } = proposal.range;
+  if (!Number.isSafeInteger(startOffset) || !Number.isSafeInteger(endOffset) ||
+      startOffset < 0 || endOffset < startOffset || endOffset > currentFullText.length) {
+    return { applied: false, reason: 'Proposal range is invalid for the current document' };
+  }
+
   // Verify the original text is still at the specified range
-  const actualText = currentFullText.slice(proposal.range.startOffset, proposal.range.endOffset);
+  const actualText = currentFullText.slice(startOffset, endOffset);
   if (actualText !== proposal.originalText) {
     return { applied: false, reason: 'The selected text no longer matches the original — the document was edited' };
   }

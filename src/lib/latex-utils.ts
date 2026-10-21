@@ -22,6 +22,7 @@ const PROTECTED_PATTERNS: RegExp[] = [
   /\\\[[\s\S]*?\\\]/g,
   /\\begin\{([^}]+)\}[\s\S]*?\\end\{\1\}/g,
   /\\(?:[a-zA-Z]+)(?:\{[^}]*\})?/g,
+  /\\[%_&#$~^{}\\]/g,
 ];
 
 // -- Helpers ----------------------------------------------------------------
@@ -73,17 +74,18 @@ const documentEnd   = /\\end\{document\}/;
 
 export function scanContext(fullSource: string, offset: number): ScanContext {
   const before = fullSource.slice(0, offset);
+  const uncommentedBefore = stripComments(before);
 
   // Comment detection
   const lastNewline = before.lastIndexOf('\n');
   const lineUpToCursor = before.slice(lastNewline + 1);
   // Check if there's an unescaped % on this line up to the cursor.
   // Escaped \% is not a comment start.
-  const commentIdx = lineUpToCursor.search(/(?<!\\)%/);
+  const commentIdx = findCommentStart(lineUpToCursor);
   const atPercent = offset < fullSource.length && fullSource[offset] === '%';
-  // Only treat cursor-on-% as comment if the % is not escaped
+  // A percent is escaped only by an odd number of preceding backslashes.
   const inComment = commentIdx >= 0 ||
-    (atPercent && !(offset > 0 && fullSource[offset - 1] === '\\'));
+    (atPercent && findCommentStart(fullSource.slice(lastNewline + 1, offset + 1)) >= 0);
 
   // Preamble detection
   const docStart = fullSource.match(documentBegin);
@@ -98,12 +100,12 @@ export function scanContext(fullSource: string, offset: number): ScanContext {
   const inPreamble = !inDocument;
 
   // Environment stack
-  const envStack = scanEnvStack(fullSource, offset);
+  const envStack = scanEnvStack(uncommentedBefore, uncommentedBefore.length);
   const inMathEnv = envStack.some(e => MATH_ENV_NAMES.has(e));
   const inVerbatim = envStack.some(e => VERBATIM_ENV_NAMES.has(e));
 
   // Inline/display math via $...$ / $$...$$ delimiters (not caught by env stack)
-  const inMathDelim = scanMathDelimiters(before);
+  const inMathDelim = scanMathDelimiters(stripVerbatimContent(uncommentedBefore));
   const isInMath = inMathEnv || inMathDelim;
 
   // Command name check
@@ -113,6 +115,38 @@ export function scanContext(fullSource: string, offset: number): ScanContext {
   const inCommandArg = checkCommandArg(before);
 
   return { isInDocument: inDocument && !pastDocEnd, isInPreamble: inPreamble, isInComment: inComment, isInMath, isInVerbatim: inVerbatim, isInCommandName: inCommandName, isInCommandArg: inCommandArg };
+}
+
+function findCommentStart(line: string): number {
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] !== '%') continue;
+    let slashes = 0;
+    for (let j = i - 1; j >= 0 && line[j] === '\\'; j--) slashes++;
+    if (slashes % 2 === 0) return i;
+  }
+  return -1;
+}
+
+function stripComments(source: string): string {
+  return source.split('\n').map(line => {
+    const index = findCommentStart(line);
+    return index < 0 ? line : line.slice(0, index) + ' '.repeat(line.length - index);
+  }).join('\n');
+}
+
+function stripVerbatimContent(source: string): string {
+  for (const name of VERBATIM_ENV_NAMES) {
+    const begin = `\\begin{${name}}`;
+    const end = `\\end{${name}}`;
+    let start = source.indexOf(begin);
+    while (start >= 0) {
+      const close = source.indexOf(end, start + begin.length);
+      const stop = close < 0 ? source.length : close + end.length;
+      source = source.slice(0, start) + ' '.repeat(stop - start) + source.slice(stop);
+      start = source.indexOf(begin, stop);
+    }
+  }
+  return source;
 }
 
 function scanEnvStack(source: string, offset: number): string[] {
@@ -133,6 +167,8 @@ function scanEnvStack(source: string, offset: number): string[] {
   tokens.sort((a, b) => a.pos - b.pos);
 
   for (const t of tokens) {
+    const current = stack[stack.length - 1];
+    if (current && VERBATIM_ENV_NAMES.has(current) && (t.kind !== 'end' || t.name !== current)) continue;
     if (t.kind === 'begin') stack.push(t.name);
     else {
       const idx = stack.lastIndexOf(t.name);
@@ -143,21 +179,19 @@ function scanEnvStack(source: string, offset: number): string[] {
 }
 
 function checkCommandArg(before: string): boolean {
-  const trimmed = before.replace(/\s+$/, '');
-  if (trimmed.endsWith('}')) {
-    // Inside closing braces — check if preceded by a command
-    let depth = 0;
-    for (let i = trimmed.length - 1; i >= 0; i--) {
-      if (trimmed[i] === '}') depth++;
-      else if (trimmed[i] === '{') {
-        depth--;
-        if (depth === 0) return /\\([a-zA-Z]+)\s*\{[^}]*$/.test(trimmed.slice(0, i + 1));
-      }
+  let braces = 0;
+  let brackets = 0;
+  for (let i = before.length - 1; i >= 0; i--) {
+    const char = before[i];
+    if (char === '}') braces++;
+    else if (char === ']') brackets++;
+    else if (char === '{') {
+      if (braces > 0) braces--;
+      else if (/\\[a-zA-Z]+\*?\s*$/.test(before.slice(0, i))) return true;
+    } else if (char === '[') {
+      if (brackets > 0) brackets--;
+      else if (/\\[a-zA-Z]+\*?\s*$/.test(before.slice(0, i))) return true;
     }
-  }
-  // Also check if we just opened a command brace (ends with '{')
-  if (trimmed.endsWith('{')) {
-    return /\\([a-zA-Z]+)\s*\{$/.test(trimmed);
   }
   return false;
 }
@@ -170,6 +204,12 @@ export type SelectionAnalysis = {
   protectedTokens: { placeholder: string; original: string }[];
   maskedSelection: string;
 };
+
+export function selectionCutsWord(before: string, selected: string, after: string): boolean {
+  const word = /[\p{L}\p{N}]/u;
+  return (word.test(before.slice(-1)) && word.test(selected.slice(0, 1))) ||
+    (word.test(selected.slice(-1)) && word.test(after.slice(0, 1)));
+}
 
 const PLACEHOLDER_PREFIX = '@@PROTECTED_';
 
@@ -192,12 +232,22 @@ export function analyzeSelection(selectedText: string, context: ScanContext): Se
   if (context.isInCommandName || context.isInCommandArg) {
     return { eligible: false, reason: 'Selection includes or is inside a LaTeX command', protectedTokens: [], maskedSelection: '' };
   }
+  if (/\\(?:begin|end)\{document\}|\\(?:section|subsection|chapter|part)\b/.test(selectedText)) {
+    return { eligible: false, reason: 'Selection contains a structural LaTeX command', protectedTokens: [], maskedSelection: '' };
+  }
+  if (selectedText.split('\n').some(line => findCommentStart(line) >= 0)) {
+    return { eligible: false, reason: 'Selection contains a LaTeX comment', protectedTokens: [], maskedSelection: '' };
+  }
+  if (selectedText.includes(PLACEHOLDER_PREFIX)) {
+    return { eligible: false, reason: 'Selection contains a reserved placeholder', protectedTokens: [], maskedSelection: '' };
+  }
 
   // Check for unbalanced braces
   let open = 0;
   for (const ch of selectedText) {
     if (ch === '{') open++;
     if (ch === '}') open--;
+    if (open < 0) break;
   }
   if (open !== 0) {
     return { eligible: false, reason: 'Unbalanced braces in selection', protectedTokens: [], maskedSelection: '' };
@@ -215,17 +265,31 @@ export function analyzeSelection(selectedText: string, context: ScanContext): Se
     });
   }
 
+  if (/[{}]/.test(masked)) {
+    return { eligible: false, reason: 'Selection contains unsupported nested braces', protectedTokens: [], maskedSelection: '' };
+  }
+  if (!/[\p{L}\p{N}]/u.test(masked.replace(/@@PROTECTED_\d+__/g, ''))) {
+    return { eligible: false, reason: 'Select prose as well as LaTeX tokens', protectedTokens: [], maskedSelection: '' };
+  }
+
   return { eligible: true, protectedTokens, maskedSelection: masked };
 }
 
 // -- Placeholder restore & verify ------------------------------------------
 
 export function verifyAndRestore(
-  maskedRequest: string,
+  _maskedRequest: string,
   modelResponse: string,
   protectedTokens: { placeholder: string; original: string }[],
 ): { success: true; restored: string } | { success: false; reason: string } {
   let restored = modelResponse;
+
+  if (!modelResponse || /```/.test(modelResponse)) {
+    return { success: false, reason: 'Invalid AI response' };
+  }
+  if (protectedTokens.some(token => /\\(?:input|include|usepackage|write)\b/.test(token.original))) {
+    return { success: false, reason: 'Protected text contains a dangerous LaTeX command' };
+  }
 
   // Check every placeholder appears exactly once
   for (let i = 0; i < protectedTokens.length; i++) {
@@ -238,6 +302,9 @@ export function verifyAndRestore(
 
   // Verify order
   const flatPlaceholders = restored.match(new RegExp(`${escapeRegex(PLACEHOLDER_PREFIX)}\\d+__`, 'g')) || [];
+  if (flatPlaceholders.length !== protectedTokens.length) {
+    return { success: false, reason: 'Unexpected protected placeholder' };
+  }
   for (let i = 0; i < flatPlaceholders.length; i++) {
     const idx = parseInt(flatPlaceholders[i].slice(PLACEHOLDER_PREFIX.length, -2), 10);
     if (idx !== i) {
@@ -245,17 +312,14 @@ export function verifyAndRestore(
     }
   }
 
+  const proseOnly = protectedTokens.reduce((text, token) => text.replace(token.placeholder, ''), modelResponse);
+  if (/\\|%/.test(proseOnly)) {
+    return { success: false, reason: 'AI response introduced a LaTeX command or comment' };
+  }
+
   // Restore in order
   for (const pt of protectedTokens) {
     restored = restored.replace(pt.placeholder, pt.original);
-  }
-
-  // Reject dangerous commands that weren't in the model's raw response
-  const dangerousCommands = ['\\input{', '\\include{', '\\usepackage{', '\\write{'];
-  for (const cmd of dangerousCommands) {
-    if (restored.includes(cmd) && !modelResponse.includes(cmd)) {
-      return { success: false, reason: `Model introduced dangerous LaTeX command: ${cmd}` };
-    }
   }
 
   return { success: true, restored };
@@ -288,16 +352,20 @@ export function filterCompletion(
   if (insertion.length > 200) {
     return { accepted: false, reason: `Insertion exceeds 200 chars (${insertion.length})` };
   }
-  // Reject if it repeats the prefix verbatim
-  if (insertion.startsWith(prefix)) {
+  // A provider sometimes returns the whole current line instead of an insertion.
+  const currentLine = prefix.slice(prefix.lastIndexOf('\n') + 1).trimStart();
+  if (currentLine && insertion.trimStart().startsWith(currentLine)) {
     return { accepted: false, reason: 'Insertion repeats existing prefix' };
+  }
+  if (/```|\r|\n/.test(insertion)) {
+    return { accepted: false, reason: 'Insertion is not a short prose continuation' };
   }
   // Reject if it contains a document wrapper
   if (/\\documentclass|\\begin\{document\}|\\end\{document\}/.test(insertion)) {
     return { accepted: false, reason: 'Insertion contains document structure commands' };
   }
   // Reject dangerous commands
-  if (/\\input\{|\\include\{|\\usepackage\{|\\write\{/.test(insertion)) {
+  if (/\\|%/.test(insertion)) {
     return { accepted: false, reason: 'Insertion contains unsafe LaTeX command' };
   }
   // Reject if it removes text (must be purely additive)
