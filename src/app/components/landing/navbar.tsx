@@ -1,124 +1,120 @@
-"use client"
+"use client";
+
 import { useState } from "react";
-import { motion } from "framer-motion";
-import { Button } from "@/src/app/components/ui/button";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Menu, X } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
+import Logo from "../brand/logo";
+import StartWritingLink from "./startWritingLink";
+import { Button } from "../ui/button";
+import { SIGN_IN_PATH, FEATURES_ANCHOR, HOW_IT_WORKS_ANCHOR } from "@/src/lib/paths";
 
-const Navbar = () => {
+const NAV_ITEMS = [
+  { label: "Features", href: FEATURES_ANCHOR },
+  { label: "How it works", href: HOW_IT_WORKS_ANCHOR },
+];
+
+export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
+  const reduceMotion = useReducedMotion();
 
-  const navItems = [
-    { label: "Features", href: "#features" },
-    { label: "How it Works", href: "#how-it-works" },
-    { label: "Pricing", href: "#pricing" },
-    { label: "Docs", href: "#docs" },
-  ];
-
-  const handleSmoothScroll = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
-    e.preventDefault();
-    const element = document.querySelector(href);
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth", block: "start" });
+  const scrollToSection = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    const [, anchor] = href.split("#");
+    const target = document.getElementById(anchor);
+    if (target) {
+      event.preventDefault();
+      target.scrollIntoView({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "start",
+      });
     }
     setIsOpen(false);
   };
 
   return (
-    <motion.nav
-      initial={{ y: -100 }}
-      animate={{ y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="fixed top-0 left-0 right-0 z-50 glass"
-    >
-      <div className="container mx-auto px-6">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <a href="#" className="flex items-center">
-            <Image
-              src="/logo.png"
-              alt="RunesAI Logo"
-              width={200}
-              height={32}
-              className="object-contain"
-            />
-          </a>
+    <header className="fixed inset-x-0 top-0 z-40 border-b border-border-subtle bg-background/85 backdrop-blur-md">
+      <nav aria-label="Main" className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-6 px-5 lg:px-8">
+        <Link
+          href="/"
+          className="flex shrink-0 items-center"
+          aria-label="Runes AI home"
+        >
+          <Logo variant="wordmark" size="sm" />
+        </Link>
 
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-8">
-            {navItems.map((item) => (
+        <ul className="hidden items-center gap-7 md:flex">
+          {NAV_ITEMS.map((item) => (
+            <li key={item.href}>
               <a
-                key={item.label}
                 href={item.href}
-                onClick={(e) => handleSmoothScroll(e, item.href)}
-                className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium"
+                onClick={(event) => scrollToSection(event, item.href)}
+                className="text-sm text-muted-foreground transition-colors hover:text-foreground"
               >
                 {item.label}
               </a>
-            ))}
-          </div>
+            </li>
+          ))}
+        </ul>
 
-          {/* Desktop CTAs */}
-          <div className="hidden md:flex items-center gap-4">
-            <Link href="/signin">
-              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-                Sign In
-              </Button>
-            </Link>
-            <Link href="/chat">
-              <Button size="sm" className="glow-sm">
-                Get Started Free
-              </Button>
-            </Link>
-          </div>
-
-          {/* Mobile Menu Button */}
-          <button
-            className="md:hidden text-foreground"
-            onClick={() => setIsOpen(!isOpen)}
-          >
-            {isOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
+        <div className="hidden items-center gap-2 md:flex">
+          <Link href={SIGN_IN_PATH}>
+            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+              Sign in
+            </Button>
+          </Link>
+          <StartWritingLink>
+            <Button size="sm">Start writing</Button>
+          </StartWritingLink>
         </div>
 
-        {/* Mobile Menu */}
+        <button
+          type="button"
+          className="inline-flex size-10 items-center justify-center rounded-md text-foreground transition-colors hover:bg-surface-raised md:hidden"
+          aria-expanded={isOpen}
+          aria-controls="mobile-nav"
+          onClick={() => setIsOpen((open) => !open)}
+        >
+          {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          <span className="sr-only">{isOpen ? "Close menu" : "Open menu"}</span>
+        </button>
+      </nav>
+
+      <AnimatePresence initial={false}>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="md:hidden py-4 border-t border-border"
+            id="mobile-nav"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="border-t border-border-subtle bg-surface md:hidden"
           >
-            <div className="flex flex-col gap-4">
-              {navItems.map((item) => (
-                <a
-                  key={item.label}
-                  href={item.href}
-                  onClick={(e) => handleSmoothScroll(e, item.href)}
-                  className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium"
-                >
-                  {item.label}
-                </a>
+            <ul className="mx-auto flex w-full max-w-6xl flex-col px-5 py-3">
+              {NAV_ITEMS.map((item) => (
+                <li key={item.href}>
+                  <a
+                    href={item.href}
+                    onClick={(event) => scrollToSection(event, item.href)}
+                    className="block py-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {item.label}
+                  </a>
+                </li>
               ))}
-              <div className="flex flex-col gap-2 pt-4">
-                <Link href="/signin">
-                  <Button variant="ghost" size="sm" className="justify-start w-full">
-                    Sign In
+              <li className="flex flex-col gap-2 border-t border-border-subtle py-4">
+                <StartWritingLink>
+                  <Button className="w-full">Start writing</Button>
+                </StartWritingLink>
+                <Link href={SIGN_IN_PATH}>
+                  <Button variant="outline" className="w-full">
+                    Sign in
                   </Button>
                 </Link>
-                <Link href="/chat">
-                  <Button size="sm" className="glow-sm w-full">
-                    Get Started Free
-                  </Button>
-                </Link>
-              </div>
-            </div>
+              </li>
+            </ul>
           </motion.div>
         )}
-      </div>
-    </motion.nav>
+      </AnimatePresence>
+    </header>
   );
-};
-
-export default Navbar;
+}
