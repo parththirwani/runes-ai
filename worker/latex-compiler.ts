@@ -11,6 +11,17 @@ const TECTONIC_IMAGE = process.env.TECTONIC_IMAGE || 'dxjoke/tectonic-docker:lat
 
 async function runTectonic(tempDir: string, filename: string, timeout: number) {
   const tectonicContainerName = process.env.TECTONIC_CONTAINER_NAME?.trim();
+  const tectonicBinary = process.env.TECTONIC_BINARY?.trim();
+
+  // Optional direct-binary mode for environments without Docker (local dev,
+  // CI). Unset in the standard deployment, which keeps the container paths.
+  if (tectonicBinary) {
+    return execFile(
+      tectonicBinary,
+      ['--outdir', 'output', `${filename}.tex`],
+      { timeout, cwd: tempDir },
+    );
+  }
 
   if (tectonicContainerName) {
     console.log(`[COMPILER] Using tectonic container ${tectonicContainerName}`);

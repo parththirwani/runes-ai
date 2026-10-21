@@ -1,10 +1,14 @@
 import { FileText, Trash2, Clock } from 'lucide-react';
+import type { DocumentFormatValue } from '@/src/types/compilation';
+import FormatBadge from './formatBadge';
 
 interface Document {
   id: string;
   title: string;
   slug: string;
   content?: string | null;
+  format?: DocumentFormatValue;
+  excerpt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -20,15 +24,6 @@ export default function DocumentGrid({
   onDocumentClick,
   onDocumentDelete
 }: DocumentGridProps) {
-  const getPreview = (content?: string | null) => {
-    const preview = (content ?? '')
-      .replace(/\\[a-zA-Z]+(\{[^}]*\})?/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    return preview.length > 0 ? `${preview.substring(0, 80)}...` : 'No preview available.';
-  };
-
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -48,22 +43,35 @@ export default function DocumentGrid({
       {documents.map((doc) => (
         <div
           key={doc.id}
+          role="button"
+          tabIndex={0}
+          aria-label={`Open ${doc.title}, ${doc.format === 'MARKDOWN' ? 'Markdown' : 'LaTeX'} document`}
           onClick={() => onDocumentClick(doc.slug)}
-          className="group bg-white/3 border border-white/10 rounded-xl p-5 hover:bg-white/6 hover:border-white/20 transition-all cursor-pointer relative"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onDocumentClick(doc.slug);
+            }
+          }}
+          className="group bg-white/3 border border-white/10 rounded-xl p-5 hover:bg-white/6 hover:border-white/20 transition-all cursor-pointer relative focus-visible:outline-2 focus-visible:outline-emerald-500"
         >
           <div className="flex items-start justify-between mb-4">
             <div className="w-10 h-10 bg-emerald-500/10 rounded-lg flex items-center justify-center">
               <FileText className="w-5 h-5 text-emerald-400" />
             </div>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDocumentDelete(doc);
-              }}
-              className="opacity-0 group-hover:opacity-100 p-2 hover:bg-white/10 rounded-lg transition-all cursor-pointer"
-            >
-              <Trash2 className="w-4 h-4 text-gray-500 hover:text-red-400" />
-            </button>
+            <div className="flex items-center gap-1">
+              <FormatBadge format={doc.format} />
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDocumentDelete(doc);
+                }}
+                aria-label={`Delete ${doc.title}`}
+                className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 p-2 hover:bg-white/10 rounded-lg transition-all cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4 text-gray-500 hover:text-red-400" />
+              </button>
+            </div>
           </div>
           
           <h3 className="font-medium text-white mb-2 truncate text-base">
@@ -71,12 +79,15 @@ export default function DocumentGrid({
           </h3>
           
           <p className="text-sm text-gray-500 line-clamp-2 mb-4 leading-relaxed">
-            {getPreview(doc.content)}
+            {doc.excerpt && doc.excerpt.length > 0 ? doc.excerpt : 'No preview available.'}
           </p>
           
           <div className="flex items-center gap-2 text-xs text-gray-600">
             <Clock className="w-3.5 h-3.5" />
             <span>{formatDate(doc.updatedAt)}</span>
+            <span className="ml-auto font-mono text-[10px] text-gray-500">
+              .{doc.format === 'MARKDOWN' ? 'md' : 'tex'}
+            </span>
           </div>
         </div>
       ))}

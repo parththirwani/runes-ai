@@ -10,6 +10,7 @@ interface PDFPreviewProps {
   onDownload?: () => void;
   statusMessage?: string;
   isStale?: boolean;
+  documentKind?: string;
 }
 
 export default function PDFPreview({
@@ -19,6 +20,7 @@ export default function PDFPreview({
   onDownload,
   statusMessage = '',
   isStale = false,
+  documentKind = 'LaTeX',
 }: PDFPreviewProps) {
   const [zoom, setZoom] = useState(100);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -156,7 +158,7 @@ export default function PDFPreview({
               No PDF Generated Yet
             </h3>
             <p className="text-gray-400 text-sm mb-6">
-              Click the compile button to generate a PDF preview of your LaTeX document
+              Click the compile button to generate a PDF preview of your {documentKind} document
             </p>
             <Button
               variant="primary"

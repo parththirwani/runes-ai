@@ -9,9 +9,38 @@ COPY worker ./worker
 RUN bun install --frozen-lockfile
 RUN bun build worker/index.ts --outfile /tmp/worker.js --target bun
 
-FROM oven/bun:1-alpine
+# Full (Debian/glibc) runtime so the pinned static pandoc + tectonic binaries run natively.
+FROM oven/bun:1
 
-RUN apk add --no-cache docker-cli
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl \
+  && rm -rf /var/lib/apt/lists/*
+
+# Pinned Markdown/LaTeX toolchain.
+# pandoc 3.6.3 (linux-amd64 static) and tectonic 0.15.0 (x86_64-unknown-linux-musl static).
+ENV PANDOC_VERSION=3.6.3 \
+    TECTONIC_VERSION=0.15.0 \
+    PANDOC_SHA256=d04c95c138202f87d6b00ac19aa3dd874c681f60a9feb3b55c74f764d6d1a17d \
+    TECTONIC_SHA256=dfb82876f2986862996e564fa507a9e576e0c1e3bee63c2c1bd677c2543e6407
+
+RUN curl -fsSL "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz" -o /tmp/pandoc.tar.gz \
+  && echo "${PANDOC_SHA256}  /tmp/pandoc.tar.gz" | sha256sum -c - \
+  && tar -xzf /tmp/pandoc.tar.gz -C /tmp \
+  && mv "/tmp/pandoc-${PANDOC_VERSION}/bin/pandoc" /usr/local/bin/pandoc \
+  && rm -rf /tmp/pandoc.tar.gz "/tmp/pandoc-${PANDOC_VERSION}" \
+  && curl -fsSL "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${TECTONIC_VERSION}/tectonic-${TECTONIC_VERSION}-x86_64-unknown-linux-musl.tar.gz" -o /tmp/tectonic.tar.gz \
+  && echo "${TECTONIC_SHA256}  /tmp/tectonic.tar.gz" | sha256sum -c - \
+  && tar -xzf /tmp/tectonic.tar.gz -C /usr/local/bin tectonic \
+  && rm -f /tmp/tectonic.tar.gz \
+  && chmod +x /usr/local/bin/pandoc /usr/local/bin/tectonic \
+  && pandoc --version | head -1 \
+  && tectonic --version
+
+# In-image binaries by default (no docker-in-docker needed). Set TECTONIC_BINARY=""
+# to fall back to the legacy docker sibling container for LaTeX compiles.
+ENV PANDOC_BIN=/usr/local/bin/pandoc \
+    PDF_ENGINE_BIN=/usr/local/bin/tectonic \
+    TECTONIC_BINARY=/usr/local/bin/tectonic
 
 WORKDIR /app
 

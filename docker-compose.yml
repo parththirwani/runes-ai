@@ -59,6 +59,9 @@ services:
       REDIS_DB: 0
       WORKER_PORT: 3001
       TECTONIC_CONTAINER_NAME: runes-ai-tectonic
+      PANDOC_BIN: /usr/local/bin/pandoc
+      PDF_ENGINE_BIN: /usr/local/bin/tectonic
+      TECTONIC_BINARY: /usr/local/bin/tectonic
     ports:
       - "3001:3001"
     volumes:

@@ -22,20 +22,47 @@ model User {
 }
 
 model Document {
-  id        String   @id @default(uuid())
-  title     String   @unique
-  content   String   @db.Text // LaTeX source code
-  slug      String   @unique
+  id        String         @id @default(uuid())
+  title     String         @unique
+  content   String         @db.Text // LaTeX or Markdown source, per format
+  format    DocumentFormat @default(LATEX) // immutable after creation
+  slug      String         @unique
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
 
   chatSessions ChatSession[]
+  assets       DocumentAsset[]
 
   @@unique([userId, title])
   @@index([userId])
   @@map("documents")
+}
+
+// Owned local image assets for Markdown documents. Normalized relative paths
+// map directly onto the planned workspace file model
+// (compile-workspace-plan.md: file rows keyed by (documentId, normalizedPath)).
+model DocumentAsset {
+  id         String   @id @default(uuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  path       String // normalized relative path, e.g. "images/diagram.png"
+  mediaType  String
+  size       Int
+  checksum   String // hex sha256 of bytes
+  bytes      Bytes
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([documentId, path])
+  @@index([documentId])
+  @@map("document_assets")
+}
+
+enum DocumentFormat {
+  LATEX
+  MARKDOWN
 }
 
 model ChatSession {

@@ -1,5 +1,6 @@
 """Run a local editor smoke test against an already running development server."""
 
+import base64
 import json
 import os
 import time
@@ -8,6 +9,10 @@ from playwright.sync_api import expect, sync_playwright
 
 
 BASE = os.environ.get("RUNES_BASE_URL", "http://localhost:3000")
+CHROMIUM = os.environ.get("RUNES_CHROMIUM", "/usr/bin/chromium")
+PNG_1PX = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
 SOURCE = (
     "\\documentclass{article}\n"
     "\\begin{document}\n"
@@ -31,11 +36,12 @@ def select_second_line(page):
 
 
 with sync_playwright() as playwright:
-    browser = playwright.chromium.launch(headless=True, executable_path="/usr/bin/chromium", args=["--no-sandbox"])
+    browser = playwright.chromium.launch(headless=True, executable_path=CHROMIUM, args=["--no-sandbox"])
     context = browser.new_context(viewport={"width": 1280, "height": 800})
     page = context.new_page()
     created_slug = None
     second_slug = None
+    md_slug = None
     try:
         page.goto(f"{BASE}/api/dev-login", wait_until="domcontentloaded")
         assert urlparse(page.url).path == "/document", page.url
@@ -85,7 +91,7 @@ with sync_playwright() as playwright:
         select_second_line(page)
         page.keyboard.type("Changed while waiting.")
         page.evaluate("window.__releaseParaphrase(); window.__restoreFetch()")
-        expect(page.get_by_text("Response discarded", exact=False)).to_be_visible(timeout=5000)
+        expect(page.locator("span", has_text="Response discarded").first).to_be_visible(timeout=5000)
         assert page.get_by_role("region", name="AI proposal review").count() == 0
         for _ in range(30):
             if source_value(page) == SOURCE:
@@ -143,12 +149,13 @@ with sync_playwright() as playwright:
         page.keyboard.press("Tab")
         assert "Additional Further evidence follows." in source_value(page), repr(source_value(page))
 
-        page.set_viewport_size({"width": 600, "height": 800})
+        # 640px = Tailwind `sm`, the breakpoint the toolbar labels collapse at.
+        page.set_viewport_size({"width": 640, "height": 800})
         controls = ["Paraphrase", "Compile", "AI complete"]
         for label in controls:
             locator = page.get_by_text(label, exact=True).first
             box = locator.bounding_box()
-            assert box and box["x"] >= 0 and box["x"] + box["width"] <= 600, (label, box)
+            assert box and box["x"] >= 0 and box["x"] + box["width"] <= 640, (label, box)
 
         page.set_viewport_size({"width": 1280, "height": 800})
         with page.expect_response(lambda response: response.url.endswith(f"/api/document/{created_slug}") and response.request.method == "POST", timeout=20000) as queued:
@@ -191,7 +198,117 @@ with sync_playwright() as playwright:
         page.locator(".monaco-editor").first.wait_for(timeout=20000)
         assert source_value(page) == SECOND_SOURCE
         assert page.get_by_role("region", name="AI proposal review").count() == 0
-        print("browser smoke passed: edit, review, stale results, document switch, completion, responsive controls, live compile, PDF preview, download, stale PDF")
+
+        # ---- Markdown document flow ----
+        md_title = f"Smoke MD {time.time_ns() % 10**16}"
+        md_created = context.request.post(
+            f"{BASE}/api/document",
+            data={"title": md_title, "format": "MARKDOWN"},
+        )
+        assert md_created.status == 201, (md_created.status, md_created.text())
+        md_slug = md_created.json()["slug"]
+
+        upload = context.request.post(
+            f"{BASE}/api/document/{md_slug}/assets",
+            multipart={"file": {"name": "logo.png", "mimeType": "image/png", "buffer": PNG_1PX}, "path": "images/logo.png"},
+        )
+        assert upload.status == 201, (upload.status, upload.text())
+        asset_url = upload.json()["asset"]["url"]
+        assert asset_url == f"/api/document/{md_slug}/assets/images/logo.png", asset_url
+        served = context.request.get(f"{BASE}{asset_url}")
+        assert served.status == 200 and served.headers.get("content-type") == "image/png", served.status
+
+        md_source = (
+            f"# {md_title}\n\n"
+            "Prose with `inline code` and [a link](https://example.com) plus math $E = mc^2$.\n\n"
+            f"![Logo]({asset_url})\n\n"
+            "![Remote](https://evil.example.com/x.png)\n\n"
+            "## Table section\n\n"
+            "| a | b |\n| - | - |\n| 1 | 2 |\n"
+        )
+        page.goto(f"{BASE}/document/{md_slug}", wait_until="domcontentloaded")
+        page.locator(".monaco-editor").first.wait_for(timeout=20000)
+        assert page.evaluate("window.monaco.editor.getModels()[0].getLanguageId()") == "markdown"
+        assert "Start writing here" in source_value(page)
+
+        preview = page.locator(".markdown-preview")
+        preview.wait_for(timeout=20000)
+        assert page.get_by_role("heading", name=md_title).count() >= 1
+        assert "Start writing here" in preview.inner_text()
+        assert "code blocks are supported" in preview.inner_text()
+
+        page.locator(".monaco-editor").first.click()
+        page.evaluate("text => window.monaco.editor.getModels()[0].setValue(text)", md_source)
+        page.keyboard.press("Control+s")
+        page.wait_for_timeout(800)
+        assert page.evaluate("window.monaco.editor.getModels()[0].getValue()") == md_source
+        page.wait_for_timeout(600)
+        assert page.locator(f'.markdown-preview img[src="{asset_url}"]').count() == 1
+        assert page.get_by_role("heading", name="Table section").count() >= 1
+
+        page.get_by_role("button", name="Reading", exact=True).click()
+        preview.wait_for(timeout=10000)
+
+        def md_compile_job():
+            with page.expect_response(lambda response: response.url.endswith(f"/api/document/{md_slug}") and response.request.method == "POST", timeout=20000) as queued:
+                page.get_by_role("button", name="Compile", exact=True).click()
+            queue = queued.value
+            assert queue.status == 202, (queue.status, queue.text())
+            job = queue.json()["jobId"]
+            status = None
+            for _ in range(90):
+                status_response = context.request.get(f"{BASE}/api/job/{job}")
+                assert status_response.status == 200
+                status = status_response.json()
+                if status["status"] in ("completed", "failed"):
+                    break
+                time.sleep(2)
+            return job, status
+
+        # Remote images are refused by the compiler with an actionable error.
+        rejected_job, rejected = md_compile_job()
+        assert rejected["status"] == "failed", rejected
+        assert "Remote images are not supported" in rejected["result"]["error"], rejected
+        page.locator(".fixed.inset-0.z-50").get_by_role("button", name="OK", exact=True).click()
+        expect(page.locator(".fixed.inset-0.z-50")).to_have_count(0, timeout=5000)
+        page.wait_for_timeout(300)
+
+        page.get_by_role("button", name="Source", exact=True).click()
+        page.locator(".monaco-editor").first.wait_for(timeout=10000)
+        md_compilable = md_source.replace("![Remote](https://evil.example.com/x.png)\n\n", "")
+        page.evaluate("text => window.monaco.editor.getModels()[0].setValue(text)", md_compilable)
+        page.keyboard.press("Control+s")
+        page.wait_for_timeout(800)
+
+        with page.expect_response(lambda response: response.url.endswith(f"/api/document/{md_slug}") and response.request.method == "POST", timeout=20000) as md_queued:
+            page.get_by_role("button", name="Compile", exact=True).click()
+        md_queue = md_queued.value
+        assert md_queue.status == 202, (md_queue.status, md_queue.text())
+        md_job = md_queue.json()["jobId"]
+        for _ in range(90):
+            md_status_response = context.request.get(f"{BASE}/api/job/{md_job}")
+            assert md_status_response.status == 200
+            md_status = md_status_response.json()
+            if md_status["status"] in ("completed", "failed"):
+                break
+            time.sleep(2)
+        assert md_status["status"] == "completed", md_status
+        md_pdf = context.request.get(f"{BASE}/api/pdf/{md_job}")
+        assert md_pdf.status == 200 and md_pdf.body().startswith(b"%PDF"), (md_pdf.status, md_pdf.text()[:300])
+        page.get_by_role("button", name="Reading", exact=True).click()
+        page.get_by_role("tab", name="Reading preview").wait_for(timeout=10000)
+        page.get_by_role("tab", name="PDF").click()
+        page.locator('iframe[title="PDF Preview"]').wait_for(timeout=20000)
+
+        with page.expect_download() as md_download:
+            page.locator(f'button[title="Download {md_slug}.md file"]').click()
+        assert md_download.value.suggested_filename == f"{md_slug}.md", md_download.value.suggested_filename
+
+        page.goto(f"{BASE}/document", wait_until="domcontentloaded")
+        expect(page.locator("span", has_text="Markdown .md").first).to_be_visible(timeout=10000)
+        expect(page.get_by_role("group", name="Filter documents by format")).to_be_visible()
+        assert page.get_by_text(md_title, exact=False).count() >= 1
+        print("browser smoke passed: latex edit/review/compile + markdown create, assets, reading preview, remote-image block, real markdown PDF, source download, dashboard format badge")
     finally:
         if created_slug:
             context.request.delete(f"{BASE}/api/document/{created_slug}")

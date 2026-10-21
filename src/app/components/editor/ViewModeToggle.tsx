@@ -6,13 +6,15 @@ type ViewMode = 'editor' | 'split' | 'preview';
 interface ViewModeToggleProps {
   value: ViewMode;
   onChange: (mode: ViewMode) => void;
+  /** Format-specific labels; Markdown renames Preview to Reading. */
+  labels?: Partial<Record<ViewMode, string>>;
 }
 
-export default function ViewModeToggle({ value, onChange }: ViewModeToggleProps) {
+export default function ViewModeToggle({ value, onChange, labels }: ViewModeToggleProps) {
   const modes: { id: ViewMode; icon: React.ReactNode; label: string }[] = [
-    { id: 'editor', icon: <Code className="w-4 h-4" />, label: 'Code' },
-    { id: 'split', icon: <Split className="w-4 h-4" />, label: 'Split' },
-    { id: 'preview', icon: <Eye className="w-4 h-4" />, label: 'Preview' }
+    { id: 'editor', icon: <Code className="w-4 h-4" />, label: labels?.editor ?? 'Code' },
+    { id: 'split', icon: <Split className="w-4 h-4" />, label: labels?.split ?? 'Split' },
+    { id: 'preview', icon: <Eye className="w-4 h-4" />, label: labels?.preview ?? 'Preview' }
   ];
 
   return (
