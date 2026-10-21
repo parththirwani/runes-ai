@@ -1,136 +1,100 @@
-"use client"
-import { motion } from "framer-motion";
-import { Button } from "@/src/app/components/ui/button";
-import { Sparkles, Chrome } from "lucide-react";
-import { useTransition } from "react";
-import { handleGoogleSignIn } from "../actions";
+"use client";
 
-export default function SignInPage() {
+import { Suspense, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import { TriangleAlert } from "lucide-react";
+import Logo from "../components/brand/logo";
+import { Button } from "../components/ui/button";
+import { handleGoogleSignIn } from "../actions";
+import { DOCUMENTS_PATH, resolveRedirect } from "@/src/lib/paths";
+
+const AFTER_SIGN_IN = [
+  "A document workspace where you can create, search and delete drafts",
+  "The Monaco editor with an outline built from your own headings",
+  "AI prose suggestions that you approve in a diff before they are applied",
+];
+
+function SignInCard() {
+  const searchParams = useSearchParams();
+  const next = resolveRedirect(searchParams.get("next"), DOCUMENTS_PATH);
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = () => {
-    console.log("Button clicked!"); // Debug log
+    setError(null);
     startTransition(async () => {
-      console.log("Starting sign in..."); // Debug log
-      await handleGoogleSignIn();
+      try {
+        await handleGoogleSignIn(next);
+      } catch {
+        setError("Google sign-in could not start. Check your connection and try again.");
+      }
     });
   };
 
   return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
-      {/* Background Effects - matching Hero section */}
-      <div className="absolute inset-0 grid-pattern opacity-50 pointer-events-none" />
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-150 h-150 bg-primary/20 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-0 right-0 w-100 h-100 bg-primary/10 rounded-full blur-[100px] pointer-events-none" />
-      
-      <div className="container mx-auto px-6 relative z-10">
-        <div className="max-w-md mx-auto">
-          {/* Sign In Card */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="gradient-border rounded-xl overflow-hidden glow relative"
-            style={{ zIndex: 10 }}
+    <div className="w-full max-w-md">
+      <div className="rounded-xl border border-border bg-surface p-7 shadow-panel md:p-9">
+        <Logo variant="wordmark" size="md" />
+
+        <h1 className="mt-7 text-2xl font-semibold text-foreground">Sign in to Runes AI</h1>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          We use Google to identify you, then send you straight to your documents.
+        </p>
+
+        <Button
+          type="button"
+          size="lg"
+          onClick={handleSubmit}
+          disabled={isPending}
+          className="mt-7 w-full"
+        >
+          {isPending ? "Opening Google…" : "Continue with Google"}
+        </Button>
+
+        {error && (
+          <p
+            role="alert"
+            className="mt-3 flex items-start gap-2 rounded-md bg-destructive-subtle px-3 py-2 text-sm text-destructive"
           >
-            <div className="bg-card p-8 md:p-10 relative z-20">
-              {/* Badge */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.1 }}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-primary/30 bg-primary/5 mb-6"
-              >
-                <Sparkles className="w-4 h-4 text-primary" />
-                <span className="text-sm text-muted-foreground">AI-Powered LaTeX Editor</span>
-              </motion.div>
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            {error}
+          </p>
+        )}
 
-              {/* Headline */}
-              <motion.h1
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-                className="text-3xl md:text-4xl font-bold tracking-tight mb-3"
-              >
-                Welcome to{" "}
-                <span className="text-gradient">Runes AI</span>
-              </motion.h1>
-
-              {/* Subheadline */}
-              <motion.p
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.3 }}
-                className="text-muted-foreground mb-8"
-              >
-                Sign in to start writing beautiful LaTeX papers at the speed of thought.
-              </motion.p>
-
-              {/* Sign In Button */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.4 }}
-                className="relative z-30"
-              >
-                <Button
-                  type="button"
-                  size="lg"
-                  onClick={handleSubmit}
-                  disabled={isPending}
-                  className="w-full glow text-base px-6 py-6 flex items-center justify-center gap-3 relative z-40"
-                  style={{ position: 'relative', zIndex: 50 }}
-                >
-                  <Chrome className="w-5 h-5" />
-                  {isPending ? "Signing in..." : "Sign in with Google"}
-                </Button>
-              </motion.div>
-
-              {/* Features List */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.5 }}
-                className="mt-8 pt-8 border-t border-border/50"
-              >
-                <p className="text-xs text-muted-foreground mb-4">What you'll get:</p>
-                <div className="space-y-3">
-                  {[
-                    "AI-powered LaTeX suggestions",
-                    "Real-time collaboration",
-                    "Unlimited documents",
-                  ].map((feature, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-                      <span className="text-sm text-muted-foreground">{feature}</span>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-
-              {/* Footer Note */}
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.5, delay: 0.6 }}
-                className="text-xs text-muted-foreground text-center mt-6"
-              >
-                By signing in, you agree to our Terms of Service and Privacy Policy
-              </motion.p>
-            </div>
-          </motion.div>
-
-          {/* Additional Info */}
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.7 }}
-            className="text-center text-sm text-muted-foreground mt-6"
-          >
-            Trusted by researchers at MIT, Stanford, Harvard & Cambridge
-          </motion.p>
+        <div className="mt-8 border-t border-border-subtle pt-6">
+          <h2 className="text-xs font-medium uppercase tracking-[0.16em] text-meta">
+            What you get
+          </h2>
+          <ul className="mt-3 space-y-2">
+            {AFTER_SIGN_IN.map((item) => (
+              <li key={item} className="border-l border-border pl-3 text-sm leading-relaxed text-muted-foreground">
+                {item}
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
-    </section>
+
+      <p className="mt-5 text-center text-xs text-meta">
+        Only your name, email and profile photo are requested.
+      </p>
+    </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <main id="main" className="relative flex min-h-dvh items-center justify-center overflow-hidden">
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 grid-pattern opacity-40" />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-0 h-64 w-64 -translate-x-1/2 rounded-full bg-primary/10 blur-[110px]"
+      />
+      <div className="relative px-5 py-16">
+        <Suspense fallback={null}>
+          <SignInCard />
+        </Suspense>
+      </div>
+    </main>
   );
 }
