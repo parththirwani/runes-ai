@@ -33,17 +33,15 @@ export default function Hero() {
           </Reveal>
 
           <Reveal delay={0.04}>
-            <h1 className="mt-4 max-w-[16ch] text-4xl font-semibold leading-[1.08] text-foreground md:text-5xl">
-              Write LaTeX with suggestions you review first
+            <h1 className="mt-4 max-w-[15ch] text-4xl font-semibold leading-[1.08] text-foreground md:text-5xl">
+              Write LaTeX with reviewed AI edits
             </h1>
           </Reveal>
 
           <Reveal delay={0.08}>
-            <p className="mt-5 max-w-[60ch] text-base leading-relaxed text-muted-foreground md:text-lg">
-              Runes AI runs the whole draft in your browser: a Monaco source view,
-              AI prose edits that arrive as a diff, and a compiled PDF you can read
-              beside the text. Citations, math and environments are held back from
-              the model and put back untouched.
+            <p className="mt-5 max-w-[46ch] text-base leading-relaxed text-muted-foreground md:text-lg">
+              A Monaco source editor, AI prose edits you approve in a diff, and PDF
+              compilation in the same window.
             </p>
           </Reveal>
 
@@ -62,16 +60,6 @@ export default function Hero() {
             </div>
           </Reveal>
 
-          <Reveal delay={0.16}>
-            <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-2 border-t border-border-subtle pt-6">
-              {FACTS.map((fact) => (
-                <li key={fact.label} className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <fact.icon className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-                  {fact.label}
-                </li>
-              ))}
-            </ul>
-          </Reveal>
         </div>
 
         <Reveal delay={0.1} className="lg:col-span-6">
@@ -99,6 +87,19 @@ export default function Hero() {
               Source and PDF preview in one view. Screenshot captured from this app.
             </figcaption>
           </figure>
+        </Reveal>
+      </div>
+
+      <div className="relative border-t border-border-subtle">
+        <Reveal>
+          <ul aria-label="What the editor does" className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-8 gap-y-2 px-5 py-5 lg:px-8">
+            {FACTS.map((fact) => (
+              <li key={fact.label} className="flex items-center gap-2 text-sm text-muted-foreground">
+                <fact.icon className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                {fact.label}
+              </li>
+            ))}
+          </ul>
         </Reveal>
       </div>
     </section>
