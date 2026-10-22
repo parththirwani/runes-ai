@@ -330,8 +330,11 @@ export async function uploadFile(input: {
 export async function deleteFile(userId: string, slug: string, rawPath: string): Promise<'deleted' | 'notfound' | 'mainfile' | null> {
   const document = await getOwnedDocument(userId, slug);
   if (!document) return null;
+  await ensureDocumentMigrated(prisma, document.id);
+  const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+  if (!currentDocument) return null;
   const path = assertSafeWorkspacePath(rawPath);
-  if (pathsCollide(path, document.mainFilePath)) return 'mainfile';
+  if (pathsCollide(path, currentDocument.mainFilePath)) return 'mainfile';
 
   const existing = await prisma.workspaceFile.findUnique({ where: { documentId_path: { documentId: document.id, path } } });
   if (!existing) return 'notfound';

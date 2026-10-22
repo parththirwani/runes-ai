@@ -285,6 +285,16 @@ describe('workspace file service', () => {
     expect(await deleteFile(OWNER, 'paper', 'chapters/gone.tex')).toBe('notfound');
   });
 
+  it('protects the Markdown main file on its first delete request', async () => {
+    const { documents, files } = seed({ format: 'MARKDOWN', content: '# Original' });
+    files.length = 0;
+
+    expect(await deleteFile(OWNER, 'paper', 'main.md')).toBe('mainfile');
+    expect(documents[0].mainFilePath).toBe('main.md');
+    expect(files.map((file) => file.path)).toEqual(['main.md']);
+    expect(files[0].content).toBe('# Original');
+  });
+
   it('only lets a tex file become the main file', async () => {
     const { files } = seed();
     files.push({ id: 'fig', documentId: DOC_ID, path: 'figures/plot.png', kind: 'image', mimeType: 'image/png', sizeBytes: 4, checksum: 'c'.repeat(64), revision: 1, content: null, storageKey: 'documents/doc-1/plot.png' });
