@@ -20,6 +20,7 @@ const flag = (name, fallback) => {
 const BASE = flag('base', process.env.BENCH_BASE || 'http://127.0.0.1:3000');
 const OUT = flag('out', '/tmp/e2e-workspace');
 const TIMEOUT_MS = Number(flag('timeout', 120000));
+const EXPECT_AI_UNAVAILABLE = args.includes('--expect-ai-unavailable');
 
 if (existsSync(OUT)) rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
@@ -415,6 +416,18 @@ async function main() {
   for (const [path, body] of aiRequests) {
     const res = await api(path, { method: 'POST', body: JSON.stringify(body) }, otherCookie);
     check(`other user denied ${path}`, res.status === 404, `status ${res.status}`);
+  }
+
+  // Input errors and missing provider configuration should have stable API
+  // responses for a real authenticated session, without reaching the provider.
+  for (const [path, body] of aiRequests) {
+    expectApi(await api(path, { method: 'POST', body: '{' }), 400, `${path} rejects malformed JSON`);
+    expectApi(await api(path, { method: 'POST', body: JSON.stringify({ ...body, documentId: randomUUID() }) }),
+      404, `${path} rejects an unknown document`);
+    if (EXPECT_AI_UNAVAILABLE) {
+      expectApi(await api(path, { method: 'POST', body: JSON.stringify(body) }),
+        503, `${path} reports missing AI provider`);
+    }
   }
 
   // Check the remaining workspace mutations, including routes that do not
