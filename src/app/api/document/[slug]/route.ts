@@ -1,6 +1,6 @@
 import { prisma } from '@/src/lib/db';
 import { withAuth } from '@/src/lib/withAuth';
-import { documentSchema, updateDocumentSchema, workspaceSaveSchema } from '@/src/schema/documentSchema';
+import { documentSchema, updateDocumentSchema, workspaceUpdateSchema } from '@/src/schema/documentSchema';
 import { compilationProducer } from '@/producer/queue';
 import { checkRateLimit } from '@/src/lib/rateLimit';
 import { NextResponse } from 'next/server';
@@ -101,18 +101,17 @@ export const PUT = withAuth(async (req, session, context) => {
     await ensureDocumentMigrated(prisma, document.id);
 
     const updates: { title?: string } = {};
-    const parsedTitle = updateDocumentSchema.safeParse(body);
-    if (!parsedTitle.success) {
+    const parsedUpdate = workspaceUpdateSchema.safeParse(body);
+    if (!parsedUpdate.success) {
       return NextResponse.json({ message: 'Invalid input' }, { status: 400 });
     }
-    if (parsedTitle.data.title !== undefined) updates.title = parsedTitle.data.title;
+    if (parsedUpdate.data.title !== undefined) updates.title = parsedUpdate.data.title;
 
     // Multi file saves go through the workspace path; the legacy {content} shape keeps
     // working by writing the currently selected main file.
-    const filesPayload = workspaceSaveSchema.safeParse(body);
     const results: { path: string; revision: number; checksum: string }[] = [];
-    if (filesPayload.success && filesPayload.data.files) {
-      for (const file of filesPayload.data.files) {
+    if (parsedUpdate.data.files) {
+      for (const file of parsedUpdate.data.files) {
         const written = await writeTextFile({
           userId,
           slug,
@@ -128,10 +127,10 @@ export const PUT = withAuth(async (req, session, context) => {
         }
         if (written) results.push({ path: written.file.path, revision: written.file.revision, checksum: written.file.checksum });
       }
-    } else if (parsedTitle.data.content !== undefined) {
+    } else if (parsedUpdate.data.content !== undefined) {
       const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
       if (!currentDocument) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
-      const written = await writeTextFile({ userId, slug, rawPath: currentDocument.mainFilePath, content: parsedTitle.data.content });
+      const written = await writeTextFile({ userId, slug, rawPath: currentDocument.mainFilePath, content: parsedUpdate.data.content });
       if (written && 'conflict' in written) {
         return NextResponse.json({ message: 'Another save changed the main file', file: written.conflict }, { status: 409 });
       }

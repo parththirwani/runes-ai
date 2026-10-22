@@ -28,6 +28,10 @@ export const workspaceSaveSchema = z.object({
     .optional(),
 });
 
+export const workspaceUpdateSchema = updateDocumentSchema.extend({
+  files: workspaceSaveSchema.shape.files,
+});
+
 export const workspaceFileWriteSchema = z.object({
   path: z.string().min(1).max(300),
   content: z.string().max(1024 * 1024),
