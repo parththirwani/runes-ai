@@ -216,6 +216,8 @@ export async function writeTextFile(input: {
   const document = await getOwnedDocument(input.userId, input.slug);
   if (!document) return null;
   await ensureDocumentMigrated(prisma, document.id);
+  const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+  if (!currentDocument) return null;
 
   const path = assertSafeWorkspacePath(input.rawPath);
   const kind = kindForPath(path);
@@ -240,7 +242,7 @@ export async function writeTextFile(input: {
 
   if (!existing) await assertNoCollision(prisma, document.id, path);
 
-  const isMain = pathsCollide(path, document.mainFilePath);
+  const isMain = pathsCollide(path, currentDocument.mainFilePath);
   const file = await prisma.workspaceFile.upsert({
     where: { documentId_path: { documentId: document.id, path } },
     create: {

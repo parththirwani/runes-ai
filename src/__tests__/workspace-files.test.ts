@@ -247,6 +247,18 @@ describe('workspace file service', () => {
     expect(documents[0].content).toBe('new main source');
   });
 
+  it('updates legacy content on the first Markdown main-file save', async () => {
+    const { documents, files } = seed({ format: 'MARKDOWN', content: '# Original' });
+    files.length = 0;
+
+    const result = await writeTextFile({ userId: OWNER, slug: 'paper', rawPath: 'main.md', content: '# Edited' });
+
+    expect(result && 'file' in result && result.file.path).toBe('main.md');
+    expect(files.find((row) => row.path === 'main.md')?.content).toBe('# Edited');
+    expect(documents[0].mainFilePath).toBe('main.md');
+    expect(documents[0].content).toBe('# Edited');
+  });
+
   it('follows the main file pointer when it is renamed or moved', async () => {
     const { documents, files } = seed();
     const moved = await moveFile({ userId: OWNER, slug: 'paper', from: 'main.tex', to: 'paper/main.tex' });
