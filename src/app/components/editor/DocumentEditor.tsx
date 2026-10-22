@@ -7,6 +7,7 @@ import WorkspacePanel from './WorkspacePanel';
 import FileTabs from './FileTabs';
 import MonacoEditorWrapper from './MonacoEditorWrapper';
 import PDFPreview from './PDFPreview';
+import MarkdownPreviewPane from './MarkdownPreviewPane';
 import DiffReview from './DiffReview';
 import AiWorkspacePanel from './AiWorkspacePanel';
 import InputModal from '../design/InputModal';
@@ -16,6 +17,7 @@ import { JobStatus } from '@/src/types/compilation';
 import { EditProposal, verifyAcceptance, checkStale, generateProposalId } from '@/src/lib/proposal-engine';
 import { analyzeSelection, scanContext, selectionCutsWord } from '@/src/lib/latex-utils';
 import { buildLatexOutline } from '@/src/lib/latex-outline';
+import { buildMarkdownOutline } from '@/src/lib/markdown-outline';
 import { useWorkspace } from '@/src/hooks/useWorkspace';
 import { missingReferencesFrom, workspaceClient } from '@/src/lib/workspace-client';
 import type { WorkspaceDocumentPayload } from '@/src/lib/workspace-types';
@@ -76,6 +78,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   // A brand new document is a one file workspace that has not been persisted yet.
   const syntheticDocument = useMemo<WorkspaceDocumentPayload>(() => initialDocument ?? {
     id: 'new',
+    format: 'LATEX',
     title: 'Untitled Document',
     slug: '',
     content: initialCode,
@@ -113,6 +116,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const [compileInfo, setCompileInfo] = useState<string | null>(null);
 
   const documentId = syntheticDocument.id;
+  const isMarkdown = syntheticDocument.format === 'MARKDOWN';
 
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [compilationStatus, setCompilationStatus] = useState('');
@@ -159,8 +163,8 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const fileName = activePath || 'main.tex';
 
   const outline = useMemo(
-    () => buildLatexOutline(code, activePath ? activePath.split('/').pop() || 'main.tex' : 'main.tex', currentLineNumber),
-    [code, activePath, currentLineNumber],
+    () => (isMarkdown ? buildMarkdownOutline : buildLatexOutline)(code, activePath ? activePath.split('/').pop() || workspace.mainFilePath : workspace.mainFilePath, currentLineNumber),
+    [code, activePath, currentLineNumber, isMarkdown, workspace.mainFilePath],
   );
 
   // --- Dirty tracking ---
@@ -677,11 +681,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         setCompileError('Failed to save the workspace. Please try saving manually.');
         return;
       }
-      if (workspace.dirtyPaths.length > 0) {
-        setCompileError('Source changed while saving. Please compile again.');
-        setCompilationStatus('');
-        return;
-      }
     }
 
     setCompileError(null);
@@ -850,7 +849,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                 </button>
               )) : (
                 <p className="px-3 py-4 text-xs leading-5 text-gray-500">
-                  Use \section, \subsection, or related headings to build a navigable outline of the open file.
+                  {isMarkdown ? 'Use Markdown headings to build an outline of the open file.' : 'Use \\section and related headings to build an outline of the open file.'}
                 </p>
               )}
             </div>
@@ -957,13 +956,14 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                     <p className="text-xs text-gray-400 text-center">
                       {activeFile.path} · {activeFile.sizeBytes} bytes · {activeFile.mimeType || activeFile.kind}
                     </p>
-                    <p className="text-[11px] text-gray-500">Images are read only. Reference them from a .tex file with \includegraphics{'{'}...{'}'}.</p>
+                    <p className="text-[11px] text-meta">Images are read only. {isMarkdown ? 'Insert them with Markdown image syntax.' : <>Reference them from a .tex file with \includegraphics{'{'}...{'}'}.</>}</p>
                   </div>
                 ) : activePath ? (
                   <MonacoEditorWrapper
                     key={documentId}
                     value={code}
                     onChange={handleCodeChange}
+                    language={activePath.toLowerCase().endsWith('.md') ? 'markdown' : 'latex'}
                     fileName={fileName}
                     onEditorReady={handleEditorReady}
                   />
@@ -1030,14 +1030,26 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
           {(viewMode === 'preview' || viewMode === 'split') && (
             <div className={`${viewMode === 'split' ? 'hidden md:block md:w-1/2' : 'w-full'}`}>
-              <PDFPreview
-                pdfUrl={pdfUrl}
-                isLoading={isCompiling}
-                onCompile={handleCompile}
-                onDownload={handleDownload}
-                statusMessage={statusLine}
-                isStale={pdfIsStale}
-              />
+              {isMarkdown ? (
+                <MarkdownPreviewPane
+                  source={workspace.filesByPath[workspace.mainFilePath]?.content ?? ''}
+                  pdfUrl={pdfUrl}
+                  isCompiling={isCompiling}
+                  compilationStatus={statusLine}
+                  pdfIsStale={pdfIsStale}
+                  onCompile={handleCompile}
+                  onDownloadPdf={handleDownload}
+                />
+              ) : (
+                <PDFPreview
+                  pdfUrl={pdfUrl}
+                  isLoading={isCompiling}
+                  onCompile={handleCompile}
+                  onDownload={handleDownload}
+                  statusMessage={statusLine}
+                  isStale={pdfIsStale}
+                />
+              )}
             </div>
           )}
         </div>

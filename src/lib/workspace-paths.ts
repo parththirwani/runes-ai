@@ -17,7 +17,7 @@ export const MAX_WORKSPACE_BYTES = 50 * 1024 * 1024;
 export const TEX_EXTENSIONS = ['.tex', '.sty', '.cls'];
 export const BIB_EXTENSIONS = ['.bib'];
 export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.pdf', '.eps'];
-export const OTHER_ALLOWED_EXTENSIONS = ['.txt'];
+export const OTHER_ALLOWED_EXTENSIONS = ['.txt', '.md'];
 
 export const ALLOWED_EXTENSIONS = [
   ...TEX_EXTENSIONS,

@@ -43,6 +43,7 @@ export const GET = withAuth(async (req, session, context) => {
           id: workspace.document.id,
           title: workspace.document.title,
           slug: workspace.document.slug,
+          format: workspace.document.format,
           updatedAt: workspace.document.updatedAt,
           mainFilePath: workspace.document.mainFilePath,
           // Legacy shape: single source clients keep reading Document.content.
@@ -233,6 +234,38 @@ export const POST = withAuth(async (req, session, context) => {
       return NextResponse.json({ message: 'Compilation job queued', jobId, rateLimit: { remaining: rateLimitResult.remaining, resetAt: rateLimitResult.resetAt } }, { status: 202 });
     }
     await ensureDocumentMigrated(prisma, document.id);
+
+    if (document.format === 'MARKDOWN') {
+      const main = await prisma.workspaceFile.findUnique({
+        where: { documentId_path: { documentId: document.id, path: document.mainFilePath } },
+        select: { content: true, checksum: true, revision: true },
+      });
+      if (!main) return NextResponse.json({ message: 'Main Markdown file not found' }, { status: 404 });
+      const rows = await prisma.documentAsset.findMany({
+        where: { documentId: document.id },
+        select: { path: true, mediaType: true, bytes: true },
+        orderBy: { path: 'asc' },
+      });
+      const assets = rows.map((row) => ({
+        path: row.path,
+        mediaType: row.mediaType,
+        data: Buffer.from(row.bytes).toString('base64'),
+      }));
+      const jobId = await compilationProducer.addJob({
+        documentId: document.id,
+        userId,
+        slug: document.slug,
+        content: main.content ?? '',
+        format: 'MARKDOWN',
+        assets,
+      });
+      return NextResponse.json({
+        message: 'Compilation job queued',
+        jobId,
+        reused: 'new',
+        snapshot: { digest: main.checksum, mainFile: document.mainFilePath, files: [{ path: document.mainFilePath, checksum: main.checksum, revision: main.revision }] },
+      }, { status: 202 });
+    }
 
     const compiler = {
       engine: configuredEngine(),

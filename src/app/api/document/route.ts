@@ -45,6 +45,7 @@ export const POST = withAuth(async (req, session) => {
         title: title.trim(),
         content: source,
         format,
+        mainFilePath: format === "MARKDOWN" ? "main.md" : "main.tex",
         slug,
         userId,
       },

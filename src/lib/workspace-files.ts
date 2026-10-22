@@ -45,7 +45,7 @@ export type WorkspaceFileRecord = {
 export type WorkspaceFileContent = WorkspaceFileRecord & { content: string | null; binary: boolean };
 
 export type WorkspaceTree = {
-  document: { id: string; slug: string; title: string; mainFilePath: string; updatedAt: Date };
+  document: { id: string; slug: string; title: string; format: 'LATEX' | 'MARKDOWN'; mainFilePath: string; updatedAt: Date };
   files: WorkspaceFileRecord[];
   tree: TreeNode[];
 };
@@ -67,30 +67,31 @@ const publicFile = (file: {
 });
 
 /**
- * Creates main.tex for documents that still only have the legacy content column.
+ * Creates the format's main file for documents that still only have the legacy content column.
  * Safe to call on every read: it only acts when no file exists yet.
  */
 export async function ensureDocumentMigrated(client: typeof prisma, documentId: string): Promise<void> {
   const fileCount = await client.workspaceFile.count({ where: { documentId } });
   if (fileCount > 0) return;
 
-  const document = await client.document.findUnique({ where: { id: documentId }, select: { content: true } });
+  const document = await client.document.findUnique({ where: { id: documentId }, select: { content: true, format: true } });
   const content = document?.content ?? '';
   const bytes = Buffer.from(content, 'utf-8');
+  const mainFile = document?.format === 'MARKDOWN' ? 'main.md' : DEFAULT_MAIN_FILE;
 
   await client.workspaceFile.create({
     data: {
       documentId,
-      path: DEFAULT_MAIN_FILE,
-      kind: 'tex',
-      mimeType: 'text/x-tex',
+      path: mainFile,
+      kind: document?.format === 'MARKDOWN' ? 'other' : 'tex',
+      mimeType: document?.format === 'MARKDOWN' ? 'text/markdown' : 'text/x-tex',
       sizeBytes: bytes.byteLength,
       checksum: checksum(bytes),
       revision: 1,
       content,
     },
   });
-  await client.document.update({ where: { id: documentId }, data: { mainFilePath: DEFAULT_MAIN_FILE } });
+  await client.document.update({ where: { id: documentId }, data: { mainFilePath: mainFile } });
 }
 
 export async function getOwnedDocument(userId: string, slug: string) {
@@ -114,6 +115,7 @@ export async function readWorkspaceTree(userId: string, slug: string): Promise<W
       id: document.id,
       slug: document.slug,
       title: document.title,
+      format: document.format,
       mainFilePath: document.mainFilePath,
       updatedAt: document.updatedAt,
     },
