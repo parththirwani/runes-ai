@@ -93,7 +93,7 @@ export const GET = withAuth(async (_req, session) => {
     // leak raw TeX commands, Markdown syntax, or HTML.
     const documentsWithExcerpt = documents.map((doc) => ({
       ...doc,
-      excerpt: plainTextExcerpt(doc.content, doc.format === "MARKDOWN" ? "MARKDOWN" : "LATEX"),
+      excerpt: plainTextExcerpt(doc.content ?? "", doc.format === "MARKDOWN" ? "MARKDOWN" : "LATEX"),
     }));
 
     return NextResponse.json(

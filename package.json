@@ -8,7 +8,9 @@
     "start": "next start",
     "worker": "bun run worker/index.ts",
     "worker:dev": "bun --watch worker/index.ts",
-    "dev:all": "concurrently \"bun run dev\" \"bun run worker:dev\""
+    "dev:all": "concurrently \"bun run dev\" \"bun run worker:dev\"",
+    "migrate:workspaces": "bun run scripts/migrate-workspaces.ts",
+    "bench": "node scripts/bench/bench.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

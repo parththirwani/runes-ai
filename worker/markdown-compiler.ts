@@ -30,7 +30,7 @@ import { promisify } from 'util';
 import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
-import type { CompilationOptions, CompilationResult } from '@/src/lib/latex';
+import type { CompilationOptions, CompilationResult } from '@/src/types/compilation';
 import type { SnapshotAsset } from '@/src/types/compilation';
 import { normalizeAssetPath, assetMediaTypeFor } from '@/src/lib/markdown-assets';
 

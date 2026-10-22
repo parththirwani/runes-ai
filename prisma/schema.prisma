@@ -22,17 +22,21 @@ model User {
 }
 
 model Document {
-  id        String         @id @default(uuid())
-  title     String         @unique
-  content   String         @db.Text // LaTeX or Markdown source, per format
-  format    DocumentFormat @default(LATEX) // immutable after creation
-  slug      String         @unique
-  userId    String
-  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  id           String  @id @default(uuid())
+  title        String  @unique
+  // Legacy single-source column. Kept in sync with the main file so existing URLs,
+  // clients and rollbacks keep working until the column is explicitly dropped.
+  content      String? @db.Text
+  format       DocumentFormat @default(LATEX)
+  mainFilePath String  @default("main.tex")
+  slug         String  @unique
+  userId       String
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   chatSessions ChatSession[]
+  files        WorkspaceFile[]
   assets       DocumentAsset[]
 
   @@unique([userId, title])
@@ -40,17 +44,14 @@ model Document {
   @@map("documents")
 }
 
-// Owned local image assets for Markdown documents. Normalized relative paths
-// map directly onto the planned workspace file model
-// (compile-workspace-plan.md: file rows keyed by (documentId, normalizedPath)).
 model DocumentAsset {
   id         String   @id @default(uuid())
   documentId String
   document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  path       String // normalized relative path, e.g. "images/diagram.png"
+  path       String
   mediaType  String
   size       Int
-  checksum   String // hex sha256 of bytes
+  checksum   String
   bytes      Bytes
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -63,6 +64,35 @@ model DocumentAsset {
 enum DocumentFormat {
   LATEX
   MARKDOWN
+}
+
+// One file inside a workspace. Directory structure is derived from `path`, which is
+// always a normalized POSIX relative path such as "chapters/methods.tex".
+model WorkspaceFile {
+  id         String      @id @default(uuid())
+  documentId String
+  document   Document    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  path       String
+  kind       WorkspaceFileKind
+  mimeType   String?
+  sizeBytes  Int         @default(0)
+  checksum   String      @default("")
+  revision   Int         @default(1)
+  content    String?     @db.Text
+  storageKey String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@unique([documentId, path])
+  @@index([documentId])
+  @@map("workspace_files")
+}
+
+enum WorkspaceFileKind {
+  tex
+  bib
+  image
+  other
 }
 
 model ChatSession {

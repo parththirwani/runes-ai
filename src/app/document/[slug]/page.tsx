@@ -4,9 +4,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { LoaderCircle, TriangleAlert } from 'lucide-react';
 import DocumentEditor from '../../components/editor/DocumentEditor';
-import Button from '../../components/design/Button';
+import { workspaceClient } from '@/src/lib/workspace-client';
+import type { WorkspaceDocumentPayload } from '@/src/lib/workspace-types';
 
 export default function DocumentPage() {
   const { status } = useSession();
@@ -15,7 +15,7 @@ export default function DocumentPage() {
   const slug = params.slug as string;
   const decodedTitle = useMemo(() => slug?.split('-').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ') || 'Document', [slug]);
   
-  const [document, setDocument] = useState<{ id: string; title: string; content: string; slug: string; format?: 'LATEX' | 'MARKDOWN' } | null>(null);
+  const [document, setDocument] = useState<WorkspaceDocumentPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,13 +24,13 @@ export default function DocumentPage() {
       setLoading(true);
       setError(null);
       setDocument(null);
-      const response = await fetch(`/api/document/${slug}`, { signal });
-      if (!response.ok) {
-        setError(response.status === 404 ? 'Document not found' : 'Failed to load document');
-        return;
+      try {
+        const loaded = await workspaceClient.load(slug);
+        if (!signal.aborted) setDocument(loaded);
+      } catch (loadError) {
+        const status = (loadError as { status?: number }).status;
+        if (!signal.aborted) setError(status === 404 ? 'Document not found' : 'Failed to load document');
       }
-      const data = await response.json();
-      if (!signal.aborted) setDocument(data.document);
     } catch (err) {
       if (!signal.aborted) {
         console.error('Error fetching document:', err);
@@ -56,26 +56,30 @@ export default function DocumentPage() {
 
   if (status === 'loading' || loading || (!document && !error)) {
     return (
-      <main id="main" role="status" className="flex h-screen items-center justify-center bg-canvas text-center">
-        <div>
-          <LoaderCircle className="mx-auto mb-4 h-10 w-10 animate-spin text-primary" aria-hidden="true" />
-          <p className="text-sm text-muted-foreground">Loading document...</p>
-          <p className="mt-2 font-mono text-xs text-meta">Opening {decodedTitle}</p>
+      <div className="h-screen flex items-center justify-center bg-[#1e1e1e]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto mb-4" />
+          <p className="text-gray-400">Loading document...</p>
+          <p className="text-xs text-gray-600 mt-2">Opening {decodedTitle}</p>
         </div>
-      </main>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <main id="main" role="alert" className="flex h-screen items-center justify-center bg-canvas text-center">
-        <div>
-          <TriangleAlert className="mx-auto mb-3 h-8 w-8 text-destructive" aria-hidden="true" />
-          <p className="text-base font-medium text-foreground">{error}</p>
-          <p className="mt-2 mb-6 font-mono text-xs text-meta">Tried to open {decodedTitle}</p>
-          <Button onClick={() => router.push('/document')}>Go to Documents</Button>
+      <div className="h-screen flex items-center justify-center bg-[#1e1e1e]">
+        <div className="text-center">
+          <p className="text-red-400 mb-4">{error}</p>
+          <p className="text-xs text-gray-500 mb-6">Tried to open {decodedTitle}</p>
+          <button
+            onClick={() => router.push('/document')}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+          >
+            Go to Documents
+          </button>
         </div>
-      </main>
+      </div>
     );
   }
 

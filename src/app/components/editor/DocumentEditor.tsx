@@ -1,9 +1,10 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import TopNavBar from './TopNavBar';
-import FileTree from './FileTree';
+import WorkspacePanel from './WorkspacePanel';
+import FileTabs from './FileTabs';
 import MonacoEditorWrapper from './MonacoEditorWrapper';
 import PDFPreview from './PDFPreview';
 import DiffReview from './DiffReview';
@@ -12,15 +13,16 @@ import InputModal from '../design/InputModal';
 import AlertModal from '../design/AlertModal';
 import Button from '../design/Button';
 import { JobStatus } from '@/src/types/compilation';
-import type { DocumentFormatValue } from '@/src/types/compilation';
 import { EditProposal, verifyAcceptance, checkStale, generateProposalId } from '@/src/lib/proposal-engine';
 import { analyzeSelection, scanContext, selectionCutsWord } from '@/src/lib/latex-utils';
-import { analyzeMarkdownSelection, markdownLineIsProse, scanMarkdownContext } from '@/src/lib/markdown-utils';
 import { buildLatexOutline } from '@/src/lib/latex-outline';
-import { buildMarkdownOutline } from '@/src/lib/markdown-outline';
-import MarkdownPreviewPane from './MarkdownPreviewPane';
+import { useWorkspace } from '@/src/hooks/useWorkspace';
+import { missingReferencesFrom, workspaceClient } from '@/src/lib/workspace-client';
+import type { WorkspaceDocumentPayload } from '@/src/lib/workspace-types';
+import type { CompileDiagnostic } from '@/src/lib/compile-errors';
+import type { MissingReference } from '@/src/lib/workspace-types';
 import type { editor } from 'monaco-editor';
-import { Wand2, RefreshCw, ImagePlus } from 'lucide-react';
+import { Wand2, RefreshCw, FileWarning } from 'lucide-react';
 
 type ViewMode = 'editor' | 'split' | 'preview';
 
@@ -56,23 +58,44 @@ Summarize your findings here.
 \\end{document}`;
 
 interface DocumentEditorProps {
-  initialDocument?: {
-    id: string;
-    title: string;
-    content: string;
-    slug: string;
-    format?: DocumentFormatValue;
-  } | null;
+  initialDocument?: WorkspaceDocumentPayload | null;
+}
+
+// Status polling: ask immediately, poll quickly while a compile is normally running, then
+// relax. An in flight guard stops slow responses from stacking up on each other.
+const POLL_FAST_MS = 200;
+const POLL_SLOW_MS = 1000;
+const POLL_SLOW_AFTER_MS = 5000;
+
+function pollDelayFor(elapsedMs: number): number {
+  return elapsedMs > POLL_SLOW_AFTER_MS ? POLL_SLOW_MS : POLL_FAST_MS;
 }
 
 export default function DocumentEditor({ initialDocument }: DocumentEditorProps) {
   const router = useRouter();
-  // Format is fixed at creation and read from the stored document row.
-  const format: DocumentFormatValue = initialDocument?.format ?? 'LATEX';
-  const isMarkdown = format === 'MARKDOWN';
-  const extension = isMarkdown ? 'md' : 'tex';
-  const language = isMarkdown ? 'markdown' : 'latex';
-  const [code, setCode] = useState(initialDocument?.content ?? initialCode);
+  // A brand new document is a one file workspace that has not been persisted yet.
+  const syntheticDocument = useMemo<WorkspaceDocumentPayload>(() => initialDocument ?? {
+    id: 'new',
+    title: 'Untitled Document',
+    slug: '',
+    content: initialCode,
+    mainFilePath: 'main.tex',
+    updatedAt: new Date().toISOString(),
+    mainFile: { path: 'main.tex', revision: 0, checksum: '' },
+    files: [{
+      id: 'new',
+      path: 'main.tex',
+      kind: 'tex',
+      mimeType: 'text/x-tex',
+      sizeBytes: initialCode.length,
+      checksum: '',
+      revision: 0,
+      updatedAt: new Date().toISOString(),
+    }],
+    tree: [{ name: 'main.tex', path: 'main.tex', type: 'file' }],
+  }, [initialDocument]);
+  const workspace = useWorkspace(syntheticDocument);
+
   const [title, setTitle] = useState(initialDocument?.title || 'Untitled Document');
   const [slug, setSlug] = useState(initialDocument?.slug || '');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
@@ -83,90 +106,82 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const [pdfUrl, setPdfUrl] = useState<string>();
   const pdfUrlRef = useRef<string | undefined>(undefined);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const savedSnapshotRef = useRef({ content: initialDocument?.content ?? initialCode, title: initialDocument?.title ?? 'Untitled Document' });
-  const latestRef = useRef({ content: code, title });
-  latestRef.current = { content: code, title };
-  const saveRef = useRef<() => Promise<boolean>>(async () => false);
-  const downloadPdfRef = useRef<(jobId: string) => Promise<void>>(async () => {});
+  const savedTitleRef = useRef(initialDocument?.title ?? 'Untitled Document');
   const [compileError, setCompileError] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<CompileDiagnostic[]>([]);
+  const [missingRefs, setMissingRefs] = useState<MissingReference[]>([]);
+  const [compileInfo, setCompileInfo] = useState<string | null>(null);
 
-  // Document ID for proposals
-  const documentId = initialDocument?.id || 'new';
+  const documentId = syntheticDocument.id;
 
-  // Job polling
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [compilationStatus, setCompilationStatus] = useState('');
   const [currentLineNumber, setCurrentLineNumber] = useState(1);
 
-  // Modal states
   const [showTitleModal, setShowTitleModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorModalMessage, setErrorModalMessage] = useState('');
 
-  // Editor instance ref
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof import('monaco-editor') | null>(null);
 
-  // AI state
   const [proposal, setProposal] = useState<EditProposal | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [autocompleteNotice, setAutocompleteNotice] = useState<string | null>(null);
   const autocompleteNoticeShownRef = useRef(false);
-  const assetInputRef = useRef<HTMLInputElement | null>(null);
-  const [assetUploadBusy, setAssetUploadBusy] = useState(false);
-  const [assetNotice, setAssetNotice] = useState<string | null>(null);
-  const [assetError, setAssetError] = useState<string | null>(null);
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(true);
   const autocompleteEnabledRef = useRef(true);
   const [paraphraseDisabledReason, setParaphraseDisabledReason] = useState<string | null>('Select prose to paraphrase');
   const selectionListenerRef = useRef<{ dispose(): void } | null>(null);
   const cursorListenerRef = useRef<{ dispose(): void } | null>(null);
 
-  // Sync state → refs for closure-safe reads inside the Monaco provider
   useEffect(() => { autocompleteEnabledRef.current = autocompleteEnabled; }, [autocompleteEnabled]);
   const proposalRef = useRef<EditProposal | null>(null);
   useEffect(() => { proposalRef.current = proposal; }, [proposal]);
 
-  // Autocomplete: debounce timer, abort controller, request ID, and provider disposable
   const completeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const completeDebounceResolverRef = useRef<((v: { items: [] }) => void) | null>(null);
   const completeAbortRef = useRef<AbortController | null>(null);
   const completeRequestIdRef = useRef(0);
   const completeProviderDisposableRef = useRef<{ dispose(): void } | null>(null);
 
-  // Staleness tracking for paraphrase
   const pendingParaphraseStaleRef = useRef(false);
   const paraphraseAbortRef = useRef<AbortController | null>(null);
   const paraphraseRequestIdRef = useRef(0);
 
-  // Proposal verification
   const [stalenessReason, setStalenessReason] = useState<string | null>(null);
 
-  // Track PDF staleness
-  const [pdfIsStale, setPdfIsStale] = useState(false);
-  const compileSourceRef = useRef<string | null>(null);
+  const activePath = workspace.activePath;
+  const activeFile = workspace.activeFile;
+  const code = activeFile && !activeFile.binary ? activeFile.content : '';
+  const isBinaryActive = Boolean(activeFile?.binary);
+  const fileName = activePath || 'main.tex';
 
-  // Store the most recent tone used for paraphrase
-  const lastToneRef = useRef('Clearer');
-  const fileName = `${slug || 'untitled'}.${extension}`;
-  const modelUri = `runes://${documentId}/${fileName}`;
-  const outline = isMarkdown
-    ? buildMarkdownOutline(code, fileName, currentLineNumber)
-    : buildLatexOutline(code, fileName, currentLineNumber);
+  const outline = useMemo(
+    () => buildLatexOutline(code, activePath ? activePath.split('/').pop() || 'main.tex' : 'main.tex', currentLineNumber),
+    [code, activePath, currentLineNumber],
+  );
 
   // --- Dirty tracking ---
   useEffect(() => {
-    const hasChanged = code !== savedSnapshotRef.current.content || title !== savedSnapshotRef.current.title;
-    setHasUnsavedChanges(hasChanged);
-    if (code !== savedSnapshotRef.current.content && pdfUrl) setPdfIsStale(true);
-  }, [code, title, pdfUrl]);
+    const dirty = workspace.dirtyPaths.length > 0 || title !== savedTitleRef.current;
+    setHasUnsavedChanges(dirty);
+  }, [workspace.dirtyPaths, title]);
+
+  // Opening a binary asset should not try to edit it.
+  useEffect(() => {
+    if (isBinaryActive) {
+      setParaphraseDisabledReason('Binary file cannot be edited');
+      setProposal(null);
+    }
+  }, [isBinaryActive]);
 
   // --- Key handlers ---
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+        event.preventDefault();
         saveRef.current();
       }
     };
@@ -176,26 +191,26 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   // --- Autosave ---
   useEffect(() => {
-    if (hasUnsavedChanges && slug) {
+    if (workspace.dirtyPaths.length > 0 && slug) {
       const timer = setTimeout(() => { saveRef.current(); }, 30000);
       return () => clearTimeout(timer);
     }
-  }, [hasUnsavedChanges, slug, code, title]);
+  }, [workspace.dirtyPaths.length, slug, code]);
 
-  // --- Job polling ---
+  // --- Job polling: immediate first check, no overlapping requests ---
   useEffect(() => {
     if (!currentJobId) return;
-    const pollInterval = setInterval(async () => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let inFlight = false;
+    const startedAt = Date.now();
+
+    const tick = async () => {
+      if (inFlight || cancelled) return;
+      inFlight = true;
       try {
-        const response = await fetch(`/api/job/${currentJobId}`);
-        if (!response.ok) {
-          clearInterval(pollInterval);
-          setIsCompiling(false);
-          setCompileError('Job status check failed');
-          setCurrentJobId(null);
-          return;
-        }
-        const status = await response.json();
+        const status = await workspaceClient.jobStatus(currentJobId);
+        if (cancelled) return;
         switch (status.status) {
           case JobStatus.PENDING:
             setCompilationStatus('Queued...');
@@ -203,34 +218,50 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           case JobStatus.PROCESSING:
             setCompilationStatus('Compiling...');
             break;
-          case JobStatus.COMPLETED:
-            clearInterval(pollInterval);
+          case JobStatus.COMPLETED: {
+            const timings = status.timings;
+            if (timings?.totalMs !== undefined) {
+              setCompileInfo('Compiled in ' + timings.totalMs + ' ms (queue ' + (timings.queueWaitMs ?? 0) + ' ms, engine ' + (timings.compiler?.engineMs ?? timings.compileMs ?? 0) + ' ms)');
+            }
             setCompilationStatus('');
             setIsCompiling(false);
             await downloadPdfRef.current(currentJobId);
-            setCurrentJobId(null);
+            if (!cancelled) setCurrentJobId(null);
             break;
-          case JobStatus.FAILED:
-            clearInterval(pollInterval);
+          }
+          case JobStatus.FAILED: {
             setCompilationStatus('');
             setIsCompiling(false);
-            const errMsg = status.result?.error || 'Compilation failed';
-            setCompileError(errMsg);
-            setErrorModalMessage(errMsg);
+            const message = status.result?.error || 'Compilation failed';
+            setCompileError(message);
+            setDiagnostics(status.result?.diagnostics || []);
+            setErrorModalMessage(message);
             setShowErrorModal(true);
             setCurrentJobId(null);
             break;
+          }
         }
       } catch {
-        clearInterval(pollInterval);
-        setIsCompiling(false);
-        setCurrentJobId(null);
+        if (!cancelled) {
+          setIsCompiling(false);
+          setCurrentJobId(null);
+          setCompileError('Job status check failed');
+        }
+        return;
+      } finally {
+        inFlight = false;
       }
-    }, 2000);
-    return () => clearInterval(pollInterval);
+      if (!cancelled) timer = setTimeout(tick, pollDelayFor(Date.now() - startedAt));
+    };
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [currentJobId]);
 
-  // --- Editor ready callback — register inline completion provider once Monaco is ready ---
+  // --- Editor ready: register the AI inline completion provider once per document ---
   const handleEditorReady = useCallback((editorInstance: editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) => {
     editorRef.current = editorInstance;
     monacoRef.current = monaco;
@@ -247,9 +278,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       const start = model.getOffsetAt(selection.getStartPosition());
       const end = model.getOffsetAt(selection.getEndPosition());
       const selected = full.slice(start, end);
-      const analysis = isMarkdown
-        ? analyzeMarkdownSelection(selected, scanMarkdownContext(full, start))
-        : analyzeSelection(selected, scanContext(full, start));
+      const analysis = analyzeSelection(selected, scanContext(full, start));
       setParaphraseDisabledReason(
         !analysis.eligible ? analysis.reason || 'Unsupported selection' :
         selectionCutsWord(full.slice(0, start), selected, full.slice(end)) ? 'Select complete words' : null,
@@ -259,15 +288,13 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       setCurrentLineNumber(event.position.lineNumber);
     });
 
-    // Dispose any previous provider (e.g. after re-mount)
     if (completeProviderDisposableRef.current) {
       completeProviderDisposableRef.current.dispose();
       completeProviderDisposableRef.current = null;
     }
 
-    const provider = monaco.languages.registerInlineCompletionsProvider(language, {
+    const provider = monaco.languages.registerInlineCompletionsProvider('latex', {
       provideInlineCompletions: async (model, position, _context, token) => {
-        // Read live state from refs (the provider closure is created once at mount)
         if (!autocompleteEnabledRef.current || proposalRef.current || token.isCancellationRequested || model !== editorInstance.getModel()) return { items: [] };
 
         const requestId = ++completeRequestIdRef.current;
@@ -275,19 +302,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
         const offset = model.getOffsetAt(position);
         const fullSource = model.getValue();
-        if (isMarkdown) {
-          // Suppress completions in front matter, code, math, link/image
-          // destinations, raw HTML, tables, headings, and list markers.
-          const mdCtx = scanMarkdownContext(fullSource, offset);
-          const lineUpToCursor = fullSource.slice(0, offset).slice(fullSource.slice(0, offset).lastIndexOf('\n') + 1);
-          if (mdCtx.inProtected || !markdownLineIsProse(lineUpToCursor)) {
-            return { items: [] };
-          }
-        } else {
-          const ctx = scanContext(fullSource, offset);
-          if (!ctx.isInDocument || ctx.isInPreamble || ctx.isInMath || ctx.isInVerbatim || ctx.isInComment || ctx.isInCommandName || ctx.isInCommandArg) {
-            return { items: [] };
-          }
+        const ctx = scanContext(fullSource, offset);
+        if (!ctx.isInDocument || ctx.isInPreamble || ctx.isInMath || ctx.isInVerbatim || ctx.isInComment || ctx.isInCommandName || ctx.isInCommandArg) {
+          return { items: [] };
         }
 
         const sel = editorInstance.getSelection();
@@ -296,8 +313,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         const prefix = fullSource.slice(Math.max(0, offset - 2000), offset);
         const suffix = fullSource.slice(offset, offset + 1000);
 
-        // Cancel existing debounce and resolve its promise so Monaco doesn't
-        // hold a dangling unresolved promise.
         if (completeDebounceRef.current) {
           clearTimeout(completeDebounceRef.current);
           if (completeDebounceResolverRef.current) {
@@ -379,7 +394,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     completeProviderDisposableRef.current = provider;
   }, [documentId]);
 
-  // --- Paraphrase action ---
+  // --- Paraphrase action: always operates on the file that is open right now ---
   const handleParaphrase = useCallback(async (tone: string = 'Clearer') => {
     const editor = editorRef.current;
     const monaco = monacoRef.current;
@@ -400,16 +415,13 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     const endOffset = model.getOffsetAt({ lineNumber: selection.endLineNumber, column: selection.endColumn });
     const selectedText = model.getValue().slice(startOffset, endOffset);
 
-    // Context analysis (format-specific rules)
-    const analysis = isMarkdown
-      ? analyzeMarkdownSelection(selectedText, scanMarkdownContext(model.getValue(), startOffset))
-      : analyzeSelection(selectedText, scanContext(model.getValue(), startOffset));
+    const ctx = scanContext(model.getValue(), startOffset);
+    const analysis = analyzeSelection(selectedText, ctx);
     if (!analysis.eligible || selectionCutsWord(model.getValue().slice(0, startOffset), selectedText, model.getValue().slice(endOffset))) {
       setParaphraseDisabledReason(analysis.reason || 'Select complete words');
       return;
     }
 
-    // Capture context
     const fullText = model.getValue();
     const before = fullText.slice(Math.max(0, startOffset - 1000), startOffset);
     const after = fullText.slice(endOffset, endOffset + 1000);
@@ -426,7 +438,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     setParaphraseDisabledReason(null);
     pendingParaphraseStaleRef.current = false;
 
-    // Listen for content changes between request and response
     const modelForListener = model;
     const contentChangeListener = modelForListener.onDidChangeContent(() => {
       pendingParaphraseStaleRef.current = true;
@@ -449,11 +460,10 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
       contentChangeListener.dispose();
 
-      // If user edited while we were waiting, discard
       if (requestId !== paraphraseRequestIdRef.current ||
           pendingParaphraseStaleRef.current ||
           editor.getModel() !== model || model.getVersionId() !== modelVersion) {
-        setAiError('Response discarded — document was edited while AI was working');
+        setAiError('Response discarded — the file was edited while AI was working');
         setIsAiLoading(false);
         return;
       }
@@ -507,7 +517,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     }
   }, [documentId]);
 
-  // --- Accept proposal ---
+  // --- Accept proposal (one undoable edit in the active file only) ---
   const handleAccept = useCallback(() => {
     const editor = editorRef.current;
     const monaco = monacoRef.current;
@@ -526,7 +536,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       return;
     }
 
-    // Verify acceptance — check state and original text match
     const fullText = model.getValue();
     const verification = verifyAcceptance(proposal, fullText);
 
@@ -536,7 +545,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       return;
     }
 
-    // Verify the original text is still at the position
     const actualText = fullText.slice(proposal.range.startOffset, proposal.range.endOffset);
     if (actualText !== proposal.originalText) {
       setStalenessReason('Selection text has been modified');
@@ -544,7 +552,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       return;
     }
 
-    // Apply the edit using Monaco's executeEdits for undo support
     const startPos = model.getPositionAt(proposal.range.startOffset);
     const endPos = model.getPositionAt(proposal.range.endOffset);
 
@@ -563,32 +570,25 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     ]);
     editor.pushUndoStop();
 
-    // Update code state to match
-    const newCode = model.getValue();
-    setCode(newCode);
-
-    // Clear the proposal
+    workspace.setContent(activePath, model.getValue());
     setProposal(null);
     setStalenessReason(null);
     setHasUnsavedChanges(true);
-    setPdfIsStale(true);
-  }, [proposal, documentId]);
+  }, [proposal, documentId, workspace, activePath]);
 
-  // --- Reject proposal ---
   const handleReject = useCallback(() => {
     setProposal(null);
     setStalenessReason(null);
     setAiError(null);
-    // Source unchanged — zero bytes changed
   }, []);
 
-  // --- Regenerate ---
+  const lastToneRef = useRef('Clearer');
+
   const handleRegenerate = useCallback(() => {
     setProposal(null);
     setStalenessReason(null);
     setAiError(null);
-    // Re-paraphrase with the same tone that was used last time
-    handleParaphrase(lastToneRef.current);
+    void handleParaphrase(lastToneRef.current);
   }, [handleParaphrase]);
 
   // --- PDF download ---
@@ -601,7 +601,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
       pdfUrlRef.current = url;
       setPdfUrl(url);
-      setPdfIsStale(latestRef.current.content !== compileSourceRef.current);
+      setDiagnostics([]);
     } catch (error: unknown) {
       console.error('PDF download error:', error);
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -610,32 +610,19 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       setShowErrorModal(true);
     }
   };
+  const downloadPdfRef = useRef<(jobId: string) => Promise<void>>(async () => {});
   downloadPdfRef.current = downloadPDF;
 
-  // --- Save ---
+  // --- Save: writes every dirty file in one request, main file included ---
   const handleSave = useCallback(async (): Promise<boolean> => {
     setIsSaving(true);
-    const { content: contentToSave, title: titleToSave } = latestRef.current;
-
     try {
-      if (slug) {
-        const response = await fetch(`/api/document/${slug}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: titleToSave, content: contentToSave }),
-        });
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.message || 'Failed to save document');
-        }
-        savedSnapshotRef.current = { content: contentToSave, title: titleToSave };
-        setHasUnsavedChanges(latestRef.current.content !== contentToSave || latestRef.current.title !== titleToSave);
-        return true;
-      } else {
+      if (!slug) {
+        const contentToSave = code || initialCode;
         const response = await fetch('/api/document', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: titleToSave, content: contentToSave }),
+          body: JSON.stringify({ title: title.trim() || 'Untitled Document', content: contentToSave }),
         });
         if (!response.ok) {
           const error = await response.json();
@@ -643,11 +630,20 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         }
         const data = await response.json();
         setSlug(data.slug);
-        savedSnapshotRef.current = { content: contentToSave, title: titleToSave };
-        setHasUnsavedChanges(latestRef.current.content !== contentToSave || latestRef.current.title !== titleToSave);
-        router.push(`/document/${data.slug}`);
+        workspace.setSlug(data.slug);
+        savedTitleRef.current = title;
+        router.push('/document/' + data.slug);
         return true;
       }
+
+      const result = await workspace.saveAll();
+      if (!result.ok) throw new Error(result.error || 'Failed to save');
+      if (title !== savedTitleRef.current) {
+        await workspaceClient.saveFiles(slug, [], title.trim() || 'Untitled Document');
+        savedTitleRef.current = title;
+      }
+      setCompileError(null);
+      return true;
     } catch (error: unknown) {
       console.error('Save error:', error);
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -657,131 +653,70 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     } finally {
       setIsSaving(false);
     }
-  }, [slug, router]);
+  }, [slug, router, title, code, workspace]);
+  const saveRef = useRef<() => Promise<boolean>>(async () => false);
   saveRef.current = handleSave;
 
-  // --- Compile ---
+  // --- Compile the selected main file ---
   const handleCompile = async () => {
     if (!slug) {
       setCompileError('Please save the document first before compiling');
       return;
     }
 
-    // Reject proposals silently — only accepted text compiles
+    // Pending proposals never compile: only accepted text is sent.
     if (proposal) {
       setProposal(null);
       setStalenessReason(null);
     }
 
-    if (latestRef.current.content !== savedSnapshotRef.current.content || latestRef.current.title !== savedSnapshotRef.current.title) {
+    if (workspace.dirtyPaths.length > 0 || title !== savedTitleRef.current) {
       setCompilationStatus('Saving changes...');
-      const saveSuccess = await handleSave();
-      if (!saveSuccess) {
-        setCompileError('Failed to save document. Please try saving manually.');
+      const saved = await handleSave();
+      if (!saved) {
+        setCompileError('Failed to save the workspace. Please try saving manually.');
         return;
       }
-      if (latestRef.current.content !== savedSnapshotRef.current.content || latestRef.current.title !== savedSnapshotRef.current.title) {
-        setCompileError('Source changed while saving. Please recompile.');
+      if (workspace.dirtyPaths.length > 0) {
+        setCompileError('Source changed while saving. Please compile again.');
         setCompilationStatus('');
         return;
       }
-      setCompileError(null);
     }
 
-    compileSourceRef.current = savedSnapshotRef.current.content;
-
-    setIsCompiling(true);
     setCompileError(null);
+    setMissingRefs([]);
+    setDiagnostics([]);
+    setCompileInfo(null);
+    setIsCompiling(true);
     setCompilationStatus('Queueing compilation...');
 
     try {
-      const response = await fetch(`/api/document/${slug}`, { method: 'POST' });
-
-      if (response.status === 429) {
-        const error = await response.json();
-        const resetAt = new Date(error.resetAt);
-        const seconds = Math.ceil((resetAt.getTime() - Date.now()) / 1000);
-        setCompileError(`${error.message} Please wait ${seconds}s.`);
-        setErrorModalMessage(compileError || 'Rate limit reached');
+      const response = await workspaceClient.compile(slug);
+      if (response.snapshot) workspace.setCompiledSnapshot(response.snapshot);
+      setCompilationStatus(response.reused === 'new' ? 'Queued...' : 'Reusing compile for identical source');
+      setCurrentJobId(response.jobId);
+    } catch (error: unknown) {
+      setIsCompiling(false);
+      const missing = missingReferencesFrom(error);
+      if (missing && missing.length > 0) {
+        setMissingRefs(missing);
+        const message = 'Missing referenced file: ' + missing[0].reference + ' (used by ' + missing[0].file + ')';
+        setCompileError(message);
+        setErrorModalMessage(message);
         setShowErrorModal(true);
-        setIsCompiling(false);
         return;
       }
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || error.message || 'Failed to queue compilation');
+      const status = (error as { status?: number }).status;
+      const message = error instanceof Error ? error.message : 'Failed to queue compilation';
+      if (status === 429) {
+        setErrorModalMessage(message);
+        setShowErrorModal(true);
       }
-
-      const data = await response.json();
-      setCurrentJobId(data.jobId);
-      setCompilationStatus('Queued...');
-    } catch (error: unknown) {
-      console.error('Compile error:', error);
-      setIsCompiling(false);
-      const message = error instanceof Error ? error.message : 'Unknown error';
       setCompileError(message);
-      setErrorModalMessage(message);
-      setShowErrorModal(true);
     }
   };
 
-  // --- Source (.md) download for Markdown documents ---
-  const handleDownloadSource = () => {
-    const blob = new Blob([code], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-  // --- Image upload (Markdown): POST to the document asset store, then
-  // insert the canonical asset URL at the caret as a single undoable edit. ---
-  const handleAssetFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file || !slug) return;
-    const uploadModel = editorRef.current?.getModel();
-    setAssetUploadBusy(true);
-    setAssetNotice(null);
-    setAssetError(null);
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      const response = await fetch(`/api/document/${slug}/assets`, { method: 'POST', body: form });
-      const payload = await response.json().catch(() => ({})) as { asset?: { path: string }; message?: string };
-      if (!response.ok) throw new Error(payload?.message || 'Image upload failed');
-      const assetPath = payload.asset?.path;
-      if (!assetPath) throw new Error('Image upload failed');
-      const alt = file.name.replace(/\.[A-Za-z0-9]+$/, '') || 'image';
-      const insertion = `![${alt}](/api/document/${slug}/assets/${assetPath})`;
-      const editorInstance = editorRef.current;
-      const editorModel = editorInstance?.getModel();
-      if (uploadModel && editorModel !== uploadModel) {
-        throw new Error('Image uploaded, but the document changed before it could be inserted');
-      }
-      if (editorInstance && editorModel) {
-        const selection = editorInstance.getSelection();
-        const range = selection ?? editorModel.getFullModelRange();
-        const text = selection ? insertion : `${editorModel.getValue()}\n\n${insertion}\n`;
-        editorInstance.executeEdits('asset-upload', [{ range, text }]);
-        editorInstance.focus();
-      } else {
-        setCode((prev) => `${prev}\n\n${insertion}\n`);
-      }
-      setAssetNotice(`Inserted ${assetPath}`);
-    } catch (error) {
-      setAssetError(error instanceof Error ? error.message : 'Image upload failed');
-    } finally {
-      setAssetUploadBusy(false);
-    }
-  };
-
-  // --- Download handler ---
   const handleDownload = async () => {
     if (!pdfUrl) {
       setErrorModalMessage('Please compile the document first');
@@ -790,22 +725,31 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     }
     const link = document.createElement('a');
     link.href = pdfUrl;
-    link.download = `${slug || 'document'}.pdf`;
+    link.download = (slug || 'document') + '.pdf';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // --- Title edit ---
   const handleTitleSubmit = (newTitle: string) => {
     setTitle(newTitle);
     setShowTitleModal(false);
   };
 
+  const openDiagnostic = useCallback((file: string | null, line: number | null) => {
+    if (!file) return;
+    void workspace.openFile(file).then(() => {
+      const editor = editorRef.current;
+      if (!editor || !line) return;
+      editor.revealLineInCenter(line);
+      editor.setPosition({ lineNumber: line, column: 1 });
+      editor.focus();
+    });
+  }, [workspace]);
+
   const handleOutlineSelect = useCallback((node: { lineNumber: number }) => {
     const editor = editorRef.current;
     if (!editor) return;
-
     editor.revealLineInCenter(node.lineNumber);
     editor.setPosition({ lineNumber: node.lineNumber, column: 1 });
     editor.focus();
@@ -813,25 +757,23 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     setShowFileTree(false);
   }, []);
 
-  // --- Code change from editor ---
   const handleCodeChange = useCallback((newValue: string) => {
-    setCode(newValue);
-    // If there's a pending proposal, check staleness
+    if (!activePath) return;
+    workspace.setContent(activePath, newValue);
     if (proposal) {
       const model = editorRef.current?.getModel();
       if (model) {
         const version = model.getVersionId();
         if (version !== proposal.baseModelVersion) {
-          setStalenessReason('Document was edited while proposal was pending');
-          setProposal(prev => prev ? { ...prev, state: 'stale' } : null);
+          setStalenessReason('The file was edited while the proposal was pending');
+          setProposal((prev) => (prev ? { ...prev, state: 'stale' } : null));
         }
       }
     }
-    // If a paraphrase is pending (isAiLoading but no proposal yet), mark it stale
     if (isAiLoading) {
       pendingParaphraseStaleRef.current = true;
     }
-  }, [proposal, isAiLoading]);
+  }, [activePath, proposal, isAiLoading, workspace]);
 
   // --- Cleanup ---
   useEffect(() => {
@@ -855,6 +797,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     };
   }, []);
 
+  const pdfIsStale = Boolean(pdfUrl) && workspace.stalePaths.length > 0;
+  const statusLine = [compilationStatus, compileInfo].filter(Boolean).join(' · ');
+
   return (
     <main id="main" className="flex h-screen flex-col overflow-hidden bg-canvas">
       <TopNavBar
@@ -869,23 +814,47 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         isSaving={isSaving}
         isCompiling={isCompiling}
         hasUnsavedChanges={hasUnsavedChanges}
-        compilationStatus={compilationStatus}
-        format={format}
-        fileName={fileName}
-        onDownloadSource={isMarkdown ? handleDownloadSource : undefined}
+        compilationStatus={statusLine}
       />
 
       <div className="flex-1 relative overflow-hidden">
-        <FileTree
+        <WorkspacePanel
           isOpen={showFileTree}
           onClose={() => setShowFileTree(false)}
-          files={outline}
-          onFileSelect={handleOutlineSelect}
-          onNewFile={() => router.push('/document')}
-          title="Document outline"
-          emptyMessage={isMarkdown
-            ? 'Use # headings to build a navigable outline.'
-            : 'Use \\section, \\subsection, or related headings to build a navigable outline.'}
+          tree={workspace.tree}
+          files={workspace.filesByPath}
+          mainFilePath={workspace.mainFilePath}
+          activePath={activePath}
+          dirtyPaths={workspace.dirtyPaths}
+          stalePaths={workspace.stalePaths}
+          slug={slug}
+          onOpenFile={(path) => void workspace.openFile(path)}
+          onCreateFile={(path) => workspace.createFile(path, path.endsWith('.tex') ? '\\section{' + path.split('/').pop() + '}\n' : '')}
+          onUpload={(path, blob) => workspace.uploadFile(path, blob)}
+          onRename={(from, to) => workspace.renameFile(from, to)}
+          onDelete={(path) => workspace.removeFile(path)}
+          onChooseMain={(path) => workspace.chooseMainFile(path)}
+          error={workspace.lastError}
+          onDismissError={() => workspace.setLastError(null)}
+          outline={
+            <div>
+              {outline.length > 0 ? outline.map((node) => (
+                <button
+                  key={node.id}
+                  type="button"
+                  onClick={() => handleOutlineSelect(node)}
+                  className="w-full text-left px-3 py-1.5 rounded text-[13px] text-gray-300 hover:bg-[#2a2d2e] flex items-center justify-between gap-2"
+                >
+                  <span className="truncate">{node.name}</span>
+                  <span className="text-[10px] text-gray-500 tabular-nums">L{node.lineNumber}</span>
+                </button>
+              )) : (
+                <p className="px-3 py-4 text-xs leading-5 text-gray-500">
+                  Use \section, \subsection, or related headings to build a navigable outline of the open file.
+                </p>
+              )}
+            </div>
+          }
         />
 
         <AiWorkspacePanel
@@ -911,33 +880,43 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         <div className={`h-full flex transition-[padding] duration-300 ${showSettings ? 'pr-80 max-[500px]:pr-[90vw]' : ''}`}>
           {(viewMode === 'editor' || viewMode === 'split') && (
             <div className={`${viewMode === 'split' ? 'w-full md:w-1/2' : 'w-full'} border-r border-[#3e3e3e] flex flex-col`}>
+              <FileTabs
+                openPaths={workspace.openPaths}
+                files={workspace.filesByPath}
+                activePath={activePath}
+                mainFilePath={workspace.mainFilePath}
+                dirtyPaths={workspace.dirtyPaths}
+                onSelect={(path) => void workspace.openFile(path)}
+                onClose={workspace.closeFile}
+              />
+
               {/* AI Toolbar */}
               <div className="min-h-10 bg-[#2d2d2d] border-b border-[#3e3e3e] flex flex-wrap items-center px-3 py-1 gap-2 shrink-0">
                 <span title={paraphraseDisabledReason || 'Paraphrase selection'}>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => handleParaphrase('Clearer')}
-                  disabled={isAiLoading || !!proposal || !!paraphraseDisabledReason}
-                  icon={<Wand2 className="w-3.5 h-3.5" />}
-                  title={paraphraseDisabledReason || 'Paraphrase selection (Clearer)'}
-                >
-                  Paraphrase
-                </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleParaphrase('Clearer')}
+                    disabled={isAiLoading || !!proposal || !!paraphraseDisabledReason || isBinaryActive}
+                    icon={<Wand2 className="w-3.5 h-3.5" />}
+                    title={paraphraseDisabledReason || 'Paraphrase selection (Clearer)'}
+                  >
+                    Paraphrase
+                  </Button>
                 </span>
 
                 <div className="h-4 w-px bg-[#3e3e3e]" />
 
                 <div className="flex items-center gap-1">
                   <span className="text-[10px] text-gray-500">Tone:</span>
-                  {['Clearer', 'Shorter', 'Formal'].map((t) => (
+                  {['Clearer', 'Shorter', 'Formal'].map((tone) => (
                     <button
-                      key={t}
-                      onClick={() => handleParaphrase(t)}
-                      disabled={isAiLoading || !!proposal || !!paraphraseDisabledReason}
+                      key={tone}
+                      onClick={() => handleParaphrase(tone)}
+                      disabled={isAiLoading || !!proposal || !!paraphraseDisabledReason || isBinaryActive}
                       className="text-[11px] px-1.5 py-0.5 rounded text-gray-400 hover:text-white hover:bg-[#3e3e3e] transition-colors disabled:opacity-40"
                     >
-                      {t}
+                      {tone}
                     </button>
                   ))}
                 </div>
@@ -949,40 +928,14 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                       AI working...
                     </span>
                   )}
-                  {aiError && !proposal && (
-                    <span className="text-xs text-yellow-400">{aiError}</span>
-                  )}
+                  {aiError && !proposal && <span className="text-xs text-yellow-400">{aiError}</span>}
                   {autocompleteNotice && <span role="status" className="text-xs text-yellow-400">{autocompleteNotice}</span>}
-
-                  {isMarkdown && (
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        ref={assetInputRef}
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp,image/gif"
-                        className="hidden"
-                        aria-label="Upload image"
-                        onChange={(e) => void handleAssetFileSelected(e)}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => assetInputRef.current?.click()}
-                        disabled={assetUploadBusy}
-                        className="flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded text-gray-400 hover:text-white hover:bg-[#3e3e3e] transition-colors disabled:opacity-40 cursor-pointer"
-                      >
-                        <ImagePlus className="w-3 h-3" />
-                        {assetUploadBusy ? 'Uploading…' : 'Insert image'}
-                      </button>
-                      {assetNotice && <span role="status" className="text-xs text-emerald-400">{assetNotice}</span>}
-                      {assetError && <span role="alert" className="text-xs text-red-400">{assetError}</span>}
-                    </div>
-                  )}
 
                   <label className="hidden sm:flex items-center gap-1.5 text-[11px] text-gray-500 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={autocompleteEnabled}
-                      onChange={(e) => setAutocompleteEnabled(e.target.checked)}
+                      onChange={(event) => setAutocompleteEnabled(event.target.checked)}
                       className="w-3 h-3 accent-emerald-500"
                     />
                     AI complete
@@ -990,20 +943,37 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                 </div>
               </div>
 
-              {/* Editor */}
+              {/* Editor, binary preview, or empty state */}
               <div className="flex-1 overflow-hidden">
-                <MonacoEditorWrapper
-                  key={documentId}
-                  value={code}
-                  onChange={handleCodeChange}
-                  language={language}
-                  fileName={fileName}
-                  modelUri={modelUri}
-                  onEditorReady={handleEditorReady}
-                />
+                {isBinaryActive && activeFile ? (
+                  <div className="h-full overflow-auto p-4 flex flex-col items-center gap-3 bg-[#1e1e1e]">
+                    {/* The preview is the user's own uploaded file, served raw by the asset route. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={workspaceClient.assetUrl(slug, activeFile.path)}
+                      alt={activeFile.path}
+                      className="max-w-full border border-[#3e3e3e] rounded bg-white"
+                    />
+                    <p className="text-xs text-gray-400 text-center">
+                      {activeFile.path} · {activeFile.sizeBytes} bytes · {activeFile.mimeType || activeFile.kind}
+                    </p>
+                    <p className="text-[11px] text-gray-500">Images are read only. Reference them from a .tex file with \includegraphics{'{'}...{'}'}.</p>
+                  </div>
+                ) : activePath ? (
+                  <MonacoEditorWrapper
+                    key={documentId}
+                    value={code}
+                    onChange={handleCodeChange}
+                    fileName={fileName}
+                    onEditorReady={handleEditorReady}
+                  />
+                ) : (
+                  <div className="h-full flex items-center justify-center text-sm text-gray-500 px-6 text-center">
+                    Open a file from the workspace panel, or create one to start writing.
+                  </div>
+                )}
               </div>
 
-              {/* Diff review panel */}
               {proposal && (
                 <div className="border-t border-[#3e3e3e] shrink-0">
                   <DiffReview
@@ -1016,44 +986,63 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                 </div>
               )}
 
-              {/* PDF stale indicator */}
+              {(compileError || diagnostics.length > 0 || missingRefs.length > 0) && (
+                <div className="border-t border-red-900/60 bg-red-950/40 max-h-32 overflow-y-auto shrink-0" role="status">
+                  <div className="flex items-center gap-1.5 px-3 pt-2 text-[11px] text-red-300">
+                    <FileWarning className="w-3.5 h-3.5" />
+                    <span>{diagnostics.length || missingRefs.length ? 'Compiler diagnostics' : 'Compile problem'}</span>
+                  </div>
+                  {compileError && !diagnostics.length && !missingRefs.length && (
+                    <p className="px-3 pt-1 text-[11px] text-red-200 whitespace-pre-line">{compileError}</p>
+                  )}
+                  <ul className="px-3 pb-2 pt-1 space-y-0.5">
+                    {missingRefs.map((ref, index) => (
+                      <li key={'missing-' + index}>
+                        <span className="text-[11px] text-red-200">
+                          {ref.file}: {ref.command} target &apos;{ref.reference}&apos; was not found in the workspace
+                        </span>
+                      </li>
+                    ))}
+                    {diagnostics.map((diagnostic, index) => (
+                      <li key={'diag-' + index}>
+                        <button
+                          type="button"
+                          className="text-[11px] text-left text-red-200 hover:underline"
+                          onClick={() => openDiagnostic(diagnostic.file, diagnostic.line)}
+                        >
+                          {diagnostic.file ? diagnostic.file + (diagnostic.line ? ':' + diagnostic.line : '') : 'engine'}: {diagnostic.message}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {pdfIsStale && pdfUrl && (
                 <div className="h-7 bg-yellow-900/30 border-t border-yellow-700/50 flex items-center px-3 text-[11px] text-yellow-400 shrink-0">
-                  <span>PDF is older than the current source — recompile to update</span>
+                  <span>
+                    PDF is older than the current source — {workspace.stalePaths.length} file(s) changed since it was compiled
+                  </span>
                 </div>
               )}
             </div>
           )}
 
           {(viewMode === 'preview' || viewMode === 'split') && (
-            <div className={`${viewMode === 'split' ? 'hidden md:block md:w-1/2' : 'w-full'} min-w-0`}>
-              {isMarkdown ? (
-                <MarkdownPreviewPane
-                  source={code}
-                  pdfUrl={pdfUrl}
-                  isCompiling={isCompiling}
-                  compilationStatus={compilationStatus}
-                  pdfIsStale={pdfIsStale}
-                  onCompile={handleCompile}
-                  onDownloadPdf={handleDownload}
-                />
-              ) : (
-                <PDFPreview
-                  pdfUrl={pdfUrl}
-                  isLoading={isCompiling}
-                  onCompile={handleCompile}
-                  onDownload={handleDownload}
-                  statusMessage={compilationStatus}
-                  isStale={pdfIsStale}
-                  documentKind="LaTeX"
-                />
-              )}
+            <div className={`${viewMode === 'split' ? 'hidden md:block md:w-1/2' : 'w-full'}`}>
+              <PDFPreview
+                pdfUrl={pdfUrl}
+                isLoading={isCompiling}
+                onCompile={handleCompile}
+                onDownload={handleDownload}
+                statusMessage={statusLine}
+                isStale={pdfIsStale}
+              />
             </div>
           )}
         </div>
       </div>
 
-      {/* Modals */}
       <InputModal
         isOpen={showTitleModal}
         onClose={() => setShowTitleModal(false)}
@@ -1065,7 +1054,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         defaultValue={title}
         submitText="Save"
         maxLength={30}
-        validation={(value: string) => value.length < 3 ? 'Title must be at least 3 characters' : null}
+        validation={(value: string) => (value.length < 3 ? 'Title must be at least 3 characters' : null)}
       />
 
       <AlertModal
