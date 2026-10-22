@@ -396,6 +396,35 @@ async function main() {
     check(`other user denied ${path}`, res.status === 404, `status ${res.status}`);
   }
 
+  // Markdown assets have separate list, upload, byte-serving and delete routes.
+  const markdown = await api('/api/document', {
+    method: 'POST', body: JSON.stringify({ title: `assets ${nonce()}`, format: 'MARKDOWN' }),
+  });
+  expectApi(markdown, 201, 'create Markdown asset boundary document');
+  const assetsPath = `/api/document/${markdown.data.slug}/assets`;
+  const assetForm = () => {
+    const form = new FormData();
+    form.append('file', new Blob([png], { type: 'image/png' }), 'boundary.png');
+    return form;
+  };
+  const assetUpload = await api(assetsPath, { method: 'POST', body: assetForm() });
+  expectApi(assetUpload, 201, 'upload Markdown boundary asset');
+  const assetPath = assetUpload.data.asset.url;
+  expectApi(await api(assetsPath), 200, 'owner lists Markdown assets');
+  const ownerAsset = await api(assetPath);
+  expectApi(ownerAsset, 200, 'owner downloads Markdown asset');
+  check('Markdown asset bytes match upload', ownerAsset.data.equals(png));
+
+  for (const [label, auth, expected] of [['anonymous', false, 401], ['other user', otherCookie, 404]]) {
+    expectApi(await api(assetsPath, {}, auth), expected, `${label} cannot list Markdown assets`);
+    expectApi(await api(assetsPath, { method: 'POST', body: assetForm() }, auth), expected, `${label} cannot upload Markdown assets`);
+    expectApi(await api(assetPath, {}, auth), expected, `${label} cannot download Markdown assets`);
+    expectApi(await api(assetPath, { method: 'DELETE' }, auth), expected, `${label} cannot delete Markdown assets`);
+  }
+  expectApi(await api(assetPath, { method: 'DELETE' }), 200, 'owner deletes Markdown asset');
+  check('deleted Markdown asset cannot be downloaded', (await api(assetPath)).status === 404);
+  expectApi(await api(`/api/document/${markdown.data.slug}`, { method: 'DELETE' }), 200, 'delete Markdown boundary document');
+
   // 12. Autosave of unchanged bytes must not create a new compile.
   const idemSlug = await buildWorkspace(`idem${marker}`);
   const idemFirst = await compile(idemSlug);
