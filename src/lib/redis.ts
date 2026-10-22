@@ -19,6 +19,8 @@ export const PROCESSING_SET = 'latex:compilation:processing';
 export const JOB_PREFIX = 'latex:job:';
 export const RESULT_PREFIX = 'latex:result:';
 export const PDF_PREFIX = 'latex:pdf:';
+// Maps an immutable snapshot digest to the job that produced (or is producing) it.
+export const SNAPSHOT_JOB_PREFIX = 'latex:snapshot:job:';
 
 // TTL for results and PDFs (24 hours)
 export const RESULT_TTL = 86400;
