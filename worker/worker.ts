@@ -2,6 +2,8 @@
 import redis, { QUEUE_NAME, PROCESSING_SET, JOB_PREFIX, PDF_PREFIX, RESULT_TTL, RESULT_PREFIX } from '@/src/lib/redis';
 import { JobStatus, CompilationJob, JobStatusResponse } from '@/src/types/compilation';
 import { compileLatexToPDF } from './latex-compiler';
+import { compileMarkdownToPDF } from './markdown-compiler';
+import { normalizeAssetPath } from '@/src/lib/markdown-assets';
 
 export class CompilationWorker {
   private isRunning = false;
@@ -99,14 +101,31 @@ export class CompilationWorker {
 
     const job: CompilationJob = JSON.parse(jobData);
 
-    console.log(`[WORKER] Compiling document ${job.slug} for user ${job.userId}`);
+    // The server derives the format from the owned document row at enqueue
+    // time. Jobs without a valid format are rejected instead of silently
+    // taking the TeX path, so raw Markdown bytes can never enter the TeX
+    // compiler and vice versa.
+    if (job.format !== 'LATEX' && job.format !== 'MARKDOWN') {
+      throw new Error('Job snapshot is missing a valid document format');
+    }
 
-    // Compile LaTeX to PDF
-    const result = await compileLatexToPDF(
-      job.content,
-      job.slug,
-      { timeout: 90000 }
-    );
+    console.log(`[WORKER] Compiling ${job.format} document ${job.slug} for user ${job.userId}`);
+
+    let result;
+    if (job.format === 'MARKDOWN') {
+      const assets = job.assets ?? [];
+      for (const asset of assets) {
+        const normalized = normalizeAssetPath(asset.path);
+        if (!normalized.ok) throw new Error(`Invalid asset path in job snapshot: ${normalized.error}`);
+      }
+      result = await compileMarkdownToPDF(job.content, job.slug, { timeout: 120000, assets });
+    } else {
+      result = await compileLatexToPDF(
+        job.content,
+        job.slug,
+        { timeout: 90000 }
+      );
+    }
 
     // Remove from processing set
     await redis.srem(PROCESSING_SET, jobId);

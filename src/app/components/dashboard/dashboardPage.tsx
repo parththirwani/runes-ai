@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useDashboard } from '@/src/hooks/useDashboard';
 import AlertModal from '../design/AlertModal';
 import ConfirmModal from '../design/ConfirmModal';
-import InputModal from '../design/InputModal';
 import DashboardHeader from './dashboardHeader';
 import DashboardSearch from './dashboardSearch';
 import DocumentGrid from './documentGrid';
 import DocumentList from './documentList';
 import EmptyState from './emptyState';
+import CreateDocumentModal from './createDocumentModal';
+import FormatFilter, { type FormatFilterValue } from './formatFilter';
 
 
 export default function DashboardPage() {
@@ -19,6 +20,7 @@ export default function DashboardPage() {
   const { status } = useSession();
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [formatFilter, setFormatFilter] = useState<FormatFilterValue>('ALL');
 
   const {
     documents,
@@ -45,9 +47,20 @@ export default function DashboardPage() {
     }
   }, [status, router]);
 
-  const filteredDocuments = documents.filter(doc =>
+  const titleMatches = documents.filter(doc =>
     doc.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const filteredDocuments = titleMatches.filter(doc => {
+    if (formatFilter === 'ALL') return true;
+    // Legacy rows always have a format after migration; LATEX is the safe
+    // fallback if an old cached payload lacks the field.
+    return (doc.format ?? 'LATEX') === formatFilter;
+  });
+  const formatCounts = useMemo(() => ({
+    ALL: titleMatches.length,
+    MARKDOWN: titleMatches.filter((doc) => (doc.format ?? 'LATEX') === 'MARKDOWN').length,
+    LATEX: titleMatches.filter((doc) => (doc.format ?? 'LATEX') === 'LATEX').length,
+  }), [titleMatches]);
 
   if (status === 'loading' || loading) {
     return (
@@ -72,13 +85,16 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div className="mb-8">
-          <DashboardSearch
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-          />
+        <div className="mb-8 flex flex-wrap items-center gap-4">
+          <div className="flex-1 min-w-60">
+            <DashboardSearch
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+            />
+          </div>
+          <FormatFilter value={formatFilter} onChange={setFormatFilter} counts={formatCounts} />
         </div>
 
         {error && (
@@ -91,6 +107,7 @@ export default function DashboardPage() {
           <EmptyState
             searchQuery={searchQuery}
             onCreateDocument={() => setShowCreateModal(true)}
+            filtered={documents.length > 0}
           />
         ) : viewMode === 'grid' ? (
           <DocumentGrid
@@ -107,25 +124,12 @@ export default function DashboardPage() {
         )}
       </main>
 
-      <InputModal
+      <CreateDocumentModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onSubmit={handleCreateDocument}
-        title="Create New Document"
-        description="Enter a name for your LaTeX document"
-        placeholder="e.g., Research Paper, Resume, Report..."
-        submitText="Create"
         isLoading={isCreating}
-        maxLength={30}
-        validation={(value) => {
-          if (value.length < 3) {
-            return 'Title must be at least 3 characters';
-          }
-          if (documents.some(doc => doc.title.toLowerCase() === value.toLowerCase())) {
-            return 'A document with this name already exists';
-          }
-          return null;
-        }}
+        existingTitles={documents.map((doc) => doc.title)}
       />
 
       <ConfirmModal

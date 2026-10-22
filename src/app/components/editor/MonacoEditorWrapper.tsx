@@ -9,9 +9,48 @@ interface MonacoEditorWrapperProps {
   onChange: (value: string) => void;
   language?: string;
   fileName?: string;
+  /** Stable Monaco model URI, unique per document (and workspace file). */
+  modelUri?: string;
   readOnly?: boolean;
   onEditorReady?: (editor: editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) => void;
   autocompleteEnabled?: boolean;
+}
+
+// Local Markdown snippets. Registered only for Markdown models, so LaTeX
+// command snippets never appear in a Markdown document.
+function createMarkdownCompletionProvider(monaco: typeof import('monaco-editor')) {
+  const snippet = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet;
+  const kind = monaco.languages.CompletionItemKind.Snippet;
+  const markdownCompletions = [
+    { label: 'Heading', insertText: '## ${1:Heading}', kind, insertTextRules: snippet },
+    { label: 'Bold text', insertText: '**${1:bold text}**', kind, insertTextRules: snippet },
+    { label: 'Italic text', insertText: '*${1:italic text}*', kind, insertTextRules: snippet },
+    { label: 'Link', insertText: '[${1:text}](https://${2:url})', kind, insertTextRules: snippet },
+    { label: 'Image', insertText: '![${1:alt text}](${2:images/example.png})', kind, insertTextRules: snippet },
+    { label: 'Code fence', insertText: '```${1:js}\n${2:code}\n```', kind, insertTextRules: snippet },
+    { label: 'Table', insertText: '| ${1:Column A} | ${2:Column B} |\n| --- | --- |\n| ${3:value} | ${4:value} |', kind, insertTextRules: snippet },
+    { label: 'Bulleted list', insertText: '- ${1:item}\n- ${2:item}', kind, insertTextRules: snippet },
+    { label: 'Numbered list', insertText: '1. ${1:item}\n2. ${2:item}', kind, insertTextRules: snippet },
+    { label: 'Task list', insertText: '- [ ] ${1:task}\n- [x] ${2:done task}', kind, insertTextRules: snippet },
+    { label: 'Blockquote', insertText: '> ${1:quoted text}', kind, insertTextRules: snippet },
+    { label: 'Inline math', insertText: '$${1:E = mc^2}$', kind, insertTextRules: snippet },
+    { label: 'Display math', insertText: '$$\n${1:\\int_0^1 x\\,dx}\n$$', kind, insertTextRules: snippet },
+    { label: 'Thematic break', insertText: '\n---\n', kind, insertTextRules: snippet },
+  ];
+
+  return monaco.languages.registerCompletionItemProvider('markdown', {
+    triggerCharacters: ['!'],
+    provideCompletionItems: (model, position) => {
+      const word = model.getWordUntilPosition(position);
+      const range = {
+        startLineNumber: position.lineNumber,
+        endLineNumber: position.lineNumber,
+        startColumn: word.startColumn,
+        endColumn: word.endColumn,
+      };
+      return { suggestions: markdownCompletions.map((c) => ({ ...c, range })) };
+    },
+  });
 }
 
 // LaTeX Monarch tokenizer definition
@@ -164,6 +203,7 @@ export default function MonacoEditorWrapper({
   onChange,
   language = 'latex',
   fileName = 'main.tex',
+  modelUri,
   readOnly = false,
   onEditorReady,
 }: MonacoEditorWrapperProps) {
@@ -181,34 +221,41 @@ export default function MonacoEditorWrapper({
     editorRef.current = editorInstance;
     monacoRef.current = monaco;
 
-    // Register LaTeX language if not already registered
-    if (!monaco.languages.getEncodedLanguageId('latex')) {
-      monaco.languages.register({ id: 'latex' });
-      monaco.languages.setMonarchTokensProvider('latex', latexLanguageDef as unknown as languages.IMonarchLanguage);
-      monaco.languages.setLanguageConfiguration('latex', {
-        brackets: [
-          ['{', '}'],
-          ['[', ']'],
-          ['(', ')'],
-        ],
-        autoClosingPairs: [
-          { open: '{', close: '}' },
-          { open: '[', close: ']' },
-          { open: '(', close: ')' },
-          { open: '"', close: '"' },
-          { open: "'", close: "'" },
-        ],
-      });
-    }
-
-    // Register snippet completion provider
     snippetProviderRef.current?.dispose();
-    snippetProviderRef.current = createLatexCompletionProvider(monaco);
+    snippetProviderRef.current = null;
+
+    if (language === 'markdown') {
+      // Markdown ships with Monaco; add only the local snippet completions.
+      snippetProviderRef.current = createMarkdownCompletionProvider(monaco);
+    } else {
+      // Register LaTeX language if not already registered
+      if (!monaco.languages.getEncodedLanguageId('latex')) {
+        monaco.languages.register({ id: 'latex' });
+        monaco.languages.setMonarchTokensProvider('latex', latexLanguageDef as unknown as languages.IMonarchLanguage);
+        monaco.languages.setLanguageConfiguration('latex', {
+          brackets: [
+            ['{', '}'],
+            ['[', ']'],
+            ['(', ')'],
+          ],
+          autoClosingPairs: [
+            { open: '{', close: '}' },
+            { open: '[', close: ']' },
+            { open: '(', close: ')' },
+            { open: '"', close: '"' },
+            { open: "'", close: "'" },
+          ],
+        });
+      }
+
+      // Register snippet completion provider
+      snippetProviderRef.current = createLatexCompletionProvider(monaco);
+    }
 
     if (onEditorReady) {
       onEditorReady(editorInstance, monaco);
     }
-  }, [onEditorReady]);
+  }, [onEditorReady, language]);
 
   const handleChange: OnChange = useCallback((newValue) => {
     if (newValue !== undefined && newValue !== null) {
@@ -238,7 +285,7 @@ export default function MonacoEditorWrapper({
         value={value}
         onChange={handleChange}
         theme="vs-dark"
-        path={fileName}
+        path={modelUri ?? fileName}
         options={{
           readOnly,
           fontSize: 14,

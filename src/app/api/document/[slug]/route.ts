@@ -1,9 +1,10 @@
 import { prisma } from "@/src/lib/db";
 import { withAuth } from "@/src/lib/withAuth";
-import { documentSchema, updateDocumentSchema } from "@/src/schema/documentSchema";
+import { updateDocumentSchema } from "@/src/schema/documentSchema";
 import { compilationProducer } from "@/producer/queue";
 import { checkRateLimit } from "@/src/lib/rateLimit";
 import { NextResponse } from "next/server";
+import type { SnapshotAsset } from "@/src/types/compilation";
 
 export const GET = withAuth(async (req, session, context) => {
   try {
@@ -141,7 +142,7 @@ export const PATCH = withAuth(async (req, session, context) => {
     const { slug } = await context.params;
     const userId = session.user.id;
     const body = await req.json(); 
-    const parsedData = documentSchema.safeParse(body);
+    const parsedData = updateDocumentSchema.safeParse(body);
 
     if (!parsedData.success) {
       return NextResponse.json(
@@ -238,12 +239,32 @@ export const POST = withAuth(async (req, session, context) => {
 
     console.log(`[PDF_COMPILE] Queueing compilation for document: ${document.title} (user: ${userId}, remaining: ${rateLimitResult.remaining})`);
 
+    // Format is derived server-side from the owned document row; the client
+    // never chooses the compiler. Markdown jobs embed their local assets in
+    // the immutable snapshot so the worker compiles exactly what was saved.
+    const format = document.format === 'MARKDOWN' ? 'MARKDOWN' : 'LATEX';
+    let assets: SnapshotAsset[] | undefined;
+    if (format === 'MARKDOWN') {
+      const rows = await prisma.documentAsset.findMany({
+        where: { documentId: document.id },
+        select: { path: true, mediaType: true, bytes: true },
+        orderBy: { path: 'asc' },
+      });
+      assets = rows.map((row) => ({
+        path: row.path,
+        mediaType: row.mediaType,
+        data: Buffer.from(row.bytes).toString('base64'),
+      }));
+    }
+
     // Add job to queue
     const jobId = await compilationProducer.addJob({
       documentId: document.id,
       userId: userId,
       slug: document.slug,
       content: document.content,
+      format,
+      assets,
     });
 
     console.log(`[PDF_COMPILE] Job ${jobId} queued successfully`);

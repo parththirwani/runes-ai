@@ -6,10 +6,10 @@ import type { Session } from 'next-auth';
 
 type RouteContext = { params: Promise<Record<string, string>> };
 
-export function withAuth(
-  handler: (req: NextRequest, session: Session, context: RouteContext) => Promise<Response>
+export function withAuth<C extends { params: Promise<Record<string, string | string[]>> } = RouteContext>(
+  handler: (req: NextRequest, session: Session, context: C) => Promise<Response>
 ) {
-  return async (req: NextRequest, context: RouteContext) => {
+  return async (req: NextRequest, context: C) => {
     let session = await auth();
 
     // Dev-mode bypass: check for dev-session cookie
