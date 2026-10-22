@@ -90,9 +90,32 @@ with sync_playwright() as playwright:
 
         page.goto(f"{BASE}/api/dev-login", wait_until="domcontentloaded")
         assert urlparse(page.url).path == "/document", page.url
+        page.set_viewport_size({"width": 320, "height": 568})
+        expect(page.get_by_role("heading", name="Documents")).to_be_visible()
+        assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
+        filter_group = page.get_by_role("group", name="Filter documents by format")
+        for label in ("All", "Markdown", "LaTeX"):
+            button = filter_group.get_by_role("button", name=label)
+            rect = button.bounding_box()
+            assert rect and rect["x"] >= 0 and rect["x"] + rect["width"] <= 320, (label, rect)
+        filter_group.get_by_role("button", name="Markdown").click()
+        expect(filter_group.get_by_role("button", name="Markdown")).to_have_attribute("aria-pressed", "true")
+        filter_group.get_by_role("button", name="All").click()
+        page.get_by_role("button", name="List view").click()
+        expect(page.get_by_role("button", name="List view")).to_have_attribute("aria-pressed", "true")
+        assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
+        page.get_by_role("button", name="Grid view").click()
         page.get_by_role("button", name="New document").click()
         dialog = page.get_by_role("dialog", name="Create document")
         expect(dialog).to_be_visible()
+        page.set_viewport_size({"width": 320, "height": 400})
+        bounds = dialog.bounding_box()
+        create_bounds = dialog.get_by_role("button", name="Create", exact=True).bounding_box()
+        assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 320, bounds
+        assert bounds["y"] >= 0 and bounds["y"] + bounds["height"] <= 400, bounds
+        assert create_bounds and create_bounds["y"] + create_bounds["height"] <= 400, create_bounds
+        assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
+        page.set_viewport_size({"width": 390, "height": 800})
         bounds = dialog.bounding_box()
         assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 390, bounds
         page.set_viewport_size({"width": 390, "height": 400})
