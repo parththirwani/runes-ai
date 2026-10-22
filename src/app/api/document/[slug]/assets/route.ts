@@ -17,6 +17,34 @@ type OwnedResult =
 
 class AssetQuotaError extends Error {}
 
+const MAX_UPLOAD_BODY_BYTES = MAX_ASSET_BYTES + 64 * 1024;
+
+async function readBoundedForm(req: Request): Promise<FormData | 'too-large' | null> {
+  const statedLength = Number(req.headers.get('content-length'));
+  if (statedLength > MAX_UPLOAD_BODY_BYTES) return 'too-large';
+  const contentType = req.headers.get('content-type');
+  if (!contentType?.toLowerCase().startsWith('multipart/form-data;')) return null;
+  const reader = req.body?.getReader();
+  if (!reader) return null;
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_UPLOAD_BODY_BYTES) {
+      await reader.cancel();
+      return 'too-large';
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return new Request(req.url, {
+    method: 'POST',
+    headers: { 'Content-Type': contentType },
+    body: Buffer.concat(chunks),
+  }).formData().catch(() => null);
+}
+
 async function findOwnedMarkdownDocument(slug: string, userId: string): Promise<OwnedResult> {
   const document = await prisma.document.findFirst({
     where: { slug, userId },
@@ -59,7 +87,10 @@ export const POST = withAuth(async (req, session, context) => {
     if (owned.kind === "error") return owned.response;
     if (owned.kind === "missing") return NextResponse.json({ message: "Document not found" }, { status: 404 });
 
-    const form = await req.formData().catch(() => null);
+    const form = await readBoundedForm(req);
+    if (form === 'too-large') {
+      return NextResponse.json({ message: 'Asset upload exceeds the request size limit' }, { status: 413 });
+    }
     const file = form?.get("file");
     if (!(file instanceof File)) {
       return NextResponse.json({ message: "Multipart field 'file' is required" }, { status: 400 });
@@ -84,8 +115,8 @@ export const POST = withAuth(async (req, session, context) => {
     }
 
     const checksum = createHash("sha256").update(bytes).digest("hex");
-    // Count and write in one serializable transaction. Concurrent uploads to
-    // different paths must not each pass the same quota snapshot.
+    // Count and write in one serializable transaction. Concurrent uploads
+    // to different paths must not each pass the same quota snapshot.
     const upserted = await prisma.$transaction(async (tx) => {
       const existing = await tx.documentAsset.findMany({
         where: { documentId: owned.document.id },

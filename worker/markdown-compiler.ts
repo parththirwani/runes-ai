@@ -5,9 +5,9 @@
 // - No shell interpolation: execFile with an argument array only.
 // - Pandoc is wrapped in a private network namespace (`unshare --net
 //   --kill-child`) whenever the kernel allows it, so the compiler process
-//   tree has no network at all (verified by tests). `COMPILER_REQUIRE_NETNS=1`
-//   turns an unavailable namespace into a hard failure; without it the
-//   compiler degrades to best-effort mode with a warning. Docker's default
+//   tree has no network at all (verified by tests). Isolation is required by
+//   default; `COMPILER_REQUIRE_NETNS=0` is a local development escape hatch.
+//   Docker's default
 //   seccomp profile blocks this, so the worker needs
 //   `cap_add: [SYS_ADMIN]` (or an equivalent custom seccomp profile) to get
 //   the namespace; memory limits remain the container runtime's job.
@@ -191,9 +191,19 @@ export function validateMarkdownSource(source: string, assets: SnapshotAsset[]):
     });
   }
 
-  const assetPaths = new Set(assets.map((a) => a.path));
+  issues.push(...validateResourceDestinations(imageDestinations(scannable), linkDestinations(scannable), assets));
+  return dedupeByMessage(issues);
+}
 
-  for (const ref of imageDestinations(scannable)) {
+function validateResourceDestinations(
+  imageRefs: string[],
+  linkRefs: string[],
+  assets: SnapshotAsset[],
+  expectedSlug?: string,
+): MarkdownSourceIssue[] {
+  const issues: MarkdownSourceIssue[] = [];
+  const assetPaths = new Set(assets.map((a) => a.path));
+  for (const ref of imageRefs) {
     const { ok, scheme } = classifyUrl(ref);
     if (!ok) {
       if (scheme === 'http' || scheme === 'https' || scheme === 'ftp') {
@@ -201,6 +211,11 @@ export function validateMarkdownSource(source: string, assets: SnapshotAsset[]):
       } else {
         issues.push({ code: 'unsafe-scheme', message: `Image reference with unsupported scheme "${scheme}" is not allowed: ${ref.slice(0, 80)}` });
       }
+      continue;
+    }
+    if (expectedSlug && ref.startsWith('/api/document/') &&
+        !ref.startsWith(`/api/document/${expectedSlug}/assets/`)) {
+      issues.push({ code: 'invalid-path', message: 'Image asset URL belongs to a different document' });
       continue;
     }
     const decoded = decodeURIComponentSafely(ref);
@@ -214,7 +229,7 @@ export function validateMarkdownSource(source: string, assets: SnapshotAsset[]):
     }
   }
 
-  for (const dest of linkDestinations(scannable)) {
+  for (const dest of linkRefs) {
     const { ok, scheme } = classifyUrl(dest);
     if (ok) continue;
     if (scheme === 'http' || scheme === 'https' || scheme === 'mailto') continue; // clickable, validated
@@ -222,6 +237,31 @@ export function validateMarkdownSource(source: string, assets: SnapshotAsset[]):
   }
 
   return dedupeByMessage(issues);
+}
+
+// Pandoc's AST is authoritative for GFM reference labels and multiline
+// definitions. The quick source scan above gives early errors, then this
+// second pass catches valid syntax that a regex cannot classify reliably.
+function parsedResourceDestinations(ast: unknown): { images: string[]; links: string[] } {
+  const images: string[] = [];
+  const links: string[] = [];
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    const node = value as { t?: string; c?: unknown };
+    if ((node.t === 'Image' || node.t === 'Link') && Array.isArray(node.c)) {
+      const target = node.c[2];
+      if (Array.isArray(target) && typeof target[0] === 'string') {
+        (node.t === 'Image' ? images : links).push(target[0]);
+      }
+    }
+    Object.values(value).forEach(visit);
+  };
+  visit(ast);
+  return { images, links };
 }
 
 function stripAssetPrefix(ref: string): string {
@@ -289,7 +329,7 @@ export function rewriteAssetUrlsForEngine(source: string): string {
 }
 
 const UNSHARE_BIN = process.env.COMPILER_UNSHARE_BIN || '/usr/bin/unshare';
-const REQUIRE_NETNS = process.env.COMPILER_REQUIRE_NETNS === '1';
+const REQUIRE_NETNS = process.env.COMPILER_REQUIRE_NETNS !== '0';
 
 // Cached probe: the worker asks the kernel once whether a private network
 // namespace can be created here (unshare --net), then reuses the verdict.
@@ -306,7 +346,7 @@ export function detectCompilerIsolation(): Promise<string[] | null> {
 
 export async function compileMarkdownToPDF(
   markdownSource: string,
-  _slug: string,
+  slug: string,
   options: MarkdownCompileOptions = {},
 ): Promise<CompilationResult> {
   const { timeout = 120_000, assets = [] } = options;
@@ -321,6 +361,20 @@ export async function compileMarkdownToPDF(
     };
   }
 
+  // Probe before writing the source or assets to disk. A required but
+  // unavailable namespace must not leave the rejected snapshot behind.
+  const isolation = await detectCompilerIsolation();
+  if (!isolation && REQUIRE_NETNS) {
+    return {
+      success: false,
+      error: 'Compiler network isolation unavailable: unshare --net could not run. Run the worker with permission to create a private network namespace.',
+      duration: Date.now() - startTime,
+    };
+  }
+  if (!isolation) {
+    console.warn('[MD_COMPILER] WARNING: unshare --net unavailable — Pandoc runs WITHOUT a private network namespace (development override).');
+  }
+
   const tempDir = path.join(
     process.cwd(),
     'temp',
@@ -329,6 +383,18 @@ export async function compileMarkdownToPDF(
 
   try {
     await fs.mkdir(tempDir, { recursive: true });
+    await fs.writeFile(path.join(tempDir, 'main.md'), markdownSource, 'utf-8');
+
+    const parseArgs = [`--from=${PANDOC_FROM}`, '--to=json', 'main.md'];
+    const parsed = await execFile(isolation ? isolation[0] : PANDOC_BIN,
+      isolation ? [...isolation.slice(1), PANDOC_BIN, ...parseArgs] : parseArgs,
+      { cwd: tempDir, timeout: Math.min(timeout, 30_000), killSignal: 'SIGKILL', maxBuffer: MAX_CAPTURED_OUTPUT });
+    const parsedResources = parsedResourceDestinations(JSON.parse(parsed.stdout));
+    const parsedIssues = validateResourceDestinations(parsedResources.images, parsedResources.links, assets, slug);
+    if (parsedIssues.length > 0) {
+      await fs.rm(tempDir, { recursive: true, force: true });
+      return { success: false, error: parsedIssues.map((issue) => issue.message).join('; '), duration: Date.now() - startTime };
+    }
     await fs.writeFile(path.join(tempDir, 'main.md'), rewriteAssetUrlsForEngine(markdownSource), 'utf-8');
 
     for (const asset of assets) {
@@ -353,18 +419,6 @@ export async function compileMarkdownToPDF(
       '--pdf-engine-opt=--only-cached',
       '--pdf-engine-opt=--untrusted',
     ];
-
-    const isolation = await detectCompilerIsolation();
-    if (!isolation && REQUIRE_NETNS) {
-      return {
-        success: false,
-        error: 'Compiler network isolation unavailable: unshare --net could not run and COMPILER_REQUIRE_NETNS=1 is set. Run the worker with the capability for private network namespaces (e.g. cap_add: SYS_ADMIN) or unset the requirement.',
-        duration: Date.now() - startTime,
-      };
-    }
-    if (!isolation) {
-      console.warn('[MD_COMPILER] WARNING: unshare --net unavailable — Pandoc runs WITHOUT a private network namespace (best-effort mode).');
-    }
 
     await execFile(isolation ? isolation[0] : PANDOC_BIN, isolation ? [...isolation.slice(1), PANDOC_BIN, ...args] : args, {
       cwd: tempDir,

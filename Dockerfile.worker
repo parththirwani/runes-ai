@@ -57,7 +57,8 @@ RUN for attempt in 1 2 3; do \
 # to fall back to the legacy docker sibling container for LaTeX compiles.
 ENV PANDOC_BIN=/usr/local/bin/pandoc \
     PDF_ENGINE_BIN=/usr/local/bin/tectonic \
-    TECTONIC_BINARY=/usr/local/bin/tectonic
+    TECTONIC_BINARY=/usr/local/bin/tectonic \
+    COMPILER_REQUIRE_NETNS=1
 
 WORKDIR /app
 

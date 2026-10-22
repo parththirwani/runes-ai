@@ -61,6 +61,20 @@ describe('Markdown asset upload quota', () => {
     expect(mocks.upsert).not.toHaveBeenCalled();
   });
 
+  it('rejects oversized multipart bodies before parsing the form', async () => {
+    const req = new NextRequest('http://localhost/api/document/doc/assets', {
+      method: 'POST',
+      headers: {
+        'content-type': 'multipart/form-data; boundary=fixture',
+        'content-length': String(5 * 1024 * 1024 + 64 * 1024 + 1),
+      },
+      body: 'ignored',
+    });
+    const res = await POST(req, context);
+    expect(res.status).toBe(413);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   it('returns a retryable conflict for a concurrent serializable transaction', async () => {
     mocks.transaction.mockRejectedValue(Object.assign(new Error('conflict'), { code: 'P2034' }));
     const res = await POST(upload(), context);

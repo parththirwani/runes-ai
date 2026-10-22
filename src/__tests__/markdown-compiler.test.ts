@@ -247,6 +247,18 @@ describe.skipIf(!toolchain)('markdown PDF integration (pinned pandoc + tectonic)
     expect(html.success).toBe(false);
     expect(html.error).toContain('Raw HTML is not supported');
   });
+
+  it('uses Pandoc parsing to reject remote images hidden by GFM reference syntax', async () => {
+    const { compileMarkdownToPDF } = await import('@/worker/markdown-compiler');
+    for (const source of [
+      '![x][a  b]\n\n[a b]: https://evil.example/x.png',
+      '![x][pic]\n\n[pic]:\n  https://evil.example/x.png',
+    ]) {
+      const result = await compileMarkdownToPDF(source, 'fixture', { assets: [] });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Remote images are not supported');
+    }
+  });
 });
 
 describe.skipIf(toolchain)('markdown PDF integration', () => {

@@ -745,6 +745,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file || !slug) return;
+    const uploadModel = editorRef.current?.getModel();
     setAssetUploadBusy(true);
     setAssetNotice(null);
     setAssetError(null);
@@ -760,6 +761,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       const insertion = `![${alt}](/api/document/${slug}/assets/${assetPath})`;
       const editorInstance = editorRef.current;
       const editorModel = editorInstance?.getModel();
+      if (uploadModel && editorModel !== uploadModel) {
+        throw new Error('Image uploaded, but the document changed before it could be inserted');
+      }
       if (editorInstance && editorModel) {
         const selection = editorInstance.getSelection();
         const range = selection ?? editorModel.getFullModelRange();

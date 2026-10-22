@@ -37,8 +37,8 @@ services:
       redis:
         condition: service_healthy
     working_dir: /workspace
-    # Pandoc and Tectonic run in a private network namespace. Fail closed if
-    # the deployment cannot create one instead of compiling with network access.
+    # Pandoc and Tectonic run in a private network namespace. The worker
+    # fails Markdown compiles if the namespace cannot be created.
     cap_add:
       - SYS_ADMIN
     environment:
