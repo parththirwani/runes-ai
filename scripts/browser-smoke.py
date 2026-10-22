@@ -42,9 +42,32 @@ with sync_playwright() as playwright:
     created_slug = None
     second_slug = None
     md_slug = None
+    navigation_slug = None
     try:
+        page.set_viewport_size({"width": 390, "height": 800})
+        page.goto(BASE, wait_until="domcontentloaded")
+        page.get_by_role("link", name="Start writing").first.click()
+        page.wait_for_url("**/signin**", timeout=15000)
+        expect(page.get_by_role("heading", name="Sign in to Runes AI")).to_be_visible()
+
         page.goto(f"{BASE}/api/dev-login", wait_until="domcontentloaded")
         assert urlparse(page.url).path == "/document", page.url
+        page.get_by_role("button", name="New document").click()
+        dialog = page.get_by_role("dialog", name="Create document")
+        expect(dialog).to_be_visible()
+        bounds = dialog.bounding_box()
+        assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 390, bounds
+        dialog.get_by_role("textbox", name="Title", exact=True).fill(f"Browser Nav {time.time_ns() % 10**12}")
+        dialog.get_by_role("radio", name="LaTeX").check()
+        dialog.get_by_role("button", name="Create", exact=True).click()
+        page.wait_for_url("**/document/*", timeout=15000)
+        navigation_slug = urlparse(page.url).path.split("/")[-1]
+        page.locator(".monaco-editor").first.wait_for(timeout=20000)
+        assert page.evaluate("window.monaco.editor.getModels()[0].getLanguageId()") == "latex"
+        deleted = context.request.delete(f"{BASE}/api/document/{navigation_slug}")
+        assert deleted.status == 200, (deleted.status, deleted.text())
+        navigation_slug = None
+        page.set_viewport_size({"width": 1280, "height": 800})
 
         title = f"Smoke {time.time_ns() % 10**16}"
         created = context.request.post(f"{BASE}/api/document", data={"title": title, "content": SOURCE})
@@ -341,8 +364,10 @@ with sync_playwright() as playwright:
         assert b"/Image" in ui_pdf, "uploaded image missing from PDF objects"
         ui_pdf_ok = True
         os.unlink(png_path)
-        print("browser smoke passed: latex edit/review/compile + markdown create, asset API + editor upload UI, reading preview, remote-image block, markdown PDF with embedded images, source download, dashboard badge/filter")
+        print("browser smoke passed: mobile sign-in and document creation, latex edit/review/compile, markdown asset API and editor upload UI, reading preview, remote-image block, markdown PDF with embedded images, source download, dashboard badge/filter")
     finally:
+        if navigation_slug:
+            context.request.delete(f"{BASE}/api/document/{navigation_slug}")
         if created_slug:
             context.request.delete(f"{BASE}/api/document/{created_slug}")
         if second_slug:
