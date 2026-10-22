@@ -13,7 +13,7 @@ RUN bun build worker/index.ts --outfile /tmp/worker.js --target bun
 FROM oven/bun:1
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl \
+  && apt-get install -y --no-install-recommends ca-certificates curl fontconfig \
   && rm -rf /var/lib/apt/lists/*
 
 # Pinned Markdown/LaTeX toolchain.
@@ -35,6 +35,23 @@ RUN curl -fsSL "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION
   && chmod +x /usr/local/bin/pandoc /usr/local/bin/tectonic \
   && pandoc --version | head -1 \
   && tectonic --version
+
+# Tectonic fetches TeX support files on demand. Prime the pinned image while
+# build-time networking is available; runtime Markdown compiles are offline.
+# Keep this sample aligned with the documented Markdown PDF feature set.
+COPY public/small-logo.png /tmp/cache-prime.png
+COPY scripts/markdown-cache-prime.md /tmp/cache-prime.md
+RUN for attempt in 1 2 3; do \
+      pandoc --standalone --from=gfm+tex_math_dollars-raw_html \
+        -V geometry:margin=1in -V fontsize=11pt -V colorlinks=true \
+        -V linkcolor=blue -V urlcolor=blue \
+        --pdf-engine=/usr/local/bin/tectonic \
+        --output=/tmp/cache-prime.pdf /tmp/cache-prime.md \
+        && break; \
+      sleep 5; \
+    done \
+  && test -s /tmp/cache-prime.pdf \
+  && rm /tmp/cache-prime.pdf /tmp/cache-prime.md /tmp/cache-prime.png
 
 # In-image binaries by default (no docker-in-docker needed). Set TECTONIC_BINARY=""
 # to fall back to the legacy docker sibling container for LaTeX compiles.

@@ -21,7 +21,9 @@
 // - Raw HTML is unsupported source text: rejected before compilation, and
 //   the `-raw_html` reader extension prevents Pandoc from passing it through.
 // - Bounded process time, output size, and captured stderr. Engine options
-//   are fixed by this file; the client cannot supply any.
+//   are fixed by this file; the client cannot supply any. Tectonic's
+//   --only-cached and --untrusted modes prevent resource downloads and
+//   disable its known-insecure features even outside the Compose setup.
 
 import { execFile as execFileCallback } from 'child_process';
 import { promisify } from 'util';
@@ -348,6 +350,8 @@ export async function compileMarkdownToPDF(
       ...PANDOC_FIXED_ARGS,
       ...PANDOC_VARIABLES,
       `--pdf-engine=${PDF_ENGINE_BIN}`,
+      '--pdf-engine-opt=--only-cached',
+      '--pdf-engine-opt=--untrusted',
     ];
 
     const isolation = await detectCompilerIsolation();

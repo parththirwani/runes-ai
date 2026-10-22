@@ -27,53 +27,34 @@ services:
       timeout: 3s
       retries: 10
 
-  tectonic:
-    image: dxjoke/tectonic-docker:latest
-    container_name: runes-ai-tectonic
-    restart: unless-stopped
-    entrypoint: ["tail", "-f", "/dev/null"]
-    working_dir: /workspace
-    volumes:
-      - latex-temp:/workspace/temp
-    healthcheck:
-      test: ["CMD", "tectonic", "--version"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   worker:
     build:
       context: .
       dockerfile: Dockerfile.worker
     restart: unless-stopped
+    mem_limit: 1g
     depends_on:
       redis:
         condition: service_healthy
-      tectonic:
-        condition: service_healthy
     working_dir: /workspace
-    # Real compiler network isolation: the Markdown compiler wraps Pandoc in
-    # a private network namespace (unshare --net). Docker's default seccomp
-    # profile blocks this, so uncomment to grant it (or ship a custom seccomp
-    # profile that allows clone/unshare with CLONE_NEWNET). Without it the
-    # compiler logs a warning and runs without the namespace.
-    # cap_add:
-    #   - SYS_ADMIN
+    # Pandoc and Tectonic run in a private network namespace. Fail closed if
+    # the deployment cannot create one instead of compiling with network access.
+    cap_add:
+      - SYS_ADMIN
     environment:
       NODE_ENV: development
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: 0
       WORKER_PORT: 3001
-      TECTONIC_CONTAINER_NAME: runes-ai-tectonic
       PANDOC_BIN: /usr/local/bin/pandoc
       PDF_ENGINE_BIN: /usr/local/bin/tectonic
       TECTONIC_BINARY: /usr/local/bin/tectonic
+      COMPILER_REQUIRE_NETNS: "1"
     ports:
       - "3001:3001"
     volumes:
       - latex-temp:/workspace/temp
-      - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3001/health').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s

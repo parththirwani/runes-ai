@@ -15,6 +15,8 @@ type OwnedResult =
   | { kind: 'error'; response: NextResponse }
   | { kind: 'ok'; document: { id: string; format: string } };
 
+class AssetQuotaError extends Error {}
+
 async function findOwnedMarkdownDocument(slug: string, userId: string): Promise<OwnedResult> {
   const document = await prisma.document.findFirst({
     where: { slug, userId },
@@ -81,30 +83,40 @@ export const POST = withAuth(async (req, session, context) => {
       return NextResponse.json({ message: "File content does not match its image extension" }, { status: 400 });
     }
 
-    const existing = await prisma.documentAsset.findMany({
-      where: { documentId: owned.document.id },
-      select: { size: true },
-    });
-    if (existing.length >= MAX_ASSETS_PER_DOCUMENT) {
-      return NextResponse.json({ message: `At most ${MAX_ASSETS_PER_DOCUMENT} assets per document` }, { status: 409 });
-    }
-    const total = existing.reduce((sum, row) => sum + row.size, 0);
-    if (total + bytes.length > MAX_TOTAL_ASSET_BYTES) {
-      return NextResponse.json({ message: "Document asset storage limit reached" }, { status: 409 });
-    }
-
     const checksum = createHash("sha256").update(bytes).digest("hex");
-    const upserted = await prisma.documentAsset.upsert({
-      where: { documentId_path: { documentId: owned.document.id, path: normalized.path } },
-      create: { documentId: owned.document.id, path: normalized.path, mediaType, size: bytes.length, checksum, bytes },
-      update: { mediaType, size: bytes.length, checksum, bytes },
-    });
+    // Count and write in one serializable transaction. Concurrent uploads to
+    // different paths must not each pass the same quota snapshot.
+    const upserted = await prisma.$transaction(async (tx) => {
+      const existing = await tx.documentAsset.findMany({
+        where: { documentId: owned.document.id },
+        select: { path: true, size: true },
+      });
+      const replacing = existing.find((row) => row.path === normalized.path);
+      if (!replacing && existing.length >= MAX_ASSETS_PER_DOCUMENT) {
+        throw new AssetQuotaError(`At most ${MAX_ASSETS_PER_DOCUMENT} assets per document`);
+      }
+      const total = existing.reduce((sum, row) => sum + row.size, 0) - (replacing?.size ?? 0);
+      if (total + bytes.length > MAX_TOTAL_ASSET_BYTES) {
+        throw new AssetQuotaError("Document asset storage limit reached");
+      }
+      return tx.documentAsset.upsert({
+        where: { documentId_path: { documentId: owned.document.id, path: normalized.path } },
+        create: { documentId: owned.document.id, path: normalized.path, mediaType, size: bytes.length, checksum, bytes },
+        update: { mediaType, size: bytes.length, checksum, bytes },
+      });
+    }, { isolationLevel: "Serializable" });
 
     return NextResponse.json(
       { asset: { id: upserted.id, path: upserted.path, mediaType: upserted.mediaType, size: upserted.size, url: `/api/document/${slug}/assets/${upserted.path}` } },
       { status: 201 }
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof AssetQuotaError) {
+      return NextResponse.json({ message: error.message }, { status: 409 });
+    }
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "P2034") {
+      return NextResponse.json({ message: "Concurrent upload conflict. Please retry." }, { status: 409 });
+    }
     console.error("[ASSET_UPLOAD_ERROR] Request failed");
     return NextResponse.json({ message: "Internal server error" }, { status: 500 });
   }
