@@ -4,6 +4,7 @@ import { prisma } from '@/src/lib/db';
 import { z } from 'zod';
 import { acquireAiSlot, checkAiRateLimit } from '@/src/lib/ai-rate-limit';
 import { analyzeSelection, selectionCutsWord, verifyAndRestore } from '@/src/lib/latex-utils';
+import { analyzeMarkdownSelection, scanMarkdownContext, verifyMarkdownRestore } from '@/src/lib/markdown-utils';
 
 const paraphraseSchema = z.object({
   documentId: z.string().min(1, 'documentId is required').max(128),
@@ -37,39 +38,83 @@ export const POST = withAuth(async (req, session) => {
       });
     }
 
-    // Ownership check
+    // Ownership check — format is read from the owned row so a client cannot
+    // claim MARKDOWN for a LaTeX document (or vice versa).
     const doc = await prisma.document.findFirst({
       where: { id: documentId, userId },
-      select: { id: true },
+      select: { id: true, format: true },
     });
     if (!doc) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
+    const isMarkdown = doc.format === 'MARKDOWN';
 
     if (selectionCutsWord(before, selectedText, after)) {
       return NextResponse.json({ error: 'Select complete words' }, { status: 422 });
     }
-    const analysis = analyzeSelection(selectedText, {
-      isInDocument: true, isInPreamble: false, isInComment: false,
-      isInMath: false, isInVerbatim: false, isInCommandName: false, isInCommandArg: false,
-    });
-    if (!analysis.eligible) {
-      return NextResponse.json({ error: analysis.reason || 'Unsupported selection' }, { status: 422 });
-    }
 
-    // Build prompt
-    const toneInstruction = {
-      Clearer: 'Make the selected text clearer and more readable while preserving its meaning and LaTeX structure.',
-      Shorter: 'Make the selected text more concise and shorter while preserving its meaning and LaTeX structure.',
-      Formal: 'Make the selected text more formal and academic in tone while preserving its meaning and LaTeX structure.',
-    }[tone];
+    let maskedSelection: string;
+    let protectedTokens: { placeholder: string; original: string }[];
+    let prompt: string;
 
-    const prompt = `You are paraphrasing selected prose from a LaTeX document. Return ONLY the replacement text — no explanations, no markdown fences, no JSON. 
+    if (isMarkdown) {
+      const pseudoSource = `${before}${selectedText}${after}`;
+      const mdContext = scanMarkdownContext(pseudoSource, before.length);
+      const mdAnalysis = analyzeMarkdownSelection(selectedText, mdContext);
+      if (!mdAnalysis.eligible) {
+        return NextResponse.json({ error: mdAnalysis.reason || 'Unsupported selection' }, { status: 422 });
+      }
+      maskedSelection = mdAnalysis.maskedSelection;
+      protectedTokens = mdAnalysis.protectedTokens;
+
+      const toneInstructionMd = {
+        Clearer: 'Make the selected text clearer and more readable while preserving its meaning.',
+        Shorter: 'Make the selected text more concise and shorter while preserving its meaning.',
+        Formal: 'Make the selected text more formal and academic in tone while preserving its meaning.',
+      }[tone];
+
+      prompt = `You are paraphrasing selected prose from a Markdown document. Return ONLY the replacement text — no explanations, no code fences, no JSON.
+
+${toneInstructionMd}
+
+Selected text to paraphrase (protected tokens like @@PROTECTED_0__ stand for code, math, links, images, or emphasis — keep each exactly once, in order):
+"""${maskedSelection}"""
+
+Context before the selection:
+"""${before}"""
+
+Context after the selection:
+"""${after}"""
+
+Rules:
+- Change ONLY the plain prose between protected tokens.
+- Do NOT add or change Markdown syntax: no headings, list markers, links, images, emphasis, code, tables, or HTML.
+- Do NOT introduce URLs.
+- Do NOT wrap the output in quotes, backticks, or code fences.
+- Return plain text only.`;
+    } else {
+      const analysis = analyzeSelection(selectedText, {
+        isInDocument: true, isInPreamble: false, isInComment: false,
+        isInMath: false, isInVerbatim: false, isInCommandName: false, isInCommandArg: false,
+      });
+      if (!analysis.eligible) {
+        return NextResponse.json({ error: analysis.reason || 'Unsupported selection' }, { status: 422 });
+      }
+      maskedSelection = analysis.maskedSelection;
+      protectedTokens = analysis.protectedTokens;
+
+      const toneInstruction = {
+        Clearer: 'Make the selected text clearer and more readable while preserving its meaning and LaTeX structure.',
+        Shorter: 'Make the selected text more concise and shorter while preserving its meaning and LaTeX structure.',
+        Formal: 'Make the selected text more formal and academic in tone while preserving its meaning and LaTeX structure.',
+      }[tone];
+
+      prompt = `You are paraphrasing selected prose from a LaTeX document. Return ONLY the replacement text — no explanations, no markdown fences, no JSON. 
 
 ${toneInstruction}
 
 Selected text to paraphrase:
-"""${analysis.maskedSelection}"""
+"""${maskedSelection}"""
 
 Context before the selection:
 """${before}"""
@@ -82,6 +127,7 @@ Rules:
 - Do NOT add new LaTeX commands or structural elements.
 - Do NOT wrap the output in quotes, backticks, or code fences.
 - Return plain text only.`;
+    }
 
     // Call AI provider
     const openRouterKey = process.env.OPENROUTER_API_KEY;
@@ -104,7 +150,9 @@ Rules:
       body: JSON.stringify({
         model: 'openai/gpt-4o-mini',
         messages: [
-          { role: 'system', content: 'You are a LaTeX-aware text editor assistant. Return only the replacement text without any markdown, explanations, or formatting.' },
+          { role: 'system', content: isMarkdown
+            ? 'You are a Markdown-aware text editor assistant. Return only the replacement text. Keep every @@PROTECTED_N__ token exactly as-is, verbatim, exactly once. Never add Markdown syntax, raw HTML, or URLs.'
+            : 'You are a LaTeX-aware text editor assistant. Return only the replacement text without any markdown, explanations, or formatting.' },
           { role: 'user', content: prompt },
         ],
         max_tokens: 1024,
@@ -130,7 +178,7 @@ Rules:
     }
 
     // Check for no-op
-    if (rawText === analysis.maskedSelection) {
+    if (rawText === maskedSelection) {
       return NextResponse.json({ replacementText: null, explanation: 'No change suggested', noop: true }, { status: 200 });
     }
 
@@ -140,9 +188,11 @@ Rules:
       return NextResponse.json({ error: 'AI response too large', replacementText: null, explanation: '' }, { status: 422 });
     }
 
-    const restored = verifyAndRestore(analysis.maskedSelection, rawText, analysis.protectedTokens);
+    const restored = isMarkdown
+      ? verifyMarkdownRestore(rawText, protectedTokens)
+      : verifyAndRestore(maskedSelection, rawText, protectedTokens);
     if (!restored.success) {
-      return NextResponse.json({ error: 'AI response changed protected LaTeX' }, { status: 422 });
+      return NextResponse.json({ error: isMarkdown ? 'AI response changed protected Markdown' : 'AI response changed protected LaTeX' }, { status: 422 });
     }
     if (restored.restored === selectedText) {
       return NextResponse.json({ replacementText: null, explanation: 'No change suggested', noop: true });

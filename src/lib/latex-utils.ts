@@ -211,7 +211,7 @@ export function selectionCutsWord(before: string, selected: string, after: strin
     (word.test(selected.slice(-1)) && word.test(after.slice(0, 1)));
 }
 
-const PLACEHOLDER_PREFIX = '@@PROTECTED_';
+export const PLACEHOLDER_PREFIX = '@@PROTECTED_';
 
 export function analyzeSelection(selectedText: string, context: ScanContext): SelectionAnalysis {
   if (selectedText.length === 0) {
@@ -325,7 +325,7 @@ export function verifyAndRestore(
   return { success: true, restored };
 }
 
-function escapeRegex(s: string): string {
+export function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 

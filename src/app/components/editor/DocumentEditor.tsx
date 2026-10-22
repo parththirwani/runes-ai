@@ -12,11 +12,15 @@ import InputModal from '../design/InputModal';
 import AlertModal from '../design/AlertModal';
 import Button from '../design/Button';
 import { JobStatus } from '@/src/types/compilation';
+import type { DocumentFormatValue } from '@/src/types/compilation';
 import { EditProposal, verifyAcceptance, checkStale, generateProposalId } from '@/src/lib/proposal-engine';
 import { analyzeSelection, scanContext, selectionCutsWord } from '@/src/lib/latex-utils';
+import { analyzeMarkdownSelection, markdownLineIsProse, scanMarkdownContext } from '@/src/lib/markdown-utils';
 import { buildLatexOutline } from '@/src/lib/latex-outline';
+import { buildMarkdownOutline } from '@/src/lib/markdown-outline';
+import MarkdownPreviewPane from './MarkdownPreviewPane';
 import type { editor } from 'monaco-editor';
-import { Wand2, RefreshCw } from 'lucide-react';
+import { Wand2, RefreshCw, ImagePlus } from 'lucide-react';
 
 type ViewMode = 'editor' | 'split' | 'preview';
 
@@ -57,11 +61,17 @@ interface DocumentEditorProps {
     title: string;
     content: string;
     slug: string;
+    format?: DocumentFormatValue;
   } | null;
 }
 
 export default function DocumentEditor({ initialDocument }: DocumentEditorProps) {
   const router = useRouter();
+  // Format is fixed at creation and read from the stored document row.
+  const format: DocumentFormatValue = initialDocument?.format ?? 'LATEX';
+  const isMarkdown = format === 'MARKDOWN';
+  const extension = isMarkdown ? 'md' : 'tex';
+  const language = isMarkdown ? 'markdown' : 'latex';
   const [code, setCode] = useState(initialDocument?.content ?? initialCode);
   const [title, setTitle] = useState(initialDocument?.title || 'Untitled Document');
   const [slug, setSlug] = useState(initialDocument?.slug || '');
@@ -103,6 +113,10 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const [aiError, setAiError] = useState<string | null>(null);
   const [autocompleteNotice, setAutocompleteNotice] = useState<string | null>(null);
   const autocompleteNoticeShownRef = useRef(false);
+  const assetInputRef = useRef<HTMLInputElement | null>(null);
+  const [assetUploadBusy, setAssetUploadBusy] = useState(false);
+  const [assetNotice, setAssetNotice] = useState<string | null>(null);
+  const [assetError, setAssetError] = useState<string | null>(null);
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(true);
   const autocompleteEnabledRef = useRef(true);
   const [paraphraseDisabledReason, setParaphraseDisabledReason] = useState<string | null>('Select prose to paraphrase');
@@ -135,8 +149,11 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   // Store the most recent tone used for paraphrase
   const lastToneRef = useRef('Clearer');
-  const fileName = `${slug || 'untitled'}.tex`;
-  const outline = buildLatexOutline(code, fileName, currentLineNumber);
+  const fileName = `${slug || 'untitled'}.${extension}`;
+  const modelUri = `runes://${documentId}/${fileName}`;
+  const outline = isMarkdown
+    ? buildMarkdownOutline(code, fileName, currentLineNumber)
+    : buildLatexOutline(code, fileName, currentLineNumber);
 
   // --- Dirty tracking ---
   useEffect(() => {
@@ -230,7 +247,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       const start = model.getOffsetAt(selection.getStartPosition());
       const end = model.getOffsetAt(selection.getEndPosition());
       const selected = full.slice(start, end);
-      const analysis = analyzeSelection(selected, scanContext(full, start));
+      const analysis = isMarkdown
+        ? analyzeMarkdownSelection(selected, scanMarkdownContext(full, start))
+        : analyzeSelection(selected, scanContext(full, start));
       setParaphraseDisabledReason(
         !analysis.eligible ? analysis.reason || 'Unsupported selection' :
         selectionCutsWord(full.slice(0, start), selected, full.slice(end)) ? 'Select complete words' : null,
@@ -246,7 +265,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       completeProviderDisposableRef.current = null;
     }
 
-    const provider = monaco.languages.registerInlineCompletionsProvider('latex', {
+    const provider = monaco.languages.registerInlineCompletionsProvider(language, {
       provideInlineCompletions: async (model, position, _context, token) => {
         // Read live state from refs (the provider closure is created once at mount)
         if (!autocompleteEnabledRef.current || proposalRef.current || token.isCancellationRequested || model !== editorInstance.getModel()) return { items: [] };
@@ -256,9 +275,19 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
         const offset = model.getOffsetAt(position);
         const fullSource = model.getValue();
-        const ctx = scanContext(fullSource, offset);
-        if (!ctx.isInDocument || ctx.isInPreamble || ctx.isInMath || ctx.isInVerbatim || ctx.isInComment || ctx.isInCommandName || ctx.isInCommandArg) {
-          return { items: [] };
+        if (isMarkdown) {
+          // Suppress completions in front matter, code, math, link/image
+          // destinations, raw HTML, tables, headings, and list markers.
+          const mdCtx = scanMarkdownContext(fullSource, offset);
+          const lineUpToCursor = fullSource.slice(0, offset).slice(fullSource.slice(0, offset).lastIndexOf('\n') + 1);
+          if (mdCtx.inProtected || !markdownLineIsProse(lineUpToCursor)) {
+            return { items: [] };
+          }
+        } else {
+          const ctx = scanContext(fullSource, offset);
+          if (!ctx.isInDocument || ctx.isInPreamble || ctx.isInMath || ctx.isInVerbatim || ctx.isInComment || ctx.isInCommandName || ctx.isInCommandArg) {
+            return { items: [] };
+          }
         }
 
         const sel = editorInstance.getSelection();
@@ -371,9 +400,10 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     const endOffset = model.getOffsetAt({ lineNumber: selection.endLineNumber, column: selection.endColumn });
     const selectedText = model.getValue().slice(startOffset, endOffset);
 
-    // Context analysis
-    const ctx = scanContext(model.getValue(), startOffset);
-    const analysis = analyzeSelection(selectedText, ctx);
+    // Context analysis (format-specific rules)
+    const analysis = isMarkdown
+      ? analyzeMarkdownSelection(selectedText, scanMarkdownContext(model.getValue(), startOffset))
+      : analyzeSelection(selectedText, scanContext(model.getValue(), startOffset));
     if (!analysis.eligible || selectionCutsWord(model.getValue().slice(0, startOffset), selectedText, model.getValue().slice(endOffset))) {
       setParaphraseDisabledReason(analysis.reason || 'Select complete words');
       return;
@@ -696,6 +726,61 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     }
   };
 
+  // --- Source (.md) download for Markdown documents ---
+  const handleDownloadSource = () => {
+    const blob = new Blob([code], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // --- Image upload (Markdown): POST to the document asset store, then
+  // insert the canonical asset URL at the caret as a single undoable edit. ---
+  const handleAssetFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !slug) return;
+    const uploadModel = editorRef.current?.getModel();
+    setAssetUploadBusy(true);
+    setAssetNotice(null);
+    setAssetError(null);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const response = await fetch(`/api/document/${slug}/assets`, { method: 'POST', body: form });
+      const payload = await response.json().catch(() => ({})) as { asset?: { path: string }; message?: string };
+      if (!response.ok) throw new Error(payload?.message || 'Image upload failed');
+      const assetPath = payload.asset?.path;
+      if (!assetPath) throw new Error('Image upload failed');
+      const alt = file.name.replace(/\.[A-Za-z0-9]+$/, '') || 'image';
+      const insertion = `![${alt}](/api/document/${slug}/assets/${assetPath})`;
+      const editorInstance = editorRef.current;
+      const editorModel = editorInstance?.getModel();
+      if (uploadModel && editorModel !== uploadModel) {
+        throw new Error('Image uploaded, but the document changed before it could be inserted');
+      }
+      if (editorInstance && editorModel) {
+        const selection = editorInstance.getSelection();
+        const range = selection ?? editorModel.getFullModelRange();
+        const text = selection ? insertion : `${editorModel.getValue()}\n\n${insertion}\n`;
+        editorInstance.executeEdits('asset-upload', [{ range, text }]);
+        editorInstance.focus();
+      } else {
+        setCode((prev) => `${prev}\n\n${insertion}\n`);
+      }
+      setAssetNotice(`Inserted ${assetPath}`);
+    } catch (error) {
+      setAssetError(error instanceof Error ? error.message : 'Image upload failed');
+    } finally {
+      setAssetUploadBusy(false);
+    }
+  };
+
   // --- Download handler ---
   const handleDownload = async () => {
     if (!pdfUrl) {
@@ -785,6 +870,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         isCompiling={isCompiling}
         hasUnsavedChanges={hasUnsavedChanges}
         compilationStatus={compilationStatus}
+        format={format}
+        fileName={fileName}
+        onDownloadSource={isMarkdown ? handleDownloadSource : undefined}
       />
 
       <div className="flex-1 relative overflow-hidden">
@@ -795,7 +883,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           onFileSelect={handleOutlineSelect}
           onNewFile={() => router.push('/document')}
           title="Document outline"
-          emptyMessage="Use \\section, \\subsection, or related headings to build a navigable outline."
+          emptyMessage={isMarkdown
+            ? 'Use # headings to build a navigable outline.'
+            : 'Use \\section, \\subsection, or related headings to build a navigable outline.'}
         />
 
         <AiWorkspacePanel
@@ -864,6 +954,30 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                   )}
                   {autocompleteNotice && <span role="status" className="text-xs text-yellow-400">{autocompleteNotice}</span>}
 
+                  {isMarkdown && (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        ref={assetInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        className="hidden"
+                        aria-label="Upload image"
+                        onChange={(e) => void handleAssetFileSelected(e)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => assetInputRef.current?.click()}
+                        disabled={assetUploadBusy}
+                        className="flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded text-gray-400 hover:text-white hover:bg-[#3e3e3e] transition-colors disabled:opacity-40 cursor-pointer"
+                      >
+                        <ImagePlus className="w-3 h-3" />
+                        {assetUploadBusy ? 'Uploading…' : 'Insert image'}
+                      </button>
+                      {assetNotice && <span role="status" className="text-xs text-emerald-400">{assetNotice}</span>}
+                      {assetError && <span role="alert" className="text-xs text-red-400">{assetError}</span>}
+                    </div>
+                  )}
+
                   <label className="hidden sm:flex items-center gap-1.5 text-[11px] text-gray-500 cursor-pointer">
                     <input
                       type="checkbox"
@@ -882,7 +996,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                   key={documentId}
                   value={code}
                   onChange={handleCodeChange}
+                  language={language}
                   fileName={fileName}
+                  modelUri={modelUri}
                   onEditorReady={handleEditorReady}
                 />
               </div>
@@ -910,15 +1026,28 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           )}
 
           {(viewMode === 'preview' || viewMode === 'split') && (
-            <div className={`${viewMode === 'split' ? 'hidden md:block md:w-1/2' : 'w-full'}`}>
-              <PDFPreview
-                pdfUrl={pdfUrl}
-                isLoading={isCompiling}
-                onCompile={handleCompile}
-                onDownload={handleDownload}
-                statusMessage={compilationStatus}
-                isStale={pdfIsStale}
-              />
+            <div className={`${viewMode === 'split' ? 'hidden md:block md:w-1/2' : 'w-full'} min-w-0`}>
+              {isMarkdown ? (
+                <MarkdownPreviewPane
+                  source={code}
+                  pdfUrl={pdfUrl}
+                  isCompiling={isCompiling}
+                  compilationStatus={compilationStatus}
+                  pdfIsStale={pdfIsStale}
+                  onCompile={handleCompile}
+                  onDownloadPdf={handleDownload}
+                />
+              ) : (
+                <PDFPreview
+                  pdfUrl={pdfUrl}
+                  isLoading={isCompiling}
+                  onCompile={handleCompile}
+                  onDownload={handleDownload}
+                  statusMessage={compilationStatus}
+                  isStale={pdfIsStale}
+                  documentKind="LaTeX"
+                />
+              )}
             </div>
           )}
         </div>

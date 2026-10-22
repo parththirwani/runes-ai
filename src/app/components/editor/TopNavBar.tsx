@@ -1,9 +1,10 @@
-import { Menu, FileText, Save, Play, Sparkles, Edit2 } from 'lucide-react';
+import { Menu, FileText, Save, Play, Sparkles, Edit2, Download } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Button from '../design/Button';
 import IconButton from '../design/IconButton';
 import Logo from '../brand/logo';
 import ViewModeToggle from './ViewModeToggle';
+import type { DocumentFormatValue } from '@/src/types/compilation';
 
 type ViewMode = 'editor' | 'split' | 'preview';
 
@@ -20,6 +21,11 @@ interface TopNavBarProps {
   isCompiling?: boolean;
   hasUnsavedChanges?: boolean;
   compilationStatus?: string;
+  format?: DocumentFormatValue;
+  /** File extension cue, e.g. "notes.md". */
+  fileName?: string;
+  /** When set, a source download button is shown (Markdown ".md" file). */
+  onDownloadSource?: () => void;
 }
 
 export default function TopNavBar({
@@ -34,9 +40,16 @@ export default function TopNavBar({
   isSaving = false,
   isCompiling = false,
   hasUnsavedChanges = false,
-  compilationStatus = ''
+  compilationStatus = '',
+  format = 'LATEX',
+  fileName,
+  onDownloadSource
 }: TopNavBarProps) {
   const router = useRouter();
+  const isMarkdown = format === 'MARKDOWN';
+  const viewLabels = isMarkdown
+    ? { editor: 'Source', split: 'Split', preview: 'Reading' }
+    : { editor: 'Code', split: 'Split', preview: 'PDF' };
 
   return (
     <div className="min-h-14 bg-[#2d2d2d] border-b border-[#3e3e3e] flex flex-wrap items-center justify-between gap-2 px-4 py-2 relative z-30 shrink-0">
@@ -61,8 +74,8 @@ export default function TopNavBar({
         
         <div className="h-6 w-px bg-[#3e3e3e]" />
         
-        <div className="flex items-center gap-2 text-sm text-gray-400">
-          <FileText className="w-4 h-4" />
+        <div className="flex items-center gap-2 text-sm text-gray-400 min-w-0">
+          <FileText className="w-4 h-4 shrink-0" />
           <button
             onClick={onTitleEdit}
             className="max-w-50 truncate hover:text-gray-200 transition-colors flex items-center gap-1 group cursor-pointer"
@@ -74,12 +87,30 @@ export default function TopNavBar({
           {hasUnsavedChanges && (
             <span className="w-2 h-2 bg-yellow-500 rounded-full" title="Unsaved changes" />
           )}
+          <span
+            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium whitespace-nowrap ${
+              isMarkdown
+                ? 'border-sky-400/40 bg-sky-400/10 text-sky-300'
+                : 'border-amber-400/40 bg-amber-400/10 text-amber-300'
+            }`}
+          >
+            {isMarkdown ? 'Markdown' : 'LaTeX'}
+            {fileName ? <span className="ml-1 font-mono">{fileName}</span> : null}
+          </span>
         </div>
       </div>
 
       {/* Right Section */}
       <div className="flex max-w-full flex-wrap items-center gap-2">
-        <ViewModeToggle value={viewMode} onChange={onViewModeChange} />
+        <ViewModeToggle value={viewMode} onChange={onViewModeChange} labels={viewLabels} />
+        {onDownloadSource && (
+          <IconButton
+            icon={<Download className="w-4 h-4" />}
+            tooltip={`Download ${fileName || 'source'} file`}
+            onClick={onDownloadSource}
+            className="cursor-pointer"
+          />
+        )}
         
         <div className="h-6 w-px bg-[#3e3e3e]" />
 

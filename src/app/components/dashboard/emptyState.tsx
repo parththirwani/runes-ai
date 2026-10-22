@@ -1,45 +1,43 @@
-import { FileSearch, FilePlus2, Inbox } from "lucide-react";
-import { Button } from "../ui/button";
+import { FileText, Plus } from 'lucide-react';
+import Button from '../design/Button';
 
 interface EmptyStateProps {
   searchQuery?: string;
   onCreateDocument?: () => void;
-  onClearSearch?: () => void;
+  /** True when documents exist but search/filter hides them all. */
+  filtered?: boolean;
 }
 
-export default function EmptyState({ searchQuery, onCreateDocument, onClearSearch }: EmptyStateProps) {
-  if (searchQuery) {
+export default function EmptyState({ searchQuery, onCreateDocument, filtered }: EmptyStateProps) {
+  if (searchQuery || filtered) {
     return (
-      <div className="rounded-lg border border-dashed border-border px-6 py-16 text-center">
-        <FileSearch className="mx-auto h-6 w-6 text-meta" aria-hidden="true" />
-        <h3 className="mt-4 text-base font-medium text-foreground">No documents match that search</h3>
-        <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
-          Nothing titled <span className="text-foreground">“{searchQuery}”</span>. Titles are matched
-          exactly as you type, so try fewer characters.
+      <div className="text-center py-24">
+        <p className="text-gray-500 text-sm">
+          {searchQuery
+            ? `No documents found matching "${searchQuery}"`
+            : 'No documents match the selected format filter'}
         </p>
-        {onClearSearch && (
-          <Button variant="outline" size="sm" className="mt-6" onClick={onClearSearch}>
-            Clear search
-          </Button>
-        )}
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-dashed border-border px-6 py-16 text-center">
-      <Inbox className="mx-auto h-6 w-6 text-meta" aria-hidden="true" />
-      <h3 className="mt-4 text-base font-medium text-foreground">Your workspace is empty</h3>
-      <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
-        New documents start with a minimal LaTeX preamble, a title and one
-        section, so you can get to writing straight away.
+    <div className="text-center py-24">
+      <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-6">
+        <FileText className="w-8 h-8 text-gray-600" />
+      </div>
+      <h3 className="text-xl font-semibold mb-2">No documents yet</h3>
+      <p className="text-gray-500 mb-8 text-sm max-w-sm mx-auto">
+        Create your first Markdown or LaTeX document to get started
       </p>
-      {onCreateDocument && (
-        <Button className="mt-6" onClick={onCreateDocument}>
-          <FilePlus2 className="h-4 w-4" aria-hidden="true" />
-          Create your first document
-        </Button>
-      )}
+      <Button
+        variant="primary"
+        icon={<Plus className="w-4 h-4" />}
+        onClick={onCreateDocument}
+        className="cursor-pointer"
+      >
+        Create Document
+      </Button>
     </div>
   );
 }

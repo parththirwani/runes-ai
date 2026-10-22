@@ -1,61 +1,96 @@
-import Link from "next/link";
-import { EMPTY_SUMMARY_LABEL } from "@/src/lib/latex-summary";
-import { describeUpdate, formatAbsoluteDate, formatRelativeDate } from "@/src/lib/date-format";
-import { DOCUMENT_PATH } from "@/src/lib/paths";
-import type { DashboardDocument } from "@/src/types/dashboard";
-import DocumentActions from "./documentActions";
+import { FileText, Trash2, Clock } from 'lucide-react';
+import type { DocumentFormatValue } from '@/src/types/compilation';
+import FormatBadge from './formatBadge';
+
+interface Document {
+  id: string;
+  title: string;
+  slug: string;
+  content?: string | null;
+  format?: DocumentFormatValue;
+  excerpt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 interface DocumentGridProps {
-  documents: DashboardDocument[];
+  documents: Document[];
   onDocumentClick: (slug: string) => void;
-  onDocumentDelete: (document: DashboardDocument) => void;
+  onDocumentDelete: (doc: Document) => void;
 }
 
 export default function DocumentGrid({
   documents,
   onDocumentClick,
-  onDocumentDelete,
+  onDocumentDelete
 }: DocumentGridProps) {
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return `${days}d ago`;
+    if (days < 30) return `${Math.floor(days / 7)}w ago`;
+    if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
   return (
-    <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {documents.map((document) => (
-        <li key={document.id}>
-          <article
-            data-document-card
-            onClick={() => onDocumentClick(document.slug)}
-            className="flex h-full cursor-pointer flex-col rounded-lg border border-border bg-surface p-4 transition-colors hover:border-border-hover hover:bg-surface-raised/60"
-          >
-            <h3 className="text-sm font-medium text-foreground">
-              <Link
-                href={DOCUMENT_PATH(document.slug)}
-                className="line-clamp-2 focus-visible:outline-2"
-              >
-                {document.title}
-              </Link>
-            </h3>
-
-            <p
-              className={`mt-2 line-clamp-3 flex-1 text-sm leading-relaxed ${
-                document.summary ? "text-muted-foreground" : "text-meta italic"
-              }`}
-            >
-              {document.summary ?? EMPTY_SUMMARY_LABEL}
-            </p>
-
-            <div className="relative z-10 mt-4 flex items-center justify-between gap-2 border-t border-border-subtle pt-3">
-              <time
-                dateTime={document.updatedAt}
-                title={formatAbsoluteDate(document.updatedAt)}
-                aria-label={describeUpdate(document.updatedAt)}
-                className="font-mono text-xs text-meta"
-              >
-                Updated {formatRelativeDate(document.updatedAt)}
-              </time>
-              <DocumentActions document={document} onDelete={onDocumentDelete} />
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {documents.map((doc) => (
+        <div
+          key={doc.id}
+          role="button"
+          tabIndex={0}
+          aria-label={`Open ${doc.title}, ${doc.format === 'MARKDOWN' ? 'Markdown' : 'LaTeX'} document`}
+          onClick={() => onDocumentClick(doc.slug)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onDocumentClick(doc.slug);
+            }
+          }}
+          className="group bg-white/3 border border-white/10 rounded-xl p-5 hover:bg-white/6 hover:border-white/20 transition-all cursor-pointer relative focus-visible:outline-2 focus-visible:outline-emerald-500"
+        >
+          <div className="flex items-start justify-between mb-4">
+            <div className="w-10 h-10 bg-emerald-500/10 rounded-lg flex items-center justify-center">
+              <FileText className="w-5 h-5 text-emerald-400" />
             </div>
-          </article>
-        </li>
+            <div className="flex items-center gap-1">
+              <FormatBadge format={doc.format} />
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDocumentDelete(doc);
+                }}
+                aria-label={`Delete ${doc.title}`}
+                className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 p-2 hover:bg-white/10 rounded-lg transition-all cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4 text-gray-500 hover:text-red-400" />
+              </button>
+            </div>
+          </div>
+          
+          <h3 className="font-medium text-white mb-2 truncate text-base">
+            {doc.title}
+          </h3>
+          
+          <p className="text-sm text-gray-500 line-clamp-2 mb-4 leading-relaxed">
+            {doc.excerpt && doc.excerpt.length > 0 ? doc.excerpt : 'No preview available.'}
+          </p>
+          
+          <div className="flex items-center gap-2 text-xs text-gray-600">
+            <Clock className="w-3.5 h-3.5" />
+            <span>{formatDate(doc.updatedAt)}</span>
+            <span className="ml-auto font-mono text-[10px] text-gray-500">
+              .{doc.format === 'MARKDOWN' ? 'md' : 'tex'}
+            </span>
+          </div>
+        </div>
       ))}
-    </ul>
+    </div>
   );
 }

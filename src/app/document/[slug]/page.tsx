@@ -15,7 +15,7 @@ export default function DocumentPage() {
   const slug = params.slug as string;
   const decodedTitle = useMemo(() => slug?.split('-').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ') || 'Document', [slug]);
   
-  const [document, setDocument] = useState<{ id: string; title: string; content: string; slug: string } | null>(null);
+  const [document, setDocument] = useState<{ id: string; title: string; content: string; slug: string; format?: 'LATEX' | 'MARKDOWN' } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
