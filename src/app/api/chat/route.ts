@@ -3,7 +3,7 @@ import { chatSchema } from "@/src/schema/chatSchema";
 import { prisma } from "@/src/lib/db";
 import { ChatCompletion, DiffResponse } from "@/src/lib/openrouter";
 import { resolveMainSource } from "@/src/lib/workspace-files";
-import { auth } from "@/src/lib/auth";
+import { withAuth } from "@/src/lib/withAuth";
 import type { ZodError } from 'zod';
 
 function formatZodError(error: ZodError) {
@@ -13,14 +13,9 @@ function formatZodError(error: ZodError) {
   }));
 }
 
-export async function POST(req: NextRequest) {
+export const POST = withAuth(async (req: NextRequest, session) => {
   try {
-    // Authenticate
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const userId = session.user.id;
+    const userId = session.user.id!;
 
     const body = await req.json();
     const parsed = chatSchema.safeParse(body);
@@ -43,6 +38,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 
+    if (!process.env.OPENROUTER_API_KEY) {
+      return NextResponse.json({ error: "AI provider not configured" }, { status: 503 });
+    }
+
     const mainSource = await resolveMainSource(document);
 
     // AI Call
@@ -53,11 +52,14 @@ export async function POST(req: NextRequest) {
     );
 
     return NextResponse.json({ data: diffResponse }, { status: 200 });
-  } catch {
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    }
     console.error("[CHAT_API_ERROR] Request failed");
     return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
+      { error: "AI service unavailable" },
+      { status: 502 }
     );
   }
-}
+});

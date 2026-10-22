@@ -362,6 +362,16 @@ async function main() {
   const anonPdf = await api(`/api/pdf/${first.data.jobId}`, {}, false);
   check('anonymous cannot read a pdf', anonPdf.status === 401, `status ${anonPdf.status}`);
 
+  const aiRequests = [
+    ['/api/chat', { documentId: legacy.id, message: 'Improve the prose' }],
+    ['/api/ai/complete', { documentId: legacy.id, prefix: 'Legacy body', suffix: '' }],
+    ['/api/ai/paraphrase', { documentId: legacy.id, selectedText: 'Legacy body', before: ' ', after: ' ' }],
+  ];
+  for (const [path, body] of aiRequests) {
+    const res = await api(path, { method: 'POST', body: JSON.stringify(body) }, false);
+    check(`anonymous denied ${path}`, res.status === 401, `status ${res.status}`);
+  }
+
   // A valid session for a different user must not expose owned resources.
   const otherCookie = await otherUserCookie();
   const ownedPaths = [
@@ -381,6 +391,10 @@ async function main() {
     method: 'PUT', body: JSON.stringify({ path: 'main.tex', content: 'overwritten' }),
   }, otherCookie);
   check('other user cannot edit a file', otherWrite.status === 404, `status ${otherWrite.status}`);
+  for (const [path, body] of aiRequests) {
+    const res = await api(path, { method: 'POST', body: JSON.stringify(body) }, otherCookie);
+    check(`other user denied ${path}`, res.status === 404, `status ${res.status}`);
+  }
 
   // 12. Autosave of unchanged bytes must not create a new compile.
   const idemSlug = await buildWorkspace(`idem${marker}`);
