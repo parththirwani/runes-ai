@@ -65,6 +65,23 @@ with sync_playwright() as playwright:
         expect(page.get_by_role("link", name="Go home")).to_have_attribute("href", "/")
         expect(page.get_by_role("link", name="Sign in", exact=True)).to_have_attribute("href", "/signin")
 
+        page.goto(BASE, wait_until="domcontentloaded")
+        menu_toggle = page.get_by_role("button", name="Open menu")
+        expect(menu_toggle).to_have_attribute("aria-expanded", "false")
+        assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
+        for section in ("Features", "How it works"):
+            menu_toggle.click()
+            expect(page.get_by_role("button", name="Close menu")).to_have_attribute("aria-expanded", "true")
+            previous_scroll = page.evaluate("scrollY")
+            page.locator("#mobile-nav").get_by_role("link", name=section).click()
+            expect(page.locator("#mobile-nav")).to_have_count(0)
+            page.wait_for_function("previous => scrollY > previous + 100", arg=previous_scroll)
+            assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
+        menu_toggle.click()
+        page.locator("#mobile-nav").get_by_role("link", name="Sign in", exact=True).click()
+        page.wait_for_url("**/signin**", timeout=15000)
+        expect(page.get_by_role("heading", name="Sign in to Runes AI")).to_be_visible()
+
         page.set_viewport_size({"width": 390, "height": 800})
         page.goto(BASE, wait_until="domcontentloaded")
         page.get_by_role("link", name="Start writing").first.click()
