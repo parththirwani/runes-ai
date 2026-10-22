@@ -106,6 +106,7 @@ export default function TopNavBar({
         {onDownloadSource && (
           <IconButton
             icon={<Download className="w-4 h-4" />}
+            label={`Download ${fileName || 'source'} file`}
             tooltip={`Download ${fileName || 'source'} file`}
             onClick={onDownloadSource}
             className="cursor-pointer"
