@@ -21,7 +21,7 @@ const NotFound = () => {
           <div className="border-b border-border-subtle bg-surface-raised/50 px-4 py-2 font-mono text-xs text-meta">
             latex.out
           </div>
-          <pre className="overflow-x-auto px-4 py-4 font-mono text-sm leading-relaxed text-muted-foreground">
+          <pre className="whitespace-pre-wrap break-words px-4 py-4 font-mono text-sm leading-relaxed text-muted-foreground">
             <code>
               <span className="text-destructive">! LaTeX Error: File `requested-page` not found.</span>
               {"\n"}

@@ -56,6 +56,15 @@ with sync_playwright() as playwright:
     md_slug = None
     navigation_slug = None
     try:
+        page.set_viewport_size({"width": 320, "height": 568})
+        page.goto(f"{BASE}/missing-browser-smoke-page", wait_until="domcontentloaded")
+        expect(page.get_by_role("heading", name="That page is not in this document")).to_be_visible()
+        error_panel = page.locator("pre").first
+        assert error_panel.evaluate("element => element.scrollWidth <= element.clientWidth")
+        assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
+        expect(page.get_by_role("link", name="Go home")).to_have_attribute("href", "/")
+        expect(page.get_by_role("link", name="Sign in", exact=True)).to_have_attribute("href", "/signin")
+
         page.set_viewport_size({"width": 390, "height": 800})
         page.goto(BASE, wait_until="domcontentloaded")
         page.get_by_role("link", name="Start writing").first.click()
