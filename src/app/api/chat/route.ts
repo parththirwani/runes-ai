@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { chatSchema } from "@/src/schema/chatSchema";
 import { prisma } from "@/src/lib/db";
 import { ChatCompletion, DiffResponse } from "@/src/lib/openrouter";
+import { resolveMainSource } from "@/src/lib/workspace-files";
 import { auth } from "@/src/lib/auth";
 import type { ZodError } from 'zod';
 
@@ -35,17 +36,19 @@ export async function POST(req: NextRequest) {
     // Fetch document WITH ownership check
     const document = await prisma.document.findFirst({
       where: { id: documentId, userId },
-      select: { content: true, title: true },
+      select: { id: true, title: true, content: true, mainFilePath: true },
     });
 
     if (!document) {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 
+    const mainSource = await resolveMainSource(document);
+
     // AI Call
     const diffResponse: DiffResponse = await ChatCompletion(
       message.trim(),
-      document.content,
+      mainSource,
       document.title
     );
 

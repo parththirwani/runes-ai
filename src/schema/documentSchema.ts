@@ -1,8 +1,37 @@
-import {z} from "zod"
+import { z } from "zod";
 
 export const documentSchema = z.object({
-    title : z.string().min(1, "Title is required").max(30,"Title cant be longer than 30 chars"),
-    content: z.string().min(1, "Content is required")
-})
+  title: z.string().min(1, "Title is required").max(30, "Title cant be longer than 30 chars"),
+  content: z.string().min(1, "Content is required"),
+});
 
-export const updateDocumentSchema = documentSchema.partial()
+export const updateDocumentSchema = documentSchema.partial();
+
+// Multi file save. baseRevision gives the client optimistic conflict detection.
+export const workspaceSaveSchema = z.object({
+  files: z
+    .array(
+      z.object({
+        path: z.string().min(1).max(300),
+        content: z.string().max(1024 * 1024),
+        baseRevision: z.number().int().positive().nullable().optional(),
+      }),
+    )
+    .max(100)
+    .optional(),
+});
+
+export const workspaceFileWriteSchema = z.object({
+  path: z.string().min(1).max(300),
+  content: z.string().max(1024 * 1024),
+  baseRevision: z.number().int().positive().nullable().optional(),
+});
+
+export const workspaceMoveSchema = z.object({
+  from: z.string().min(1).max(300),
+  to: z.string().min(1).max(300),
+});
+
+export const workspaceMainSchema = z.object({
+  path: z.string().min(1).max(300),
+});

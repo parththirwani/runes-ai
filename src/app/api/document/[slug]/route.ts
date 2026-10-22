@@ -1,42 +1,61 @@
-import { prisma } from "@/src/lib/db";
-import { withAuth } from "@/src/lib/withAuth";
-import { documentSchema, updateDocumentSchema } from "@/src/schema/documentSchema";
-import { compilationProducer } from "@/producer/queue";
-import { checkRateLimit } from "@/src/lib/rateLimit";
-import { NextResponse } from "next/server";
+import { prisma } from '@/src/lib/db';
+import { withAuth } from '@/src/lib/withAuth';
+import { documentSchema, updateDocumentSchema, workspaceSaveSchema } from '@/src/schema/documentSchema';
+import { compilationProducer } from '@/producer/queue';
+import { checkRateLimit } from '@/src/lib/rateLimit';
+import { NextResponse } from 'next/server';
+import {
+  WorkspaceError,
+  WorkspacePathError,
+  ensureDocumentMigrated,
+  readWorkspaceTree,
+  writeTextFile,
+} from '@/src/lib/workspace-files';
+import { createCompileSnapshot } from '@/src/lib/workspace-snapshot';
+import { compilerOptionsForCacheKey, configuredEngine, engineVersion } from '@/worker/latex-compiler';
 
+function errorResponse(error: unknown) {
+  if (error instanceof WorkspaceError || error instanceof WorkspacePathError) {
+    return NextResponse.json({ message: error.message }, { status: error.status });
+  }
+  throw error;
+}
+
+/* ------------------------- GET workspace with file metadata ------------------------- */
 export const GET = withAuth(async (req, session, context) => {
   try {
     const { slug } = await context.params;
-    const userId = session.user.id;
-    
-    const document = await prisma.document.findFirst({
-      where: {
-        slug: slug,
-        userId: userId
-      }
-    });
-  
-    if (!document) {
-      return NextResponse.json(
-        { message: "Document not found" },
-        { status: 404 }
-      );
+    const workspace = await readWorkspaceTree(session.user.id, slug);
+    if (!workspace) {
+      return NextResponse.json({ message: 'Document not found' }, { status: 404 });
     }
-  
+
+    const main = workspace.files.find((file) => file.path === workspace.document.mainFilePath);
+    const mainRecord = await prisma.workspaceFile.findUnique({
+      where: { documentId_path: { documentId: workspace.document.id, path: workspace.document.mainFilePath } },
+      select: { content: true },
+    });
+
     return NextResponse.json(
       {
-        message: "Document retrieved successfully",
-        document: document
+        message: 'Document retrieved successfully',
+        document: {
+          id: workspace.document.id,
+          title: workspace.document.title,
+          slug: workspace.document.slug,
+          updatedAt: workspace.document.updatedAt,
+          mainFilePath: workspace.document.mainFilePath,
+          // Legacy shape: single source clients keep reading Document.content.
+          content: mainRecord?.content ?? '',
+          mainFile: main ? { path: main.path, revision: main.revision, checksum: main.checksum } : null,
+          files: workspace.files,
+          tree: workspace.tree,
+        },
       },
-      { status: 200 }
+      { status: 200 },
     );
   } catch (error) {
-    console.error("[DOCUMENT_GET_ERROR]", error);
-    return NextResponse.json(
-      { message: "Internal server error" },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 });
 
@@ -45,94 +64,85 @@ export const DELETE = withAuth(async (req, session, context) => {
     const { slug } = await context.params;
     const userId = session.user.id;
 
-    const document = await prisma.document.findFirst({
-      where: {
-        slug: slug,
-        userId: userId
-      }
-    });
-  
+    const document = await prisma.document.findFirst({ where: { slug, userId } });
     if (!document) {
-      return NextResponse.json(
-        { message: "Document not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ message: 'Document not found' }, { status: 404 });
     }
 
-    await prisma.document.delete({
-      where: {
-        id: document.id
-      }
-    });
-  
-    return NextResponse.json(
-      { message: "Document deleted successfully" },
-      { status: 200 }
-    );
+    // Workspace files cascade with the document; stored asset bytes are content addressed
+    // and are reclaimed by the storage prune job.
+    await prisma.document.delete({ where: { id: document.id } });
+
+    return NextResponse.json({ message: 'Document deleted successfully' }, { status: 200 });
   } catch (error) {
-    console.error("[DOCUMENT_DELETE_ERROR]", error);
-    return NextResponse.json(
-      { message: "Internal server error" },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 });
 
+/* --------------------------- PUT save (legacy + files) --------------------------- */
 export const PUT = withAuth(async (req, session, context) => {
   try {
     const { slug } = await context.params;
     const userId = session.user.id;
-    const body = await req.json(); 
-    const parsedData = updateDocumentSchema.safeParse(body);
+    const body = await req.json();
 
-    if (!parsedData.success) {
-      return NextResponse.json(
-        { message: "Invalid input"},
-        { status: 400 }
-      );
-    }
-
-    const document = await prisma.document.findFirst({
-      where: {
-        slug: slug,
-        userId: userId
-      }
-    });
-  
+    const document = await prisma.document.findFirst({ where: { slug, userId } });
     if (!document) {
-      return NextResponse.json(
-        { message: "Document not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ message: 'Document not found' }, { status: 404 });
+    }
+    await ensureDocumentMigrated(prisma, document.id);
+
+    const updates: { title?: string } = {};
+    const parsedTitle = updateDocumentSchema.safeParse(body);
+    if (!parsedTitle.success) {
+      return NextResponse.json({ message: 'Invalid input' }, { status: 400 });
+    }
+    if (parsedTitle.data.title !== undefined) updates.title = parsedTitle.data.title;
+
+    // Multi file saves go through the workspace path; the legacy {content} shape keeps
+    // working by writing the currently selected main file.
+    const filesPayload = workspaceSaveSchema.safeParse(body);
+    const results: { path: string; revision: number; checksum: string }[] = [];
+    if (filesPayload.success && filesPayload.data.files) {
+      for (const file of filesPayload.data.files) {
+        const written = await writeTextFile({
+          userId,
+          slug,
+          rawPath: file.path,
+          content: file.content,
+          baseRevision: file.baseRevision ?? null,
+        });
+        if (written && 'conflict' in written) {
+          return NextResponse.json(
+            { message: 'Another save changed ' + file.path, file: written.conflict },
+            { status: 409 },
+          );
+        }
+        if (written) results.push({ path: written.file.path, revision: written.file.revision, checksum: written.file.checksum });
+      }
+    } else if (parsedTitle.data.content !== undefined) {
+      const written = await writeTextFile({ userId, slug, rawPath: document.mainFilePath, content: parsedTitle.data.content });
+      if (written && 'conflict' in written) {
+        return NextResponse.json({ message: 'Another save changed the main file', file: written.conflict }, { status: 409 });
+      }
+      if (written) results.push({ path: written.file.path, revision: written.file.revision, checksum: written.file.checksum });
     }
 
-    const { title, content } = parsedData.data;
+    if (updates.title !== undefined) {
+      await prisma.document.update({ where: { id: document.id }, data: { title: updates.title } });
+    }
 
-    // Single update with only provided fields
-    const updateData: { title?: string; content?: string } = {};
-    if (title !== undefined) updateData.title = title;
-    if (content !== undefined) updateData.content = content;
-
-    const updatedDocument = await prisma.document.update({
-      where: {
-        id: document.id
-      },
-      data: updateData
-    });
-
+    const updated = await prisma.document.findUnique({ where: { id: document.id } });
     return NextResponse.json(
       {
-        message: "Document updated successfully",
-        document: updatedDocument
+        message: 'Document updated successfully',
+        document: { ...updated, content: results[0] ? undefined : updated?.content },
+        saved: results,
       },
-      { status: 200 }
+      { status: 200 },
     );
   } catch (error) {
-    console.error("[DOCUMENT_PUT_ERROR]", error);
-    return NextResponse.json(
-      { message: "Internal server error" },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 });
 
@@ -140,141 +150,123 @@ export const PATCH = withAuth(async (req, session, context) => {
   try {
     const { slug } = await context.params;
     const userId = session.user.id;
-    const body = await req.json(); 
+    const body = await req.json();
     const parsedData = documentSchema.safeParse(body);
 
     if (!parsedData.success) {
-      return NextResponse.json(
-        { message: "Invalid input"},
-        { status: 400 }
-      );
+      return NextResponse.json({ message: 'Invalid input' }, { status: 400 });
     }
 
-    const document = await prisma.document.findFirst({
-      where: {
-        slug: slug,
-        userId: userId
-      }
-    });
-  
+    const document = await prisma.document.findFirst({ where: { slug, userId } });
     if (!document) {
-      return NextResponse.json(
-        { message: "Document not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ message: 'Document not found' }, { status: 404 });
     }
+    await ensureDocumentMigrated(prisma, document.id);
 
     const { title, content } = parsedData.data;
-    
-    const updatedDocument = await prisma.document.update({
-      where: {
-        id: document.id
-      },
-      data: {
-        title: title,
-        content: content
-      }
-    });
-  
-    return NextResponse.json(
-      {
-        message: "Document updated successfully",
-        document: updatedDocument
-      },
-      { status: 200 }
-    );
+    await writeTextFile({ userId, slug, rawPath: document.mainFilePath, content });
+    const updated = await prisma.document.update({ where: { id: document.id }, data: { title, content } });
+
+    return NextResponse.json({ message: 'Document updated successfully', document: updated }, { status: 200 });
   } catch (error) {
-    console.error("[DOCUMENT_PATCH_ERROR]", error);
-    return NextResponse.json(
-      { message: "Internal server error" },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 });
 
-// POST endpoint with rate limiting - queues a compilation job
+/* ------------------------------ POST compile ------------------------------ */
 export const POST = withAuth(async (req, session, context) => {
   try {
     const { slug } = await context.params;
     const userId = session.user.id;
-    
-    // Find the document
-    const document = await prisma.document.findFirst({
-      where: {
-        slug: slug,
-        userId: userId
-      }
-    });
-  
+
+    const document = await prisma.document.findFirst({ where: { slug, userId } });
     if (!document) {
-      return NextResponse.json(
-        { message: "Document not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ message: 'Document not found' }, { status: 404 });
     }
+    await ensureDocumentMigrated(prisma, document.id);
 
     const rateLimitResult = await checkRateLimit(document.id);
-
     if (!rateLimitResult.allowed) {
-      console.log(`[PDF_COMPILE] Rate limit exceeded for document ${document.id} (user: ${userId})`);
-      
       return NextResponse.json(
-        { 
-          message: rateLimitResult.error,
-          remaining: rateLimitResult.remaining,
-          resetAt: rateLimitResult.resetAt
-        },
-        { 
-          status: 429, 
+        { message: rateLimitResult.error, remaining: rateLimitResult.remaining, resetAt: rateLimitResult.resetAt },
+        {
+          status: 429,
           headers: {
             'X-RateLimit-Limit': '10',
             'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
             'X-RateLimit-Reset': new Date(rateLimitResult.resetAt).toISOString(),
-            'Retry-After': Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000).toString()
-          }
-        }
+            'Retry-After': Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000).toString(),
+          },
+        },
       );
     }
 
-    console.log(`[PDF_COMPILE] Queueing compilation for document: ${document.title} (user: ${userId}, remaining: ${rateLimitResult.remaining})`);
+    const compiler = {
+      engine: configuredEngine(),
+      engineVersion: await engineVersion(),
+      mainFile: document.mainFilePath,
+      options: compilerOptionsForCacheKey(),
+    };
 
-    // Add job to queue
-    const jobId = await compilationProducer.addJob({
+    const snapshot = await createCompileSnapshot({
       documentId: document.id,
-      userId: userId,
-      slug: document.slug,
-      content: document.content,
+      userId,
+      mainFile: document.mainFilePath,
+      compiler,
     });
 
-    console.log(`[PDF_COMPILE] Job ${jobId} queued successfully`);
+    if (!snapshot.ok && snapshot.ambiguous.length > 0) {
+      return NextResponse.json(
+        {
+          message: 'Two files differ only by case, so an include cannot resolve unambiguously',
+          ambiguous: snapshot.ambiguous,
+        },
+        { status: 409 },
+      );
+    }
+
+    if (!snapshot.ok) {
+      return NextResponse.json(
+        {
+          message: 'Compile stopped: some referenced files are missing',
+          missing: snapshot.missing.map((item) => ({
+            file: item.from,
+            reference: item.raw,
+            command: item.command,
+          })),
+        },
+        { status: 422 },
+      );
+    }
+
+    const { jobId, reused } = await compilationProducer.addSnapshotJob({
+      documentId: document.id,
+      userId,
+      slug: document.slug,
+      mainFile: snapshot.manifest.mainFile,
+      digest: snapshot.digest,
+      files: snapshot.manifest.files,
+    });
 
     return NextResponse.json(
-      { 
-        message: "Compilation job queued",
-        jobId: jobId,
-        rateLimit: {
-          remaining: rateLimitResult.remaining,
-          resetAt: rateLimitResult.resetAt
-        }
+      {
+        message: reused === 'new' ? 'Compilation job queued' : 'Reusing compile for identical source',
+        jobId,
+        reused,
+        snapshot: { digest: snapshot.digest, mainFile: snapshot.manifest.mainFile, files: snapshot.manifest.files },
+        rateLimit: { remaining: rateLimitResult.remaining, resetAt: rateLimitResult.resetAt },
       },
-      { 
-        status: 202, 
+      {
+        status: 202,
         headers: {
           'X-RateLimit-Limit': '10',
           'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
-          'X-RateLimit-Reset': new Date(rateLimitResult.resetAt).toISOString()
-        }
-      }
-    );
-
-  } catch {
-    console.error("[PDF_COMPILE_ERROR] Request failed");
-    return NextResponse.json(
-      { 
-        message: "Failed to queue compilation",
-        error: "Internal server error"
+          'X-RateLimit-Reset': new Date(rateLimitResult.resetAt).toISOString(),
+        },
       },
-      { status: 500 }
     );
+  } catch (error) {
+    console.error('[PDF_COMPILE_ERROR]', error instanceof Error ? error.message : error);
+    return errorResponse(error);
   }
 });
