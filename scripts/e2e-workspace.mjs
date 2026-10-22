@@ -396,6 +396,35 @@ async function main() {
     check(`other user denied ${path}`, res.status === 404, `status ${res.status}`);
   }
 
+  // Check the remaining workspace mutations, including routes that do not
+  // return document bytes. A failed delete must leave the document intact.
+  const guardedPath = `/api/document/${guardSlug}`;
+  const uploadForm = () => {
+    const form = new FormData();
+    form.append('path', 'figures/forbidden.png');
+    form.append('file', new Blob([png], { type: 'image/png' }), 'forbidden.png');
+    return form;
+  };
+  const mutationRequests = [
+    ['update document', () => ({ path: guardedPath, init: { method: 'PUT', body: JSON.stringify({ title: 'Taken over' }) } })],
+    ['patch document', () => ({ path: guardedPath, init: { method: 'PATCH', body: JSON.stringify({ title: 'Taken over' }) } })],
+    ['delete document', () => ({ path: guardedPath, init: { method: 'DELETE' } })],
+    ['delete file', () => ({ path: `${guardedPath}/file?path=chapters/methods.tex`, init: { method: 'DELETE' } })],
+    ['move file', () => ({ path: `${guardedPath}/move`, init: { method: 'POST', body: JSON.stringify({ from: 'chapters/methods.tex', to: 'chapters/stolen.tex' }) } })],
+    ['select main file', () => ({ path: `${guardedPath}/main`, init: { method: 'POST', body: JSON.stringify({ path: 'chapters/methods.tex' }) } })],
+    ['upload file', () => ({ path: `${guardedPath}/upload`, init: { method: 'POST', body: uploadForm() } })],
+  ];
+  for (const [label, auth, expected] of [['anonymous', false, 401], ['other user', otherCookie, 404]]) {
+    for (const [action, request] of mutationRequests) {
+      const { path, init } = request();
+      expectApi(await api(path, init, auth), expected, `${label} cannot ${action}`);
+    }
+  }
+  const guarded = await api(guardedPath);
+  expectApi(guarded, 200, 'owner retains document after denied mutations');
+  check('denied mutations leave title and main file unchanged', guarded.data.document.title !== 'Taken over' && guarded.data.document.mainFilePath === 'main.tex');
+  check('denied mutations leave workspace files unchanged', guarded.data.document.files.some((f) => f.path === 'chapters/methods.tex') && !guarded.data.document.files.some((f) => f.path === 'chapters/stolen.tex' || f.path === 'figures/forbidden.png'));
+
   // Markdown assets have separate list, upload, byte-serving and delete routes.
   const markdown = await api('/api/document', {
     method: 'POST', body: JSON.stringify({ title: `assets ${nonce()}`, format: 'MARKDOWN' }),
