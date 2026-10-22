@@ -117,9 +117,9 @@ export default function Modal({
           aria-modal="true"
           aria-labelledby="modal-title"
           aria-describedby={description ? 'modal-description' : undefined}
-          className={`relative w-full ${sizeClasses[size]} overflow-hidden rounded-xl border border-border bg-surface shadow-overlay`}
+          className={`relative flex max-h-[calc(100dvh-2rem)] w-full ${sizeClasses[size]} flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-overlay`}
         >
-          <div className="flex items-start justify-between gap-4 border-b border-border-subtle px-5 py-4">
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border-subtle px-5 py-4">
             <div>
               <h2 id="modal-title" className="text-base font-semibold text-foreground">
                 {title}
@@ -140,10 +140,10 @@ export default function Modal({
             </button>
           </div>
 
-          <div className="px-5 py-5">{children}</div>
+          <div className="min-h-0 overflow-y-auto px-5 py-5">{children}</div>
 
           {footer && (
-            <div className="flex items-center justify-end gap-2 border-t border-border-subtle bg-surface-raised/40 px-5 py-4">
+            <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border-subtle bg-surface-raised/40 px-5 py-4">
               {footer}
             </div>
           )}

@@ -57,6 +57,12 @@ with sync_playwright() as playwright:
         expect(dialog).to_be_visible()
         bounds = dialog.bounding_box()
         assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 390, bounds
+        page.set_viewport_size({"width": 390, "height": 400})
+        bounds = dialog.bounding_box()
+        create_bounds = dialog.get_by_role("button", name="Create", exact=True).bounding_box()
+        assert bounds and bounds["y"] >= 0 and bounds["y"] + bounds["height"] <= 400, bounds
+        assert create_bounds and create_bounds["y"] + create_bounds["height"] <= 400, create_bounds
+        page.set_viewport_size({"width": 390, "height": 800})
         dialog.get_by_role("textbox", name="Title", exact=True).fill(f"Browser Nav {time.time_ns() % 10**12}")
         dialog.get_by_role("radio", name="LaTeX").check()
         dialog.get_by_role("button", name="Create", exact=True).click()
