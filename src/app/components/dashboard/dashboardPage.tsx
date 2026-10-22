@@ -7,7 +7,7 @@ import { useDashboard } from '@/src/hooks/useDashboard';
 import AlertModal from '../design/AlertModal';
 import ConfirmModal from '../design/ConfirmModal';
 import DashboardHeader from './dashboardHeader';
-import DashboardSearch from './dashboardSearch';
+import DashboardToolbar from './dashboardToolbar';
 import DocumentGrid from './documentGrid';
 import DocumentList from './documentList';
 import EmptyState from './emptyState';
@@ -87,11 +87,13 @@ export default function DashboardPage() {
 
         <div className="mb-8 flex flex-wrap items-center gap-4">
           <div className="flex-1 min-w-60">
-            <DashboardSearch
+            <DashboardToolbar
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
               viewMode={viewMode}
               onViewModeChange={setViewMode}
+              resultCount={filteredDocuments.length}
+              totalCount={documents.length}
             />
           </div>
           <FormatFilter value={formatFilter} onChange={setFormatFilter} counts={formatCounts} />

@@ -1,149 +1,107 @@
-"use client"
-import { motion } from "framer-motion";
-import { Button } from "@/src/app/components/ui/button";
-import { ArrowRight, Sparkles } from "lucide-react";
+"use client";
+
 import Image from "next/image";
+import { Check, FileCode2, GitCompareArrows, FileDown } from "lucide-react";
+import { Button } from "../ui/button";
 import Link from "next/link";
+import Logo from "../brand/logo";
+import Reveal from "./reveal";
+import StartWritingLink from "./startWritingLink";
+import { HOW_IT_WORKS_ANCHOR } from "@/src/lib/paths";
 
-const Hero = () => {
-  const universities = [
-    { name: "MIT", logo: "/mit.svg" },
-    { name: "Stanford", logo: "/stanford.svg" },
-    { name: "Harvard", logo: "/harvard.svg" },
-    { name: "Cambridge", logo: "/cambridge.svg" },
-  ];
+const FACTS = [
+  { icon: FileCode2, label: "Monaco LaTeX editor" },
+  { icon: GitCompareArrows, label: "Diff review before edits land" },
+  { icon: FileDown, label: "PDF compile and download" },
+];
 
+export default function Hero() {
   return (
-    <section className="relative min-h-screen flex items-center justify-center pt-16 overflow-hidden mt-2">
-      {/* Background Effects */}
-      <div className="absolute inset-0 grid-pattern opacity-50" />
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-150 h-150 bg-primary/20 rounded-full blur-[120px]" />
-      <div className="absolute bottom-0 left-0 w-100 h-100 bg-primary/10 rounded-full blur-[100px]" />
-      
-      <div className="container mx-auto px-6 relative z-10">
-        <div className="max-w-4xl mx-auto text-center">
-          {/* Badge */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-primary/30 bg-primary/5 mb-8"
-          >
-            <Sparkles className="w-4 h-4 text-primary" />
-            <span className="text-sm text-muted-foreground">Now with AI integration</span>
-          </motion.div>
+    <section className="relative overflow-hidden border-b border-border-subtle pt-16">
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 grid-pattern opacity-60" />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-primary/10 blur-[120px]"
+      />
 
-          {/* Headline */}
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-            className="text-5xl md:text-7xl font-bold tracking-tight mb-6"
-          >
-            Write LaTeX at the{" "}
-            <span className="text-gradient">speed of thought</span>
-          </motion.h1>
+      <div className="relative mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-12 px-5 pb-16 pt-14 lg:grid-cols-12 lg:gap-10 lg:px-8 lg:pb-24 lg:pt-20">
+        <div className="lg:col-span-6">
+          <Reveal>
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">
+              LaTeX workspace
+            </p>
+          </Reveal>
 
-          {/* Subheadline */}
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-            className="text-xl text-muted-foreground max-w-2xl mx-auto mb-10"
-          >
-            Runes AI is the AI-first LaTeX editor that helps researchers, academics, and students 
-            write beautiful papers faster than ever before.
-          </motion.p>
+          <Reveal delay={0.04}>
+            <h1 className="mt-4 max-w-[15ch] text-4xl font-semibold leading-[1.08] text-foreground md:text-5xl">
+              Write LaTeX with reviewed AI edits
+            </h1>
+          </Reveal>
 
-          {/* CTAs */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-4"
-          >
-            <Link href="/document">
-              <Button size="lg" className="glow text-lg px-8 py-6">
-                Start Writing Free
-                <ArrowRight className="ml-2 w-5 h-5" />
-              </Button>
-            </Link>
-            <Button size="lg" variant="outline" className="text-lg px-8 py-6 border-border hover:bg-secondary hover:text-slate-300">
-              View Demo
-            </Button>
-          </motion.div>
+          <Reveal delay={0.08}>
+            <p className="mt-5 max-w-[46ch] text-base leading-relaxed text-muted-foreground md:text-lg">
+              A Monaco source editor, AI prose edits you approve in a diff, and PDF
+              compilation in the same window.
+            </p>
+          </Reveal>
 
-          {/* Social Proof */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.4 }}
-            className="mt-16 pt-8 border-t border-border/50"
-          >
-            <p className="text-sm text-muted-foreground mb-6">Trusted by researchers at</p>
-            <div className="flex flex-wrap items-center justify-center gap-10 md:gap-16">
-              {universities.map((uni) => (
-                <div key={uni.name} className="relative h-12 w-32 md:h-16 md:w-40">
-                  <Image
-                    src={uni.logo}
-                    alt={`${uni.name} logo`}
-                    fill
-                    className="object-contain"
-                  />
-                </div>
-              ))}
+          <Reveal delay={0.12}>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <StartWritingLink>
+                <Button size="lg" className="w-full shadow-accent sm:w-auto">
+                  Start writing
+                </Button>
+              </StartWritingLink>
+              <Link href={HOW_IT_WORKS_ANCHOR}>
+                <Button size="lg" variant="outline" className="w-full sm:w-auto">
+                  See how it works
+                </Button>
+              </Link>
             </div>
-          </motion.div>
+          </Reveal>
+
         </div>
 
-        {/* Editor Preview */}
-        <motion.div
-          initial={{ opacity: 0, y: 60 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.5 }}
-          className="mt-20 max-w-5xl mx-auto"
-        >
-          <div className="gradient-border rounded-xl overflow-hidden glow">
-            <div className="bg-card p-1">
-              {/* Editor Header */}
-              <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-                <div className="flex gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-destructive/60" />
-                  <div className="w-3 h-3 rounded-full bg-amber-500/60" />
-                  <div className="w-3 h-3 rounded-full bg-primary/60" />
-                </div>
-                <span className="text-sm text-muted-foreground ml-4">thesis.tex</span>
-              </div>
-              {/* Editor Content */}
-              <div className="p-6 font-mono text-sm">
-                <div className="text-muted-foreground">
-                  <span className="text-primary">\documentclass</span>
-                  {"{article}"}
-                </div>
-                <div className="text-muted-foreground mt-2">
-                  <span className="text-primary">\begin</span>
-                  {"{document}"}
-                </div>
-                <div className="mt-4 pl-4">
-                  <span className="text-foreground">The quantum entanglement phenomenon...</span>
-                  <span className="inline-block w-2 h-5 bg-green-400 ml-0.5 animate-blink" />
-                </div>
-                <div className="mt-4 p-3 rounded-lg bg-primary/10 border border-primary/20">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Sparkles className="w-4 h-4 text-primary" />
-                    <span className="text-xs text-primary font-medium">AI Suggestion</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    "Consider adding a citation to Einstein's 1935 paper on EPR paradox here..."
-                  </p>
-                </div>
-              </div>
+        <Reveal delay={0.1} className="lg:col-span-6">
+          <figure className="overflow-hidden rounded-xl border border-border bg-surface shadow-panel">
+            <div className="flex items-center gap-2 border-b border-border-subtle bg-surface-raised/60 px-4 py-2.5">
+              <Logo variant="mark" size="sm" decorative />
+              <span className="truncate font-mono text-xs text-muted-foreground">
+                revamp-demo-paper.tex
+              </span>
+              <span className="ml-auto flex items-center gap-1.5 rounded-full bg-primary-subtle px-2 py-0.5 text-xs text-primary">
+                <Check className="h-3 w-3" aria-hidden="true" />
+                compiled
+              </span>
             </div>
-          </div>
-        </motion.div>
+            <Image
+              src="/product/editor-split.png"
+              alt="The Runes AI editor showing LaTeX source on the left and the compiled PDF preview on the right."
+              width={1400}
+              height={900}
+              priority
+              sizes="(min-width: 1024px) 720px, 100vw"
+              className="block h-auto w-full border-t border-border-subtle"
+            />
+            <figcaption className="border-t border-border-subtle px-4 py-3 text-xs text-meta">
+              Source and PDF preview in one view. Screenshot captured from this app.
+            </figcaption>
+          </figure>
+        </Reveal>
+      </div>
+
+      <div className="relative border-t border-border-subtle">
+        <Reveal>
+          <ul aria-label="What the editor does" className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-8 gap-y-2 px-5 py-5 lg:px-8">
+            {FACTS.map((fact) => (
+              <li key={fact.label} className="flex items-center gap-2 text-sm text-muted-foreground">
+                <fact.icon className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                {fact.label}
+              </li>
+            ))}
+          </ul>
+        </Reveal>
       </div>
     </section>
   );
-};
-
-export default Hero;
+}

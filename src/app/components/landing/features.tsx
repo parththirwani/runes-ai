@@ -1,105 +1,108 @@
-"use client"
-import { motion, useInView } from "framer-motion";
-import { useRef } from "react";
-import { 
-  Zap, 
-  Brain, 
-  FileText, 
-  GitBranch, 
-  Search, 
-  Shield 
-} from "lucide-react";
+"use client";
 
-const features = [
+import Image from "next/image";
+import { GitCompareArrows, Lock, ListTree, ScanText, Sparkles, Type } from "lucide-react";
+import Reveal from "./reveal";
+
+const GUARANTEES = [
+  "Citations, refs, inline math, display blocks and verbatim environments are masked before the model sees the selection.",
+  "The reply is rejected unless every masked token comes back exactly once, in the same order.",
+  "Accept applies a single undoable edit; Reject leaves the source as it was.",
+];
+
+const SUPPORTING = [
   {
-    icon: Brain,
-    title: "AI-Powered Writing",
-    description: "Get intelligent suggestions, auto-completions, and real-time error fixes as you write. Our AI understands LaTeX syntax deeply.",
+    icon: ListTree,
+    title: "An outline built from your headings",
+    body: "The sidebar tree is parsed from the \\section and \\subsection commands in the current file, so jumping to a heading is one click.",
+    span: "lg:col-span-7",
   },
   {
-    icon: Zap,
-    title: "Instant Compilation",
-    description: "See your PDF update in real-time with sub-second compile times. No more waiting for builds.",
+    icon: Type,
+    title: "Ghost-text completion you can silence",
+    body: "Prose continuations appear as ghost text after a pause. Tab accepts, and the AI toggle turns completions off for the session.",
+    span: "lg:col-span-5",
   },
   {
-    icon: FileText,
-    title: "Smart Templates",
-    description: "Start with professionally designed templates for IEEE, ACM, Nature, and hundreds more journals.",
+    icon: ScanText,
+    title: "Compile, read, download",
+    body: "Save sends the source to the compile worker. The preview tells you when the PDF is older than the text you are looking at.",
+    span: "lg:col-span-5",
   },
   {
-    icon: GitBranch,
-    title: "Version Control",
-    description: "Built-in Git integration with visual diff tools. Track changes and collaborate with your team seamlessly.",
-  },
-  {
-    icon: Search,
-    title: "Citation Finder",
-    description: "AI-powered citation search. Find and format references from millions of papers instantly.",
-  },
-  {
-    icon: Shield,
-    title: "Private & Secure",
-    description: "Your research is yours. End-to-end encryption and SOC 2 compliance keep your work safe.",
+    icon: Sparkles,
+    title: "Three tones, one selection",
+    body: "Ask for Clearer, Shorter or Formal prose over the paragraph you highlighted, then compare it in the review panel.",
+    span: "lg:col-span-7",
   },
 ];
 
-const FeatureCard = ({ feature, index }: { feature: typeof features[0]; index: number }) => {
-  const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "-100px" });
-
+export default function Features() {
   return (
-    <motion.div
-      ref={ref}
-      initial={{ opacity: 0, y: 30 }}
-      animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 }}
-      transition={{ duration: 0.5, delay: index * 0.1 }}
-      className="group relative p-6 rounded-2xl bg-card border border-border hover:border-primary/30 transition-all duration-300"
-    >
-      <div className="absolute inset-0 rounded-2xl bg-linear-to-b from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-      <div className="relative">
-        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
-          <feature.icon className="w-6 h-6 text-primary" />
-        </div>
-        <h3 className="text-lg font-semibold text-foreground mb-2">{feature.title}</h3>
-        <p className="text-muted-foreground text-sm leading-relaxed">{feature.description}</p>
-      </div>
-    </motion.div>
-  );
-};
-
-const Features = () => {
-  const headerRef = useRef(null);
-  const isHeaderInView = useInView(headerRef, { once: true, margin: "-100px" });
-
-  return (
-    <section id="features" className="py-32 relative">
-      <div className="absolute top-0 right-0 w-125 h-125 bg-primary/5 rounded-full blur-[150px]" />
-      
-      <div className="container mx-auto px-6 relative z-10">
-        <motion.div
-          ref={headerRef}
-          initial={{ opacity: 0, y: 30 }}
-          animate={isHeaderInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 }}
-          transition={{ duration: 0.5 }}
-          className="text-center max-w-2xl mx-auto mb-16"
-        >
-          <span className="text-primary text-sm font-semibold uppercase tracking-wider">Features</span>
-          <h2 className="text-4xl md:text-5xl font-bold mt-4 mb-6">
-            Everything you need to write faster
-          </h2>
-          <p className="text-muted-foreground text-lg">
-            Runes combines the power of AI with a beautiful editing experience to help you focus on what matters—your research.
+    <section id="features" className="scroll-mt-16 border-b border-border-subtle py-20 lg:py-28">
+      <div className="mx-auto w-full max-w-6xl px-5 lg:px-8">
+        <Reveal className="max-w-2xl">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">
+            What the editor does
           </p>
-        </motion.div>
+          <h2 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">
+            One capability, done carefully
+          </h2>
+          <p className="mt-4 text-base leading-relaxed text-muted-foreground">
+            Runes AI does not rewrite your document in the background. It offers
+            prose edits over a selection, shows you the difference, and gets out
+            of the way of the LaTeX.
+          </p>
+        </Reveal>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {features.map((feature, index) => (
-            <FeatureCard key={feature.title} feature={feature} index={index} />
+        <div className="mt-12 grid grid-cols-1 items-center gap-10 lg:grid-cols-12 lg:gap-12">
+          <Reveal className="lg:col-span-7">
+            <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-panel">
+              <div className="flex items-center gap-2 border-b border-border-subtle px-4 py-3">
+                <GitCompareArrows className="h-4 w-4 text-primary" aria-hidden="true" />
+                <span className="text-sm font-medium text-foreground">AI workspace</span>
+                <span className="ml-auto font-mono text-xs text-meta">panel · captured in-app</span>
+              </div>
+              <Image
+                src="/product/ai-workspace.png"
+                alt="The Runes AI workspace panel showing AI status, the paraphrase tone controls and the autocomplete toggle."
+                width={1400}
+                height={900}
+                sizes="(min-width: 1024px) 780px, 100vw"
+                className="block h-auto w-full"
+              />
+            </div>
+          </Reveal>
+
+          <Reveal delay={0.06} className="lg:col-span-5">
+            <h3 className="flex items-start gap-2 text-xl font-semibold text-foreground">
+              <Lock className="mt-1 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+              <span>AI edits prose, never your markup</span>
+            </h3>
+            <ul className="mt-5 space-y-4">
+              {GUARANTEES.map((item) => (
+                <li key={item} className="border-l border-border pl-4 text-sm leading-relaxed text-muted-foreground">
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+        </div>
+
+        <div className="mt-16 grid grid-cols-1 gap-x-10 gap-y-10 border-t border-border-subtle pt-12 lg:grid-cols-12">
+          {SUPPORTING.map((item, index) => (
+            <Reveal key={item.title} delay={index * 0.04} className={item.span}>
+              <h3 className="flex items-center gap-2.5 text-base font-semibold text-foreground">
+                <item.icon className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                {item.title}
+              </h3>
+              <p className="mt-2 max-w-[46ch] text-sm leading-relaxed text-muted-foreground">
+                {item.body}
+              </p>
+            </Reveal>
           ))}
         </div>
       </div>
     </section>
   );
-};
-
-export default Features;
+}
