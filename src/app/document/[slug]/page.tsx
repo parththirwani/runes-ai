@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import DocumentEditor from '../../components/editor/DocumentEditor';
+import { workspaceClient } from '@/src/lib/workspace-client';
+import type { WorkspaceDocumentPayload } from '@/src/lib/workspace-types';
 
 export default function DocumentPage() {
   const { status } = useSession();
@@ -13,7 +15,7 @@ export default function DocumentPage() {
   const slug = params.slug as string;
   const decodedTitle = useMemo(() => slug?.split('-').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ') || 'Document', [slug]);
   
-  const [document, setDocument] = useState<{ id: string; title: string; content: string; slug: string } | null>(null);
+  const [document, setDocument] = useState<WorkspaceDocumentPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,13 +24,13 @@ export default function DocumentPage() {
       setLoading(true);
       setError(null);
       setDocument(null);
-      const response = await fetch(`/api/document/${slug}`, { signal });
-      if (!response.ok) {
-        setError(response.status === 404 ? 'Document not found' : 'Failed to load document');
-        return;
+      try {
+        const loaded = await workspaceClient.load(slug);
+        if (!signal.aborted) setDocument(loaded);
+      } catch (loadError) {
+        const status = (loadError as { status?: number }).status;
+        if (!signal.aborted) setError(status === 404 ? 'Document not found' : 'Failed to load document');
       }
-      const data = await response.json();
-      if (!signal.aborted) setDocument(data.document);
     } catch (err) {
       if (!signal.aborted) {
         console.error('Error fetching document:', err);
