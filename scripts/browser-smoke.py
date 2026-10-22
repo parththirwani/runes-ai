@@ -63,13 +63,38 @@ with sync_playwright() as playwright:
         assert bounds and bounds["y"] >= 0 and bounds["y"] + bounds["height"] <= 400, bounds
         assert create_bounds and create_bounds["y"] + create_bounds["height"] <= 400, create_bounds
         page.set_viewport_size({"width": 390, "height": 800})
-        dialog.get_by_role("textbox", name="Title", exact=True).fill(f"Browser Nav {time.time_ns() % 10**12}")
+        navigation_title = f"Browser Nav {time.time_ns() % 10**12}"
+        dialog.get_by_role("textbox", name="Title", exact=True).fill(navigation_title)
         dialog.get_by_role("radio", name="LaTeX").check()
         dialog.get_by_role("button", name="Create", exact=True).click()
         page.wait_for_url("**/document/*", timeout=15000)
         navigation_slug = urlparse(page.url).path.split("/")[-1]
         page.locator(".monaco-editor").first.wait_for(timeout=20000)
         assert page.evaluate("window.monaco.editor.getModels()[0].getLanguageId()") == "latex"
+        page.goto(f"{BASE}/document", wait_until="domcontentloaded")
+        actions = page.get_by_role("button", name=f"Actions for {navigation_title}")
+        expect(actions).to_be_visible()
+        actions.focus()
+        page.keyboard.press("Enter")
+        menu = page.get_by_role("menu", name=f"Actions for {navigation_title}")
+        expect(menu).to_be_visible()
+        assert urlparse(page.url).path == "/document", page.url
+        menu.get_by_role("menuitem", name="Delete document").click()
+        confirmation = page.get_by_role("dialog", name="Delete Document")
+        expect(confirmation).to_be_visible()
+        confirmation.get_by_role("button", name="Cancel").click()
+        page.get_by_role("button", name="List view").click()
+        actions = page.get_by_role("button", name=f"Actions for {navigation_title}")
+        expect(actions).to_be_visible()
+        actions.click()
+        menu = page.get_by_role("menu", name=f"Actions for {navigation_title}")
+        expect(menu).to_be_visible()
+        menu_bounds = menu.bounding_box()
+        assert menu_bounds and menu_bounds["x"] >= 0 and menu_bounds["x"] + menu_bounds["width"] <= 390, menu_bounds
+        menu.get_by_role("menuitem", name="Delete document").click()
+        confirmation = page.get_by_role("dialog", name="Delete Document")
+        expect(confirmation).to_be_visible()
+        confirmation.get_by_role("button", name="Cancel").click()
         deleted = context.request.delete(f"{BASE}/api/document/{navigation_slug}")
         assert deleted.status == 200, (deleted.status, deleted.text())
         navigation_slug = None
@@ -370,7 +395,7 @@ with sync_playwright() as playwright:
         assert b"/Image" in ui_pdf, "uploaded image missing from PDF objects"
         ui_pdf_ok = True
         os.unlink(png_path)
-        print("browser smoke passed: mobile sign-in and document creation, latex edit/review/compile, markdown asset API and editor upload UI, reading preview, remote-image block, markdown PDF with embedded images, source download, dashboard badge/filter")
+        print("browser smoke passed: mobile sign-in, document creation and grid/list actions, latex edit/review/compile, markdown asset API and editor upload UI, reading preview, remote-image block, markdown PDF with embedded images, source download, dashboard badge/filter")
     finally:
         if navigation_slug:
             context.request.delete(f"{BASE}/api/document/{navigation_slug}")
