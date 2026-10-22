@@ -1,6 +1,8 @@
-import { Plus } from 'lucide-react';
-import Image from 'next/image';
-import Button from '../design/Button';
+import Link from "next/link";
+import { FilePlus2 } from "lucide-react";
+import Logo from "../brand/logo";
+import { Button } from "../ui/button";
+import { DOCUMENTS_PATH } from "@/src/lib/paths";
 
 interface DashboardHeaderProps {
   onCreateDocument: () => void;
@@ -8,28 +10,17 @@ interface DashboardHeaderProps {
 
 export default function DashboardHeader({ onCreateDocument }: DashboardHeaderProps) {
   return (
-    <header className="border-b border-white/5 backdrop-blur-xl bg-[#2d2d2d] sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          <button className="flex gap-2 hover:opacity-80 transition-opacity cursor-pointer w-48">
-            <Image
-              src="/logo.png"
-              alt="RunesAI Logo"
-              width={200}
-              height={32}
-              className="object-contain"
-            />
-          </button>
-          <Button
-            variant="primary"
-            size="sm"
-            icon={<Plus className="w-4 h-4" />}
-            onClick={onCreateDocument}
-            className="cursor-pointer"
-          >
-            New
-          </Button>
-        </div>
+    <header className="sticky top-0 z-40 border-b border-border-subtle bg-surface/95 backdrop-blur-sm">
+      <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-5 lg:px-8">
+        <Link href={DOCUMENTS_PATH} className="flex shrink-0 items-center" aria-label="Runes AI documents">
+          <Logo variant="wordmark" size="sm" className="hidden sm:block" />
+          <Logo variant="mark" size="sm" className="sm:hidden" alt="Runes AI" />
+        </Link>
+
+        <Button size="sm" onClick={onCreateDocument}>
+          <FilePlus2 className="h-4 w-4" aria-hidden="true" />
+          New document
+        </Button>
       </div>
     </header>
   );

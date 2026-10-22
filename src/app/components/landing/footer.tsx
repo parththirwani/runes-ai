@@ -1,78 +1,50 @@
-const Footer = () => {
+import Link from "next/link";
+import Logo from "../brand/logo";
+import { FEATURES_ANCHOR, HOW_IT_WORKS_ANCHOR, SIGN_IN_PATH, DOCUMENTS_PATH } from "@/src/lib/paths";
+
+const LINKS = [
+  { label: "Features", href: FEATURES_ANCHOR },
+  { label: "How it works", href: HOW_IT_WORKS_ANCHOR },
+  { label: "Sign in", href: SIGN_IN_PATH },
+  { label: "Documents", href: DOCUMENTS_PATH },
+];
+
+export default function Footer() {
   return (
-    <footer className="bg-background pt-4 pb-6 px-6 md:px-12 overflow-hidden relative">
-      <div className="flex items-center justify-between mb-16 md:mb-20">
-        <div className="flex items-center">
-          <img
-            src="/small-logo.png"
-            alt="Runes AI Logo"
-            className="w-28 h-28 sm:w-40 sm:h-40 md:w-48 md:h-48 lg:w-64 lg:h-64 xl:w-72 xl:h-56 object-contain transition-all duration-300 hover:scale-105 hover:drop-shadow-[0_0_20px_rgba(0,255,180,0.5)]"
-            width={200}   
-            height={200}
-          />
+    <footer className="overflow-hidden border-t border-border-subtle bg-surface">
+      <div className="mx-auto w-full max-w-6xl px-5 py-12 lg:px-8">
+        <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
+          <Link href="/" className="flex w-fit items-center" aria-label="Runes AI home">
+            <Logo variant="wordmark" size="md" />
+          </Link>
+
+          <nav aria-label="Footer">
+            <ul className="flex flex-wrap gap-x-8 gap-y-3">
+              {LINKS.map((link) => (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
         </div>
-        <div className="flex gap-10 md:gap-8">
-          <a
-            href="#"
-            className="text-muted-foreground hover:text-primary hover:drop-shadow-[0_0_12px_hsl(160,85%,55%)] transition-all duration-300"
-            aria-label="X (Twitter)"
-          >
-            <img
-              src="/x.svg"
-              alt="X (Twitter)"
-              className="w-6 h-6 grey-social-icon"
-              width={24}
-              height={24}
-            />
-          </a>
-          <a
-            href="#"
-            className="text-muted-foreground hover:text-primary hover:drop-shadow-[0_0_12px_hsl(160,85%,55%)] transition-all duration-300"
-            aria-label="GitHub"
-          >
-            <img
-              src="/github.svg"
-              alt="GitHub"
-              className="w-6 h-6 grey-social-icon"
-              width={24}
-              height={24}
-            />
-          </a>
-          <a
-            href="#"
-            className="text-muted-foreground hover:text-primary hover:drop-shadow-[0_0_12px_hsl(160,85%,55%)] transition-all duration-300"
-            aria-label="LinkedIn"
-          >
-            <img
-              src="/linkedin.svg"
-              alt="LinkedIn"
-              className="w-6 h-6 grey-social-icon"
-              width={24}
-              height={24}
-            />
-          </a>
+
+        <div className="mt-10 flex flex-col gap-2 border-t border-border-subtle pt-6 text-xs text-meta sm:flex-row sm:items-center sm:justify-between">
+          <p>© {new Date().getFullYear()} Runes AI</p>
+          <p>LaTeX editor, AI prose review, PDF output.</p>
         </div>
       </div>
 
-      <div className="relative w-full">
-        <h1
-          className="mirror-text text-[clamp(14vw,18vw,220px)] font-black leading-[0.82] tracking-[-0.04em] text-foreground select-none whitespace-nowrap text-center"
-          data-text="Runes AI"
-        >
-          <span className="relative inline-block">
-            Runes AI
-            <span
-              className="absolute left-0 top-[2%] text-neon opacity-70 blur-xs pointer-events-none"
-              aria-hidden="true"
-            >
-              R
-            </span>
-          </span>
-        </h1>
-        <div className="absolute -bottom-2 md:-bottom-3 left-1/2 -translate-x-1/2 w-1/4 md:w-1/5 h-px gradient-line opacity-30" />
+      <div aria-hidden="true" className="select-none px-2 pb-2">
+        <p className="whitespace-nowrap text-center text-[clamp(3rem,15vw,11rem)] font-semibold leading-[0.9] tracking-tighter text-foreground/8">
+          Runes AI
+        </p>
       </div>
     </footer>
   );
-};
-
-export default Footer;
+}

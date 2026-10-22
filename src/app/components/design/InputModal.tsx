@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useId } from 'react';
 import Modal from './Modal';
 import Button from './Button';
 
@@ -7,6 +7,8 @@ interface InputModalProps {
   onClose: () => void;
   onSubmit: (value: string) => void;
   title: string;
+  /** Visible label for the field. Falls back to the dialog title. */
+  label?: string;
   description?: string;
   placeholder?: string;
   defaultValue?: string;
@@ -22,6 +24,7 @@ export default function InputModal({
   onClose,
   onSubmit,
   title,
+  label,
   description,
   placeholder = '',
   defaultValue = '',
@@ -34,16 +37,21 @@ export default function InputModal({
   const [value, setValue] = useState(defaultValue);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const uid = useId();
+  const inputId = `${uid}-input`;
+  const errorId = `${uid}-error`;
+  const counterId = `${uid}-counter`;
 
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) return undefined;
+    // Reset + autofocus run in the same deferred tick so the effect body
+    // stays free of synchronous setState (React compiler guidance).
+    const timer = setTimeout(() => {
       setValue(defaultValue);
       setError(null);
-      // Focus input when modal opens
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 100);
-    }
+      inputRef.current?.focus();
+    }, 50);
+    return () => clearTimeout(timer);
   }, [isOpen, defaultValue]);
 
   const handleSubmit = () => {
@@ -63,13 +71,6 @@ export default function InputModal({
     }
 
     onSubmit(trimmedValue);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleSubmit();
-    }
   };
 
   return (
@@ -98,37 +99,48 @@ export default function InputModal({
         </>
       }
     >
-      <div className="space-y-4">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          handleSubmit();
+        }}
+        className="space-y-2"
+      >
         <div>
+          <label htmlFor={inputId} className="block text-sm font-medium text-foreground">
+            {label ?? title}
+          </label>
           <input
             ref={inputRef}
+            id={inputId}
             type="text"
             value={value}
             onChange={(e) => {
               setValue(e.target.value);
               setError(null);
             }}
-            onKeyDown={handleKeyDown}
             placeholder={placeholder}
             maxLength={maxLength}
-            className={`w-full px-4 py-2.5 text-black border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
-              error
-                ? 'border-red-300 focus:ring-red-500 focus:border-red-500'
-                : 'border-gray-300 focus:ring-emerald-500 focus:border-emerald-500'
+            aria-invalid={error ? true : undefined}
+            aria-describedby={`${error ? errorId + ' ' : ''}${counterId}`}
+            className={`mt-2 w-full rounded-lg border bg-background px-4 py-2.5 text-sm text-foreground transition-colors placeholder:text-meta focus:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/40 ${
+              error ? 'border-destructive' : 'border-border'
             }`}
           />
-          <div className="flex items-center justify-between mt-2">
-            {error ? (
-              <p className="text-sm text-red-600">{error}</p>
-            ) : (
-              <div />
-            )}
-            <p className="text-xs text-black">
-              {value.length}/{maxLength}
-            </p>
-          </div>
         </div>
-      </div>
+        <div className="flex items-start justify-between gap-4">
+          {error ? (
+            <p id={errorId} role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          ) : (
+            <span />
+          )}
+          <p id={counterId} className="shrink-0 font-mono text-xs text-meta">
+            {value.length}/{maxLength}
+          </p>
+        </div>
+      </form>
     </Modal>
   );
 }

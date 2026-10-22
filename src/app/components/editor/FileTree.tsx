@@ -109,6 +109,7 @@ export default function FileTree({
             icon={<X className="w-4 h-4" />}
             variant="ghost"
             size="sm"
+            label="Close file tree"
             onClick={onClose}
           />
         </div>

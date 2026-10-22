@@ -856,7 +856,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   }, []);
 
   return (
-    <div className="h-screen flex flex-col bg-[#1e1e1e] overflow-hidden">
+    <main id="main" className="flex h-screen flex-col overflow-hidden bg-canvas">
       <TopNavBar
         documentTitle={title}
         viewMode={viewMode}
@@ -1058,6 +1058,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         isOpen={showTitleModal}
         onClose={() => setShowTitleModal(false)}
         onSubmit={handleTitleSubmit}
+        label="Document title"
         title="Edit Document Title"
         description="Enter a new title for your document"
         placeholder="e.g., Research Paper, Resume, Report..."
@@ -1077,6 +1078,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         message={errorModalMessage}
         variant="error"
       />
-    </div>
+    </main>
   );
 }

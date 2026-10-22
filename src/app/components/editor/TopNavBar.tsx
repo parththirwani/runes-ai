@@ -1,8 +1,8 @@
 import { Menu, FileText, Save, Play, Sparkles, Edit2, Download } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import Button from '../design/Button';
 import IconButton from '../design/IconButton';
+import Logo from '../brand/logo';
 import ViewModeToggle from './ViewModeToggle';
 import type { DocumentFormatValue } from '@/src/types/compilation';
 
@@ -58,24 +58,19 @@ export default function TopNavBar({
         <IconButton
           icon={<Menu className="w-5 h-5" />}
           onClick={onMenuToggle}
+          label="Toggle file tree"
           tooltip="Toggle file tree"
           className="cursor-pointer"
         />
         
-        <div className="hidden sm:flex items-center gap-2">
-          <button
-            onClick={() => router.push('/document')}
-            className="flex h-8 w-48 items-center overflow-hidden hover:opacity-80 transition-opacity cursor-pointer"
-          >
-            <Image
-              src="/logo.png"
-              alt="RunesAI Logo"
-              width={200}
-              height={32}
-              className="h-8 w-full object-contain"
-            />
-          </button>
-        </div>
+        <button
+          onClick={() => router.push('/document')}
+          aria-label="Back to documents"
+          className="flex cursor-pointer items-center transition-opacity hover:opacity-80"
+        >
+          <Logo variant="wordmark" size="sm" className="hidden sm:block" />
+          <Logo variant="mark" size="sm" className="sm:hidden" alt="Runes AI" />
+        </button>
         
         <div className="h-6 w-px bg-[#3e3e3e]" />
         
@@ -111,6 +106,7 @@ export default function TopNavBar({
         {onDownloadSource && (
           <IconButton
             icon={<Download className="w-4 h-4" />}
+            label={`Download ${fileName || 'source'} file`}
             tooltip={`Download ${fileName || 'source'} file`}
             onClick={onDownloadSource}
             className="cursor-pointer"
@@ -142,6 +138,7 @@ export default function TopNavBar({
 
         <IconButton
           icon={<Sparkles className="w-5 h-5" />}
+          label="AI workspace"
           tooltip="AI workspace"
           onClick={onSettingsToggle}
           className="cursor-pointer"
