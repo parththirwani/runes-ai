@@ -374,6 +374,27 @@ async function main() {
 
   // A valid session for a different user must not expose owned resources.
   const otherCookie = await otherUserCookie();
+  expectApi(await api('/api/document', {}, false), 401, 'anonymous cannot list documents');
+  expectApi(await api('/api/document', {
+    method: 'POST', body: JSON.stringify({ title: `anonymous ${nonce()}` }),
+  }, false), 401, 'anonymous cannot create documents');
+  const otherTitle = `other user ${nonce()}`;
+  const otherCreated = await api('/api/document', {
+    method: 'POST', body: JSON.stringify({ title: otherTitle, format: 'MARKDOWN' }),
+  }, otherCookie);
+  expectApi(otherCreated, 201, 'other user creates their own document');
+  const otherList = await api('/api/document', {}, otherCookie);
+  expectApi(otherList, 200, 'other user lists documents');
+  check('other user list contains only their own test document',
+    otherList.data.documents.some((doc) => doc.slug === otherCreated.data.slug) &&
+    !otherList.data.documents.some((doc) => doc.slug === guardSlug));
+  const ownerList = await api('/api/document');
+  expectApi(ownerList, 200, 'owner lists documents');
+  check('owner list excludes other user document',
+    ownerList.data.documents.some((doc) => doc.slug === guardSlug) &&
+    !ownerList.data.documents.some((doc) => doc.slug === otherCreated.data.slug));
+  expectApi(await api(`/api/document/${otherCreated.data.slug}`, { method: 'DELETE' }, otherCookie),
+    200, 'other user removes their test document');
   const ownedPaths = [
     `/api/document/${guardSlug}`,
     `/api/document/${guardSlug}/file?path=main.tex`,
