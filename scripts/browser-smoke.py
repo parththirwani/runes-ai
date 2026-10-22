@@ -321,7 +321,7 @@ with sync_playwright() as playwright:
         page.get_by_role("button", name="Source", exact=True).click()
         insert_button = page.get_by_role("button", name="Insert image", exact=True)
         expect(insert_button).to_be_visible()
-        page.locator('input[type="file"]').set_input_files(png_path)
+        page.get_by_label("Choose image to insert").set_input_files(png_path)
         expect(page.get_by_role("status").filter(has_text="Inserted logo-ui.png")).to_be_visible(timeout=15000)
         value_after_upload = source_value(page)
         assert "![logo-ui](" in value_after_upload and f"/api/document/{md_slug}/assets/logo-ui.png" in value_after_upload, value_after_upload[-200:]

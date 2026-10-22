@@ -24,7 +24,7 @@ import type { WorkspaceDocumentPayload } from '@/src/lib/workspace-types';
 import type { CompileDiagnostic } from '@/src/lib/compile-errors';
 import type { MissingReference } from '@/src/lib/workspace-types';
 import type { editor } from 'monaco-editor';
-import { Wand2, RefreshCw, FileWarning } from 'lucide-react';
+import { Wand2, RefreshCw, FileWarning, ImagePlus } from 'lucide-react';
 
 type ViewMode = 'editor' | 'split' | 'preview';
 
@@ -114,6 +114,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const [diagnostics, setDiagnostics] = useState<CompileDiagnostic[]>([]);
   const [missingRefs, setMissingRefs] = useState<MissingReference[]>([]);
   const [compileInfo, setCompileInfo] = useState<string | null>(null);
+  const [imageUploadStatus, setImageUploadStatus] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   const documentId = syntheticDocument.id;
   const isMarkdown = syntheticDocument.format === 'MARKDOWN';
@@ -789,6 +792,31 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     }
   }, [activePath, proposal, isAiLoading, workspace]);
 
+  const handleImageUpload = useCallback(async (file: File) => {
+    const editor = editorRef.current;
+    const selection = editor?.getSelection();
+    if (!slug || !editor || !selection || !activePath?.toLowerCase().endsWith('.md')) return;
+    setIsUploadingImage(true);
+    setImageUploadStatus(null);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const response = await fetch(`/api/document/${encodeURIComponent(slug)}/assets`, { method: 'POST', body: form });
+      const result = await response.json();
+      if (!response.ok || !result.asset?.url) throw new Error(result.message || 'Image upload failed');
+      const alt = result.asset.path.split('/').pop().replace(/\.[^.]+$/, '').replace(/[\[\]\\]/g, '');
+      editor.pushUndoStop();
+      editor.executeEdits('insert-image', [{ range: selection, text: `![${alt}](${result.asset.url})`, forceMoveMarkers: true }]);
+      editor.pushUndoStop();
+      editor.focus();
+      setImageUploadStatus(`Inserted ${file.name}`);
+    } catch (error) {
+      setImageUploadStatus(error instanceof Error ? error.message : 'Image upload failed');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  }, [activePath, slug]);
+
   // --- Cleanup ---
   useEffect(() => {
     const paraphraseRequestId = paraphraseRequestIdRef;
@@ -909,6 +937,33 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
               {/* AI Toolbar */}
               <div className="min-h-10 bg-[#2d2d2d] border-b border-[#3e3e3e] flex flex-wrap items-center px-3 py-1 gap-2 shrink-0">
+                {isMarkdown && (
+                  <>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => imageInputRef.current?.click()}
+                      disabled={isUploadingImage || isBinaryActive || !slug || !activePath?.toLowerCase().endsWith('.md')}
+                      icon={<ImagePlus className="w-3.5 h-3.5" />}
+                    >
+                      Insert image
+                    </Button>
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif,image/webp"
+                      aria-label="Choose image to insert"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) void handleImageUpload(file);
+                        event.target.value = '';
+                      }}
+                    />
+                    {imageUploadStatus && <span role="status" className="text-xs text-emerald-400">{imageUploadStatus}</span>}
+                    <div className="h-4 w-px bg-[#3e3e3e]" />
+                  </>
+                )}
                 <span title={paraphraseDisabledReason || 'Paraphrase selection'}>
                   <Button
                     variant="secondary"
