@@ -217,8 +217,9 @@ export const POST = withAuth(async (req, session, context) => {
     const workspaceAvailable = Boolean((prisma as unknown as { workspaceFile?: unknown }).workspaceFile);
     if (!workspaceAvailable) {
       let assets: Array<{ path: string; mediaType: string; data: string }> | undefined;
-      if (document.format === 'MARKDOWN' && (prisma as unknown as { documentAsset?: { findMany: Function } }).documentAsset) {
-        const rows = await (prisma as unknown as { documentAsset: { findMany: Function } }).documentAsset.findMany({
+      const legacyDocumentAsset = (prisma as unknown as { documentAsset?: typeof prisma.documentAsset }).documentAsset;
+      if (document.format === 'MARKDOWN' && legacyDocumentAsset) {
+        const rows = await legacyDocumentAsset.findMany({
           where: { documentId: document.id }, select: { path: true, mediaType: true, bytes: true }, orderBy: { path: 'asc' },
         });
         assets = rows.map((row: { path: string; mediaType: string; bytes: Uint8Array }) => ({ path: row.path, mediaType: row.mediaType, data: Buffer.from(row.bytes).toString('base64') }));
@@ -234,15 +235,19 @@ export const POST = withAuth(async (req, session, context) => {
       return NextResponse.json({ message: 'Compilation job queued', jobId, rateLimit: { remaining: rateLimitResult.remaining, resetAt: rateLimitResult.resetAt } }, { status: 202 });
     }
     await ensureDocumentMigrated(prisma, document.id);
+    const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+    if (!currentDocument) {
+      return NextResponse.json({ message: 'Document not found' }, { status: 404 });
+    }
 
-    if (document.format === 'MARKDOWN') {
+    if (currentDocument.format === 'MARKDOWN') {
       const main = await prisma.workspaceFile.findUnique({
-        where: { documentId_path: { documentId: document.id, path: document.mainFilePath } },
+        where: { documentId_path: { documentId: currentDocument.id, path: currentDocument.mainFilePath } },
         select: { content: true, checksum: true, revision: true },
       });
       if (!main) return NextResponse.json({ message: 'Main Markdown file not found' }, { status: 404 });
       const rows = await prisma.documentAsset.findMany({
-        where: { documentId: document.id },
+        where: { documentId: currentDocument.id },
         select: { path: true, mediaType: true, bytes: true },
         orderBy: { path: 'asc' },
       });
@@ -252,9 +257,9 @@ export const POST = withAuth(async (req, session, context) => {
         data: Buffer.from(row.bytes).toString('base64'),
       }));
       const jobId = await compilationProducer.addJob({
-        documentId: document.id,
+        documentId: currentDocument.id,
         userId,
-        slug: document.slug,
+        slug: currentDocument.slug,
         content: main.content ?? '',
         format: 'MARKDOWN',
         assets,
@@ -263,21 +268,21 @@ export const POST = withAuth(async (req, session, context) => {
         message: 'Compilation job queued',
         jobId,
         reused: 'new',
-        snapshot: { digest: main.checksum, mainFile: document.mainFilePath, files: [{ path: document.mainFilePath, checksum: main.checksum, revision: main.revision }] },
+        snapshot: { digest: main.checksum, mainFile: currentDocument.mainFilePath, files: [{ path: currentDocument.mainFilePath, checksum: main.checksum, revision: main.revision }] },
       }, { status: 202 });
     }
 
     const compiler = {
       engine: configuredEngine(),
       engineVersion: await engineVersion(),
-      mainFile: document.mainFilePath,
+      mainFile: currentDocument.mainFilePath,
       options: compilerOptionsForCacheKey(),
     };
 
     const snapshot = await createCompileSnapshot({
-      documentId: document.id,
+      documentId: currentDocument.id,
       userId,
-      mainFile: document.mainFilePath,
+      mainFile: currentDocument.mainFilePath,
       compiler,
     });
 
@@ -306,9 +311,9 @@ export const POST = withAuth(async (req, session, context) => {
     }
 
     const { jobId, reused } = await compilationProducer.addSnapshotJob({
-      documentId: document.id,
+      documentId: currentDocument.id,
       userId,
-      slug: document.slug,
+      slug: currentDocument.slug,
       mainFile: snapshot.manifest.mainFile,
       digest: snapshot.digest,
       files: snapshot.manifest.files,
