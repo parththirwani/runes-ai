@@ -267,6 +267,18 @@ describe('workspace file service', () => {
     expect(files.some((row) => row.path === 'paper/main.tex')).toBe(true);
   });
 
+  it('follows the migrated Markdown main file on its first move', async () => {
+    const { documents, files } = seed({ format: 'MARKDOWN', content: '# Original' });
+    files.length = 0;
+
+    const moved = await moveFile({ userId: OWNER, slug: 'paper', from: 'main.md', to: 'notes.md' });
+
+    expect(moved && moved !== 'notfound' && moved !== 'exists' && moved.mainFilePath).toBe('notes.md');
+    expect(documents[0].mainFilePath).toBe('notes.md');
+    expect(files.map((row) => row.path)).toEqual(['notes.md']);
+    expect(documents[0].content).toBe('# Original');
+  });
+
   it('refuses to delete the current main file', async () => {
     seed();
     expect(await deleteFile(OWNER, 'paper', 'main.tex')).toBe('mainfile');

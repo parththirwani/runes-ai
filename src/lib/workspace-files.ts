@@ -349,12 +349,14 @@ export async function moveFile(input: {
   const document = await getOwnedDocument(input.userId, input.slug);
   if (!document) return null;
   await ensureDocumentMigrated(prisma, document.id);
+  const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+  if (!currentDocument) return null;
 
   const from = assertSafeWorkspacePath(input.from, 'from');
   const to = assertSafeWorkspacePath(input.to, 'to');
   if (from === to) {
     const same = await prisma.workspaceFile.findUnique({ where: { documentId_path: { documentId: document.id, path: from } } });
-    return same ? { file: publicFile(same), mainFilePath: document.mainFilePath } : 'notfound';
+    return same ? { file: publicFile(same), mainFilePath: currentDocument.mainFilePath } : 'notfound';
   }
 
   const source = await prisma.workspaceFile.findUnique({ where: { documentId_path: { documentId: document.id, path: from } } });
@@ -370,8 +372,8 @@ export async function moveFile(input: {
     data: { path: to, kind, revision: { increment: 1 } },
   });
 
-  let mainFilePath = document.mainFilePath;
-  if (pathsCollide(from, document.mainFilePath)) {
+  let mainFilePath = currentDocument.mainFilePath;
+  if (pathsCollide(from, currentDocument.mainFilePath)) {
     mainFilePath = to;
     await prisma.document.update({ where: { id: document.id }, data: { mainFilePath: to, content: file.content } });
   }
