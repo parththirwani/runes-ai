@@ -6,7 +6,10 @@
 // Exercises the real HTTP API, the real Redis queue, the real worker and the real
 // Tectonic engine. Exits non-zero with the failed assertion on the first problem.
 
+import { createHmac, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { loadEnvFile } from 'node:process';
+import pg from 'pg';
 import { makePng } from './bench/fixtures.mjs';
 
 const args = process.argv.slice(2);
@@ -38,7 +41,7 @@ function check(name, condition, detail = '') {
 async function api(p, init = {}, withCookie = true) {
   const headers = {
     ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
-    ...(withCookie && cookie ? { Cookie: cookie } : {}),
+    ...(withCookie && cookie ? { Cookie: typeof withCookie === 'string' ? withCookie : cookie } : {}),
     ...(init.headers || {}),
   };
   const res = await fetch(`${BASE}${p}`, { ...init, headers });
@@ -50,6 +53,31 @@ async function api(p, init = {}, withCookie = true) {
     data = text && type.includes('json') ? JSON.parse(text) : text;
   }
   return { status: res.status, data, headers: res.headers };
+}
+
+async function otherUserCookie() {
+  if (!process.env.AUTH_SECRET && !process.env.NEXTAUTH_SECRET && existsSync('.env')) loadEnvFile('.env');
+  const secret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
+  if (!secret) throw new Error('Cross-user check needs AUTH_SECRET or NEXTAUTH_SECRET');
+  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  let id;
+  try {
+    const email = 'e2e-workspace-other@runes-ai.test';
+    await client.query('INSERT INTO users (id, email, "firstName", "lastName", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, NOW(), NOW()) ON CONFLICT (email) DO NOTHING', [randomUUID(), email, 'Other', 'Test']);
+    id = (await client.query('SELECT id FROM users WHERE email = $1', [email])).rows[0].id;
+  } finally {
+    await client.end();
+  }
+  const data = Buffer.from(JSON.stringify({
+    id,
+    email: 'e2e-workspace-other@runes-ai.test',
+    name: 'Other test user',
+    picture: null,
+    issuedAt: Date.now(),
+  })).toString('base64url');
+  const signature = createHmac('sha256', secret).update(data).digest('base64url');
+  return `dev-session=${data}.${signature}`;
 }
 
 function expectApi(res, expected, what) {
@@ -333,6 +361,26 @@ async function main() {
   check('anonymous cannot read a job', anonJob.status === 401, `status ${anonJob.status}`);
   const anonPdf = await api(`/api/pdf/${first.data.jobId}`, {}, false);
   check('anonymous cannot read a pdf', anonPdf.status === 401, `status ${anonPdf.status}`);
+
+  // A valid session for a different user must not expose owned resources.
+  const otherCookie = await otherUserCookie();
+  const ownedPaths = [
+    `/api/document/${guardSlug}`,
+    `/api/document/${guardSlug}/file?path=main.tex`,
+    `/api/document/${guardSlug}/asset?path=figures/plot.png`,
+    `/api/job/${first.data.jobId}`,
+    `/api/pdf/${first.data.jobId}`,
+  ];
+  for (const p of ownedPaths) {
+    const res = await api(p, {}, otherCookie);
+    check(`other user denied ${p.split('/').pop()}`, res.status === 404, `status ${res.status}`);
+  }
+  const otherCompile = await api(`/api/document/${guardSlug}`, { method: 'POST' }, otherCookie);
+  check('other user cannot queue a compile', otherCompile.status === 404, `status ${otherCompile.status}`);
+  const otherWrite = await api(`/api/document/${guardSlug}/file`, {
+    method: 'PUT', body: JSON.stringify({ path: 'main.tex', content: 'overwritten' }),
+  }, otherCookie);
+  check('other user cannot edit a file', otherWrite.status === 404, `status ${otherWrite.status}`);
 
   // 12. Autosave of unchanged bytes must not create a new compile.
   const idemSlug = await buildWorkspace(`idem${marker}`);
