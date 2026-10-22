@@ -423,10 +423,15 @@ export async function resolveMainSource(document: {
   content?: string | null;
 }): Promise<string> {
   await ensureDocumentMigrated(prisma, document.id);
-  const mainPath = document.mainFilePath && document.mainFilePath.length > 0 ? document.mainFilePath : DEFAULT_MAIN_FILE;
+  // The caller's document row may predate migration or a later main-file move.
+  const currentDocument = await prisma.document.findUnique({
+    where: { id: document.id },
+    select: { mainFilePath: true, content: true },
+  });
+  const mainPath = currentDocument?.mainFilePath || DEFAULT_MAIN_FILE;
   const file = await prisma.workspaceFile.findUnique({
     where: { documentId_path: { documentId: document.id, path: mainPath } },
     select: { content: true },
   });
-  return file?.content ?? document.content ?? '';
+  return file?.content ?? currentDocument?.content ?? document.content ?? '';
 }

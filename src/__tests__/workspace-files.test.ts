@@ -115,6 +115,7 @@ import {
   moveFile,
   readWorkspaceFile,
   readWorkspaceTree,
+  resolveMainSource,
   setMainFile,
   uploadFile,
   writeTextFile,
@@ -151,6 +152,18 @@ describe('workspace file service', () => {
     expect(workspace?.document.mainFilePath).toBe('main.md');
     expect(workspace?.files.map((file) => file.path)).toEqual(['main.md']);
     expect(await readWorkspaceFile(OWNER, 'paper', 'main.md')).toMatchObject({ content: '# Legacy notes' });
+  });
+
+  it('resolves the Markdown main file when the caller has an older document row', async () => {
+    const { documents, files } = seed({ format: 'MARKDOWN', content: '# Current notes' });
+    files.length = 0;
+    const staleDocument = { id: DOC_ID, mainFilePath: 'main.tex', content: '# Outdated notes' };
+    await ensureDocumentMigrated(client as never, DOC_ID);
+    files[0].content = '# Edited workspace notes';
+
+    expect(await resolveMainSource(staleDocument)).toBe('# Edited workspace notes');
+    expect(documents[0].mainFilePath).toBe('main.md');
+    expect(files.map((file) => file.path)).toEqual(['main.md']);
   });
 
   it('returns nothing for a workspace the user does not own', async () => {
