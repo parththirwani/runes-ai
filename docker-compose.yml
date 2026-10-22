@@ -27,6 +27,9 @@ services:
       timeout: 3s
       retries: 10
 
+  # Legacy warm engine container. The worker no longer needs it because it runs
+  # Tectonic directly inside its own isolated image. It stays for deployments that
+  # pin TECTONIC_ENGINE=docker-exec while rolling back.
   tectonic:
     image: dxjoke/tectonic-docker:latest
     container_name: runes-ai-tectonic
@@ -35,6 +38,7 @@ services:
     working_dir: /workspace
     volumes:
       - latex-temp:/workspace/temp
+      - compile-tmp:/workspace/compile
     healthcheck:
       test: ["CMD", "tectonic", "--version"]
       interval: 10s
@@ -49,21 +53,23 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      tectonic:
-        condition: service_healthy
-    working_dir: /workspace
     environment:
       NODE_ENV: development
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: 0
       WORKER_PORT: 3001
-      TECTONIC_CONTAINER_NAME: runes-ai-tectonic
+      TECTONIC_ENGINE: direct
+      WORKER_CONCURRENCY: "2"
+      COMPILE_TIMEOUT_MS: "90000"
+      COMPILE_TMP_DIR: /tmp/runes-compile
+      ASSET_STORAGE_DIR: /data/assets
     ports:
       - "3001:3001"
     volumes:
-      - latex-temp:/workspace/temp
-      - /var/run/docker.sock:/var/run/docker.sock
+      - compile-tmp:/tmp/runes-compile
+      - asset-data:/data
+      - tectonic-cache:/home/node/.cache
     healthcheck:
       test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3001/health').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
@@ -73,3 +79,6 @@ services:
 volumes:
   pgdata:
   latex-temp:
+  compile-tmp:
+  asset-data:
+  tectonic-cache:

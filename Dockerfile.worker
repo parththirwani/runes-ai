@@ -9,12 +9,32 @@ COPY worker ./worker
 RUN bun install --frozen-lockfile
 RUN bun build worker/index.ts --outfile /tmp/worker.js --target bun
 
+# The compiler runs inside this isolated image: no docker socket and no per-job container.
 FROM oven/bun:1-alpine
 
-RUN apk add --no-cache docker-cli
+ARG TECTONIC_VERSION=0.15.0
+RUN apk add --no-cache curl ca-certificates tar \
+ && curl -fsSL -o /tmp/tectonic.tar.gz \
+      "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${TECTONIC_VERSION}/tectonic-${TECTONIC_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+ && tar -xzf /tmp/tectonic.tar.gz -C /usr/local/bin tectonic \
+ && rm /tmp/tectonic.tar.gz \
+ && tectonic --version
+
+# Warm the bundle cache at build time. A cold cache downloads ~40 MB and took 88 s in
+# measurement, against ~0.4 s warm, so the first compile after a deploy must not pay it.
+RUN printf '\\documentclass{article}\\begin{document}warm\\end{document}\n' > /tmp/warm.tex \
+ && cd /tmp && tectonic --untrusted --color never warm.tex \
+ && rm -f /tmp/warm.tex /tmp/warm.pdf
 
 WORKDIR /app
 
 COPY --from=build /tmp/worker.js /app/worker.js
 
+ENV TECTONIC_ENGINE=direct \
+    TECTONIC_BINARY=/usr/local/bin/tectonic \
+    WORKER_CONCURRENCY=2 \
+    COMPILE_TIMEOUT_MS=90000 \
+    COMPILE_TMP_DIR=/tmp/runes-compile
+
+USER node
 CMD ["bun", "/app/worker.js"]
