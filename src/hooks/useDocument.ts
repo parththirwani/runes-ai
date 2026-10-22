@@ -54,8 +54,8 @@ export function useDocument(): UseDocumentReturn {
 
       const data = await response.json();
       return slug ? data.document : data;
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save document');
       return null;
     } finally {
       setLoading(false);
@@ -77,8 +77,8 @@ export function useDocument(): UseDocumentReturn {
       }
 
       return await response.blob();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Compilation failed');
       return null;
     } finally {
       setLoading(false);
@@ -99,8 +99,8 @@ export function useDocument(): UseDocumentReturn {
 
       const data = await response.json();
       return data.document;
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch document');
       return null;
     } finally {
       setLoading(false);
@@ -122,8 +122,8 @@ export function useDocument(): UseDocumentReturn {
       }
 
       return true;
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to delete document');
       return false;
     } finally {
       setLoading(false);
