@@ -50,11 +50,14 @@ services:
       PANDOC_BIN: /usr/local/bin/pandoc
       PDF_ENGINE_BIN: /usr/local/bin/tectonic
       TECTONIC_BINARY: /usr/local/bin/tectonic
+      TECTONIC_ENGINE: direct
+      ASSET_STORAGE_DIR: /app/.data/assets
       COMPILER_REQUIRE_NETNS: "1"
     ports:
       - "3001:3001"
     volumes:
       - latex-temp:/workspace/temp
+      - ./.data/assets:/app/.data/assets
     healthcheck:
       test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3001/health').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s

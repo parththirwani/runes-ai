@@ -4,11 +4,11 @@ import redis, {
   QUEUE_NAME,
   RESULT_PREFIX,
   PDF_PREFIX,
-  SNAPSHOT_JOB_PREFIX,
 } from '@/src/lib/redis';
+import { snapshotJobKey } from '@/src/lib/snapshot-job-key';
 import { CompilationJob, JobStatus, JobStatusResponse, SnapshotFileRef, StageTimings } from '@/src/types/compilation';
 import { v4 as uuidv4 } from 'uuid';
-import crypto from 'crypto';
+export { snapshotJobKey } from '@/src/lib/snapshot-job-key';
 
 export type EnqueueResult = {
   jobId: string;
@@ -20,10 +20,6 @@ export type EnqueueResult = {
  * Cache key for a snapshot. The user id is part of the key so two users who happen to
  * upload byte-identical workspaces never share an authorized artifact handle.
  */
-export function snapshotJobKey(userId: string, digest: string): string {
-  return SNAPSHOT_JOB_PREFIX + crypto.createHash('sha256').update(userId + ':' + digest).digest('hex');
-}
-
 export class CompilationProducer {
   /**
    * Enqueues a workspace snapshot, or points the caller at work that already exists for

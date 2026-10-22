@@ -269,8 +269,10 @@ with sync_playwright() as playwright:
         rejected_job, rejected = md_compile_job()
         assert rejected["status"] == "failed", rejected
         assert "Remote images are not supported" in rejected["result"]["error"], rejected
-        page.locator(".fixed.inset-0.z-50").get_by_role("button", name="OK", exact=True).click()
-        expect(page.locator(".fixed.inset-0.z-50")).to_have_count(0, timeout=5000)
+        error_dialog = page.get_by_role("dialog", name="Error")
+        expect(error_dialog).to_contain_text("Remote images are not supported", timeout=5000)
+        error_dialog.get_by_role("button", name="Close", exact=True).last.click()
+        expect(error_dialog).to_have_count(0, timeout=5000)
         page.wait_for_timeout(300)
 
         page.get_by_role("button", name="Source", exact=True).click()
@@ -345,4 +347,6 @@ with sync_playwright() as playwright:
             context.request.delete(f"{BASE}/api/document/{created_slug}")
         if second_slug:
             context.request.delete(f"{BASE}/api/document/{second_slug}")
+        if md_slug:
+            context.request.delete(f"{BASE}/api/document/{md_slug}")
         browser.close()

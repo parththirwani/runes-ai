@@ -20,6 +20,7 @@ import { createJobDirectory, materializeLegacySource, materializeSnapshot, prune
 import { loadSnapshotBundle } from '@/src/lib/workspace-snapshot';
 import { compileTmpDir, pruneSnapshots } from '@/src/lib/storage';
 import { parseCompileErrors, formatCompileError, errorExcerpt } from '@/src/lib/compile-errors';
+import { snapshotJobKey } from '@/src/lib/snapshot-job-key';
 
 // BLPOP parks its connection for the whole timeout. On a shared ioredis client that
 // delays every other command queued behind it, including the writes that publish job
@@ -216,7 +217,6 @@ export class CompilationWorker {
 
   private async releaseClaim(job: CompilationJob): Promise<void> {
     if (!job.snapshotDigest) return;
-    const { snapshotJobKey } = await import('../producer/queue');
     const key = snapshotJobKey(job.userId, job.snapshotDigest);
     const current = await redis.get(key);
     if (current === job.id) await redis.del(key);
