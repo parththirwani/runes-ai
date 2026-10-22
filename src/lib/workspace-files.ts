@@ -104,6 +104,10 @@ export async function readWorkspaceTree(userId: string, slug: string): Promise<W
   const document = await getOwnedDocument(userId, slug);
   if (!document) return null;
   await ensureDocumentMigrated(prisma, document.id);
+  // Migration can replace the legacy main.tex pointer with main.md. Prisma returns
+  // distinct row objects, so the document fetched before migration is stale.
+  const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+  if (!currentDocument) return null;
 
   const files = await prisma.workspaceFile.findMany({
     where: { documentId: document.id },
@@ -112,12 +116,12 @@ export async function readWorkspaceTree(userId: string, slug: string): Promise<W
 
   return {
     document: {
-      id: document.id,
-      slug: document.slug,
-      title: document.title,
-      format: document.format,
-      mainFilePath: document.mainFilePath,
-      updatedAt: document.updatedAt,
+      id: currentDocument.id,
+      slug: currentDocument.slug,
+      title: currentDocument.title,
+      format: currentDocument.format,
+      mainFilePath: currentDocument.mainFilePath,
+      updatedAt: currentDocument.updatedAt,
     },
     files: files.map(publicFile),
     tree: buildTree(files.map((file) => file.path)),

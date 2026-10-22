@@ -20,7 +20,7 @@ type Row = {
   storageKey: string | null;
 };
 
-type Doc = { id: string; slug: string; title: string; userId: string; content: string | null; mainFilePath: string };
+type Doc = { id: string; slug: string; title: string; userId: string; content: string | null; mainFilePath: string; format: 'LATEX' | 'MARKDOWN' };
 
 function fakePrisma(documents: Doc[], files: Row[]) {
   let nextId = 1;
@@ -31,12 +31,14 @@ function fakePrisma(documents: Doc[], files: Row[]) {
   return {
     document: {
       async findFirst({ where }: { where: { slug?: string; userId?: string; id?: string } }) {
-        return documents.find((doc) => (where.slug === undefined || doc.slug === where.slug) &&
+        const document = documents.find((doc) => (where.slug === undefined || doc.slug === where.slug) &&
           (where.userId === undefined || doc.userId === where.userId) &&
-          (where.id === undefined || doc.id === where.id)) || null;
+          (where.id === undefined || doc.id === where.id));
+        return document ? { ...document } : null;
       },
       async findUnique({ where }: { where: { id: string } }) {
-        return documents.find((doc) => doc.id === where.id) || null;
+        const document = documents.find((doc) => doc.id === where.id);
+        return document ? { ...document } : null;
       },
       async update({ where, data }: { where: { id: string }; data: Record<string, unknown> }) {
         const doc = documents.find((candidate) => candidate.id === where.id);
@@ -127,7 +129,7 @@ const OTHER = 'user-other';
 const DOC_ID = 'doc-1';
 
 function seed(overrides: Partial<Doc> = {}) {
-  const documents: Doc[] = [{ id: DOC_ID, slug: 'paper', title: 'Paper', userId: OWNER, content: 'legacy body', mainFilePath: 'main.tex', ...overrides }];
+  const documents: Doc[] = [{ id: DOC_ID, slug: 'paper', title: 'Paper', userId: OWNER, content: 'legacy body', mainFilePath: 'main.tex', format: 'LATEX', ...overrides }];
   const files: Row[] = [{
     id: 'file-main', documentId: DOC_ID, path: 'main.tex', kind: 'tex', mimeType: 'text/x-tex',
     sizeBytes: 11, checksum: sha('legacy body'), revision: 3, content: 'legacy body', storageKey: null,
@@ -138,6 +140,18 @@ function seed(overrides: Partial<Doc> = {}) {
 
 describe('workspace file service', () => {
   beforeEach(() => { seed(); });
+
+  it('reports the migrated Markdown main file on the first workspace load', async () => {
+    const { documents, files } = seed({ format: 'MARKDOWN', content: '# Legacy notes' });
+    files.length = 0;
+
+    const workspace = await readWorkspaceTree(OWNER, 'paper');
+
+    expect(documents[0].mainFilePath).toBe('main.md');
+    expect(workspace?.document.mainFilePath).toBe('main.md');
+    expect(workspace?.files.map((file) => file.path)).toEqual(['main.md']);
+    expect(await readWorkspaceFile(OWNER, 'paper', 'main.md')).toMatchObject({ content: '# Legacy notes' });
+  });
 
   it('returns nothing for a workspace the user does not own', async () => {
     seed();
