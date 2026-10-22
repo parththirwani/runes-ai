@@ -129,7 +129,9 @@ export const PUT = withAuth(async (req, session, context) => {
         if (written) results.push({ path: written.file.path, revision: written.file.revision, checksum: written.file.checksum });
       }
     } else if (parsedTitle.data.content !== undefined) {
-      const written = await writeTextFile({ userId, slug, rawPath: document.mainFilePath, content: parsedTitle.data.content });
+      const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+      if (!currentDocument) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
+      const written = await writeTextFile({ userId, slug, rawPath: currentDocument.mainFilePath, content: parsedTitle.data.content });
       if (written && 'conflict' in written) {
         return NextResponse.json({ message: 'Another save changed the main file', file: written.conflict }, { status: 409 });
       }
