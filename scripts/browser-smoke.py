@@ -35,6 +35,18 @@ def select_second_line(page):
     page.keyboard.press("Shift+End")
 
 
+def assert_mobile_editor_nav(page, width, max_height):
+    page.set_viewport_size({"width": width, "height": 568})
+    nav = page.locator("main > div").first
+    bounds = nav.bounding_box()
+    assert bounds and bounds["height"] <= max_height, bounds
+    assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
+    for label in ("Toggle file tree", "Back to documents", "AI workspace", "Compile"):
+        button = page.get_by_role("button", name=label, exact=True)
+        rect = button.bounding_box()
+        assert rect and rect["x"] >= 0 and rect["x"] + rect["width"] <= width, (label, rect)
+
+
 with sync_playwright() as playwright:
     browser = playwright.chromium.launch(headless=True, executable_path=CHROMIUM, args=["--no-sandbox"])
     context = browser.new_context(viewport={"width": 1280, "height": 800})
@@ -71,6 +83,9 @@ with sync_playwright() as playwright:
         navigation_slug = urlparse(page.url).path.split("/")[-1]
         page.locator(".monaco-editor").first.wait_for(timeout=20000)
         assert page.evaluate("window.monaco.editor.getModels()[0].getLanguageId()") == "latex"
+        assert_mobile_editor_nav(page, 390, 100)
+        assert_mobile_editor_nav(page, 320, 140)
+        page.set_viewport_size({"width": 390, "height": 800})
         page.goto(f"{BASE}/document", wait_until="domcontentloaded")
         actions = page.get_by_role("button", name=f"Actions for {navigation_title}")
         expect(actions).to_be_visible()
