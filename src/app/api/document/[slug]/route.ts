@@ -179,9 +179,15 @@ export const PATCH = withAuth(async (req, session, context) => {
     await ensureDocumentMigrated(prisma, document.id);
 
     const { title, content } = parsedData.data;
-    const nextContent = content ?? document.content ?? '';
-    await writeTextFile({ userId, slug, rawPath: document.mainFilePath, content: nextContent });
-    const updated = await prisma.document.update({ where: { id: document.id }, data: { title, content: nextContent } });
+    if (content !== undefined) {
+      const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+      if (!currentDocument) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
+      await writeTextFile({ userId, slug, rawPath: currentDocument.mainFilePath, content });
+    }
+    const updated = await prisma.document.update({
+      where: { id: document.id },
+      data: content === undefined ? { title } : { title, content },
+    });
 
     return NextResponse.json({ message: 'Document updated successfully', document: updated }, { status: 200 });
   } catch (error) {

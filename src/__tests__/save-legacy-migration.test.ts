@@ -37,7 +37,7 @@ vi.mock('@/src/lib/workspace-files', async (importOriginal) => {
   return { ...actual, writeTextFile: mocks.writeTextFile };
 });
 
-import { PUT } from '@/src/app/api/document/[slug]/route';
+import { PATCH, PUT } from '@/src/app/api/document/[slug]/route';
 
 beforeEach(() => {
   mocks.document.title = 'Notes';
@@ -96,5 +96,35 @@ describe('PUT after lazy migration', () => {
     }), context);
     expect(invalid.status).toBe(400);
     expect(mocks.writeTextFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('PATCH after lazy migration', () => {
+  it('writes supplied Markdown content to the migrated main.md path', async () => {
+    const response = await PATCH(new NextRequest('http://localhost/api/document/legacy-md', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Revised', content: '# New' }),
+    }), { params: Promise.resolve({ slug: 'legacy-md' }) });
+
+    expect(response.status).toBe(200);
+    expect(mocks.files).toEqual(['main.md']);
+    expect(mocks.writeTextFile).toHaveBeenCalledWith({
+      userId: 'owner', slug: 'legacy-md', rawPath: 'main.md', content: '# New',
+    });
+    expect(mocks.document.title).toBe('Revised');
+  });
+
+  it('does not replace workspace content when changing only the title', async () => {
+    const response = await PATCH(new NextRequest('http://localhost/api/document/legacy-md', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Renamed' }),
+    }), { params: Promise.resolve({ slug: 'legacy-md' }) });
+
+    expect(response.status).toBe(200);
+    expect(mocks.writeTextFile).not.toHaveBeenCalled();
+    expect(mocks.document.title).toBe('Renamed');
+    expect(mocks.document.content).toBe('# Old');
   });
 });
