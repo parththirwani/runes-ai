@@ -90,6 +90,13 @@ export const PUT = withAuth(async (req, session, context) => {
     if (!document) {
       return NextResponse.json({ message: 'Document not found' }, { status: 404 });
     }
+    const workspaceAvailable = Boolean((prisma as unknown as { workspaceFile?: unknown }).workspaceFile);
+    if (!workspaceAvailable) {
+      const legacy = updateDocumentSchema.safeParse(body);
+      if (!legacy.success) return NextResponse.json({ message: 'Invalid input' }, { status: 400 });
+      const updated = await prisma.document.update({ where: { id: document.id }, data: legacy.data });
+      return NextResponse.json({ message: 'Document updated successfully', document: updated }, { status: 200 });
+    }
     await ensureDocumentMigrated(prisma, document.id);
 
     const updates: { title?: string } = {};
@@ -161,11 +168,18 @@ export const PATCH = withAuth(async (req, session, context) => {
     if (!document) {
       return NextResponse.json({ message: 'Document not found' }, { status: 404 });
     }
+    const workspaceAvailable = Boolean((prisma as unknown as { workspaceFile?: unknown }).workspaceFile);
+    if (!workspaceAvailable) {
+      const { title, content } = parsedData.data;
+      const updated = await prisma.document.update({ where: { id: document.id }, data: { title, content: content ?? document.content ?? '' } });
+      return NextResponse.json({ message: 'Document updated successfully', document: updated }, { status: 200 });
+    }
     await ensureDocumentMigrated(prisma, document.id);
 
     const { title, content } = parsedData.data;
-    await writeTextFile({ userId, slug, rawPath: document.mainFilePath, content });
-    const updated = await prisma.document.update({ where: { id: document.id }, data: { title, content } });
+    const nextContent = content ?? document.content ?? '';
+    await writeTextFile({ userId, slug, rawPath: document.mainFilePath, content: nextContent });
+    const updated = await prisma.document.update({ where: { id: document.id }, data: { title, content: nextContent } });
 
     return NextResponse.json({ message: 'Document updated successfully', document: updated }, { status: 200 });
   } catch (error) {
@@ -183,8 +197,6 @@ export const POST = withAuth(async (req, session, context) => {
     if (!document) {
       return NextResponse.json({ message: 'Document not found' }, { status: 404 });
     }
-    await ensureDocumentMigrated(prisma, document.id);
-
     const rateLimitResult = await checkRateLimit(document.id);
     if (!rateLimitResult.allowed) {
       return NextResponse.json(
@@ -200,6 +212,27 @@ export const POST = withAuth(async (req, session, context) => {
         },
       );
     }
+
+    const workspaceAvailable = Boolean((prisma as unknown as { workspaceFile?: unknown }).workspaceFile);
+    if (!workspaceAvailable) {
+      let assets: Array<{ path: string; mediaType: string; data: string }> | undefined;
+      if (document.format === 'MARKDOWN' && (prisma as unknown as { documentAsset?: { findMany: Function } }).documentAsset) {
+        const rows = await (prisma as unknown as { documentAsset: { findMany: Function } }).documentAsset.findMany({
+          where: { documentId: document.id }, select: { path: true, mediaType: true, bytes: true }, orderBy: { path: 'asc' },
+        });
+        assets = rows.map((row: { path: string; mediaType: string; bytes: Uint8Array }) => ({ path: row.path, mediaType: row.mediaType, data: Buffer.from(row.bytes).toString('base64') }));
+      }
+      const jobId = await compilationProducer.addJob({
+        documentId: document.id,
+        userId,
+        slug: document.slug,
+        content: document.content ?? '',
+        format: document.format === 'MARKDOWN' ? 'MARKDOWN' : 'LATEX',
+        assets,
+      });
+      return NextResponse.json({ message: 'Compilation job queued', jobId, rateLimit: { remaining: rateLimitResult.remaining, resetAt: rateLimitResult.resetAt } }, { status: 202 });
+    }
+    await ensureDocumentMigrated(prisma, document.id);
 
     const compiler = {
       engine: configuredEngine(),
@@ -267,6 +300,6 @@ export const POST = withAuth(async (req, session, context) => {
     );
   } catch (error) {
     console.error('[PDF_COMPILE_ERROR]', error instanceof Error ? error.message : error);
-    return errorResponse(error);
+    return NextResponse.json({ message: 'Failed to queue compilation', error: 'Internal server error' }, { status: 500 });
   }
 });

@@ -9,32 +9,59 @@ COPY worker ./worker
 RUN bun install --frozen-lockfile
 RUN bun build worker/index.ts --outfile /tmp/worker.js --target bun
 
-# The compiler runs inside this isolated image: no docker socket and no per-job container.
-FROM oven/bun:1-alpine
+# Full (Debian/glibc) runtime so the pinned static pandoc + tectonic binaries run natively.
+FROM oven/bun:1
 
-ARG TECTONIC_VERSION=0.15.0
-RUN apk add --no-cache curl ca-certificates tar \
- && curl -fsSL -o /tmp/tectonic.tar.gz \
-      "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${TECTONIC_VERSION}/tectonic-${TECTONIC_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
- && tar -xzf /tmp/tectonic.tar.gz -C /usr/local/bin tectonic \
- && rm /tmp/tectonic.tar.gz \
- && tectonic --version
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl fontconfig \
+  && rm -rf /var/lib/apt/lists/*
 
-# Warm the bundle cache at build time. A cold cache downloads ~40 MB and took 88 s in
-# measurement, against ~0.4 s warm, so the first compile after a deploy must not pay it.
-RUN printf '\\documentclass{article}\\begin{document}warm\\end{document}\n' > /tmp/warm.tex \
- && cd /tmp && tectonic --untrusted --color never warm.tex \
- && rm -f /tmp/warm.tex /tmp/warm.pdf
+# Pinned Markdown/LaTeX toolchain.
+# pandoc 3.6.3 (linux-amd64 static) and tectonic 0.15.0 (x86_64-unknown-linux-musl static).
+ENV PANDOC_VERSION=3.6.3 \
+    TECTONIC_VERSION=0.15.0 \
+    PANDOC_SHA256=d04c95c138202f87d6b00ac19aa3dd874c681f60a9feb3b55c74f764d6d1a17d \
+    TECTONIC_SHA256=dfb82876f2986862996e564fa507a9e576e0c1e3bee63c2c1bd677c2543e6407
+
+RUN curl -fsSL "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz" -o /tmp/pandoc.tar.gz \
+  && echo "${PANDOC_SHA256}  /tmp/pandoc.tar.gz" | sha256sum -c - \
+  && tar -xzf /tmp/pandoc.tar.gz -C /tmp \
+  && mv "/tmp/pandoc-${PANDOC_VERSION}/bin/pandoc" /usr/local/bin/pandoc \
+  && rm -rf /tmp/pandoc.tar.gz "/tmp/pandoc-${PANDOC_VERSION}" \
+  && curl -fsSL "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${TECTONIC_VERSION}/tectonic-${TECTONIC_VERSION}-x86_64-unknown-linux-musl.tar.gz" -o /tmp/tectonic.tar.gz \
+  && echo "${TECTONIC_SHA256}  /tmp/tectonic.tar.gz" | sha256sum -c - \
+  && tar -xzf /tmp/tectonic.tar.gz -C /usr/local/bin tectonic \
+  && rm -f /tmp/tectonic.tar.gz \
+  && chmod +x /usr/local/bin/pandoc /usr/local/bin/tectonic \
+  && pandoc --version | head -1 \
+  && tectonic --version
+
+# Tectonic fetches TeX support files on demand. Prime the pinned image while
+# build-time networking is available; runtime Markdown compiles are offline.
+# Keep this sample aligned with the documented Markdown PDF feature set.
+COPY public/small-logo.png /tmp/cache-prime.png
+COPY scripts/markdown-cache-prime.md /tmp/cache-prime.md
+RUN for attempt in 1 2 3; do \
+      pandoc --standalone --from=gfm+tex_math_dollars-raw_html \
+        -V geometry:margin=1in -V fontsize=11pt -V colorlinks=true \
+        -V linkcolor=blue -V urlcolor=blue \
+        --pdf-engine=/usr/local/bin/tectonic \
+        --output=/tmp/cache-prime.pdf /tmp/cache-prime.md \
+        && break; \
+      sleep 5; \
+    done \
+  && test -s /tmp/cache-prime.pdf \
+  && rm /tmp/cache-prime.pdf /tmp/cache-prime.md /tmp/cache-prime.png
+
+# In-image binaries by default (no docker-in-docker needed). Set TECTONIC_BINARY=""
+# to fall back to the legacy docker sibling container for LaTeX compiles.
+ENV PANDOC_BIN=/usr/local/bin/pandoc \
+    PDF_ENGINE_BIN=/usr/local/bin/tectonic \
+    TECTONIC_BINARY=/usr/local/bin/tectonic \
+    COMPILER_REQUIRE_NETNS=1
 
 WORKDIR /app
 
 COPY --from=build /tmp/worker.js /app/worker.js
 
-ENV TECTONIC_ENGINE=direct \
-    TECTONIC_BINARY=/usr/local/bin/tectonic \
-    WORKER_CONCURRENCY=2 \
-    COMPILE_TIMEOUT_MS=90000 \
-    COMPILE_TMP_DIR=/tmp/runes-compile
-
-USER node
 CMD ["bun", "/app/worker.js"]

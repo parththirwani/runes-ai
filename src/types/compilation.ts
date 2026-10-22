@@ -3,6 +3,9 @@
 
 import type { CompileDiagnostic } from '@/src/lib/compile-errors';
 
+export type DocumentFormatValue = 'LATEX' | 'MARKDOWN';
+export interface SnapshotAsset { path: string; mediaType: string; data: string; }
+
 export interface SnapshotFileRef {
   path: string;
   checksum: string;
@@ -17,6 +20,8 @@ export interface CompilationJob {
   slug: string;
   /** Legacy single-source jobs. New jobs send snapshotDigest instead. */
   content?: string;
+  format?: DocumentFormatValue;
+  assets?: SnapshotAsset[];
   snapshotDigest?: string;
   mainFile?: string;
   createdAt: number;

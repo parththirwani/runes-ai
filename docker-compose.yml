@@ -27,49 +27,34 @@ services:
       timeout: 3s
       retries: 10
 
-  # Legacy warm engine container. The worker no longer needs it because it runs
-  # Tectonic directly inside its own isolated image. It stays for deployments that
-  # pin TECTONIC_ENGINE=docker-exec while rolling back.
-  tectonic:
-    image: dxjoke/tectonic-docker:latest
-    container_name: runes-ai-tectonic
-    restart: unless-stopped
-    entrypoint: ["tail", "-f", "/dev/null"]
-    working_dir: /workspace
-    volumes:
-      - latex-temp:/workspace/temp
-      - compile-tmp:/workspace/compile
-    healthcheck:
-      test: ["CMD", "tectonic", "--version"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   worker:
     build:
       context: .
       dockerfile: Dockerfile.worker
     restart: unless-stopped
+    mem_limit: 1g
     depends_on:
       redis:
         condition: service_healthy
+    working_dir: /workspace
+    # Pandoc and Tectonic run in a private network namespace. The worker
+    # fails Markdown compiles if the namespace cannot be created.
+    cap_add:
+      - SYS_ADMIN
     environment:
       NODE_ENV: development
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: 0
       WORKER_PORT: 3001
-      TECTONIC_ENGINE: direct
-      WORKER_CONCURRENCY: "2"
-      COMPILE_TIMEOUT_MS: "90000"
-      COMPILE_TMP_DIR: /tmp/runes-compile
-      ASSET_STORAGE_DIR: /data/assets
+      PANDOC_BIN: /usr/local/bin/pandoc
+      PDF_ENGINE_BIN: /usr/local/bin/tectonic
+      TECTONIC_BINARY: /usr/local/bin/tectonic
+      COMPILER_REQUIRE_NETNS: "1"
     ports:
       - "3001:3001"
     volumes:
-      - compile-tmp:/tmp/runes-compile
-      - asset-data:/data
-      - tectonic-cache:/home/node/.cache
+      - latex-temp:/workspace/temp
     healthcheck:
       test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3001/health').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
@@ -79,6 +64,3 @@ services:
 volumes:
   pgdata:
   latex-temp:
-  compile-tmp:
-  asset-data:
-  tectonic-cache:

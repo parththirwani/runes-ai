@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import type { DocumentFormatValue } from '@/src/types/compilation';
 
-interface Document {
+export interface DashboardDocument {
   id: string;
   title: string;
   slug: string;
   content?: string | null;
+  format?: DocumentFormatValue;
+  excerpt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -14,7 +17,7 @@ interface Document {
 export function useDashboard() {
   const router = useRouter();
   const { status } = useSession();
-  const [documents, setDocuments] = useState<Document[]>([]);
+  const [documents, setDocuments] = useState<DashboardDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -22,7 +25,7 @@ export function useDashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
-  const [documentToDelete, setDocumentToDelete] = useState<Document | null>(null);
+  const [documentToDelete, setDocumentToDelete] = useState<DashboardDocument | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -51,32 +54,15 @@ export function useDashboard() {
     }
   };
 
-  const handleCreateDocument = async (title: string) => {
+  const handleCreateDocument = async (title: string, format: DocumentFormatValue) => {
     setIsCreating(true);
     try {
+      // Format is explicit in the request; the server applies the matching
+      // tested starting template for the chosen format.
       const response = await fetch('/api/document', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title,
-          content: `\\documentclass{article}
-\\usepackage[utf8]{inputenc}
-\\usepackage{amsmath}
-\\usepackage{graphicx}
-
-\\title{${title}}
-\\author{Your Name}
-\\date{\\today}
-
-\\begin{document}
-
-\\maketitle
-
-\\section{Introduction}
-Start writing your document here.
-
-\\end{document}`
-        })
+        body: JSON.stringify({ title, format })
       });
 
       if (!response.ok) {
@@ -96,7 +82,7 @@ Start writing your document here.
     }
   };
 
-  const handleDeleteClick = (doc: Document) => {
+  const handleDeleteClick = (doc: DashboardDocument) => {
     setDocumentToDelete(doc);
     setShowDeleteModal(true);
   };

@@ -14,7 +14,8 @@ import redis, {
   RESULT_PREFIX,
 } from '@/src/lib/redis';
 import { JobStatus, CompilationJob, JobStatusResponse, StageTimings } from '@/src/types/compilation';
-import { compileJobDirectory, engineVersion, configuredEngine, compilerOptionsForCacheKey } from './latex-compiler';
+import { compileJobDirectory, compileLatexToPDF, engineVersion, configuredEngine, compilerOptionsForCacheKey } from './latex-compiler';
+import { compileMarkdownToPDF } from './markdown-compiler';
 import { createJobDirectory, materializeLegacySource, materializeSnapshot, pruneJobDirectories, removeJobDirectory } from './snapshot-materialize';
 import { loadSnapshotBundle } from '@/src/lib/workspace-snapshot';
 import { compileTmpDir, pruneSnapshots } from '@/src/lib/storage';
@@ -23,7 +24,9 @@ import { parseCompileErrors, formatCompileError, errorExcerpt } from '@/src/lib/
 // BLPOP parks its connection for the whole timeout. On a shared ioredis client that
 // delays every other command queued behind it, including the writes that publish job
 // results, so the queue read gets a connection of its own.
-const blockingRedis = redis.duplicate();
+const blockingRedis = typeof (redis as { duplicate?: () => typeof redis }).duplicate === 'function'
+  ? (redis as { duplicate: () => typeof redis }).duplicate()
+  : redis;
 
 const DEFAULT_CONCURRENCY = 2;
 const BLPOP_TIMEOUT_SECONDS = 5;
@@ -102,6 +105,23 @@ export class CompilationWorker {
       };
 
       await this.writeStatus(jobId, JobStatus.PROCESSING, { timings });
+
+      // Rolling-deploy compatibility for single-source jobs emitted by the document API.
+      if (!job.snapshotDigest && typeof job.content === 'string') {
+        if (job.format !== 'LATEX' && job.format !== 'MARKDOWN') throw new Error('Job must include a valid document format');
+        if (job.format === 'MARKDOWN') {
+          for (const asset of job.assets ?? []) {
+            if (asset.path.startsWith('/') || asset.path.split('/').includes('..')) throw new Error('Invalid asset path');
+          }
+        }
+        const result = job.format === 'MARKDOWN'
+          ? await compileMarkdownToPDF(job.content, job.slug, { timeout: 120000, assets: job.assets })
+          : await compileLatexToPDF(job.content, job.slug, { timeout: 120000 });
+        if (!result.success || !result.pdfBuffer) throw new Error(result.error || 'Compilation failed');
+        await redis.setex(`${PDF_PREFIX}${jobId}`, RESULT_TTL, result.pdfBuffer);
+        await this.markJobCompleted(jobId, { success: true, duration: result.duration }, { ...timings, completedAt: Date.now() });
+        return;
+      }
 
       const mainFile = job.mainFile || 'main.tex';
       let jobDir: string | null = null;
@@ -187,6 +207,7 @@ export class CompilationWorker {
         }
       }
       console.error('[WORKER] Failed to process job ' + jobId + ': ' + message);
+      throw error;
     } finally {
       await redis.srem(PROCESSING_SET, jobId);
       this.activeJobs.delete(jobId);

@@ -27,6 +27,7 @@ model Document {
   // Legacy single-source column. Kept in sync with the main file so existing URLs,
   // clients and rollbacks keep working until the column is explicitly dropped.
   content      String? @db.Text
+  format       DocumentFormat @default(LATEX)
   mainFilePath String  @default("main.tex")
   slug         String  @unique
   userId       String
@@ -36,10 +37,33 @@ model Document {
 
   chatSessions ChatSession[]
   files        WorkspaceFile[]
+  assets       DocumentAsset[]
 
   @@unique([userId, title])
   @@index([userId])
   @@map("documents")
+}
+
+model DocumentAsset {
+  id         String   @id @default(uuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  path       String
+  mediaType  String
+  size       Int
+  checksum   String
+  bytes      Bytes
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([documentId, path])
+  @@index([documentId])
+  @@map("document_assets")
+}
+
+enum DocumentFormat {
+  LATEX
+  MARKDOWN
 }
 
 // One file inside a workspace. Directory structure is derived from `path`, which is

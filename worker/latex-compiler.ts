@@ -316,6 +316,18 @@ export async function compileJobDirectory(input: {
   };
 }
 
+/** Legacy single-source adapter used during rolling deploys. */
+export async function compileLatexToPDF(content: string, slug: string, options: { timeout?: number } = {}) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'runes-legacy-'));
+  try {
+    await fs.writeFile(path.join(dir, 'main.tex'), content, 'utf8');
+    const outcome = await compileJobDirectory({ jobDir: dir, mainFile: 'main.tex', timeoutMs: options.timeout ?? 120000, materializeMs: 0 });
+    return { success: outcome.success, pdfBuffer: outcome.pdfBuffer, error: outcome.error, duration: outcome.timings.totalMs };
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}
+
 function timingsFor(materializeMs: number, run: EngineRun, pdfReadMs: number, totalStart: number, cacheWarm: boolean | null = null): CompilerTimings {
   return {
     materializeMs,

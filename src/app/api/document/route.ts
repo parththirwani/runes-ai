@@ -1,7 +1,9 @@
 import { prisma } from "@/src/lib/db";
 import { generateSlug } from "@/src/lib/slug";
 import { withAuth } from "@/src/lib/withAuth";
-import { documentSchema } from "@/src/schema/documentSchema";
+import { createDocumentSchema } from "@/src/schema/documentSchema";
+import { latexTemplate, markdownTemplate } from "@/src/lib/templates";
+import { plainTextExcerpt } from "@/src/lib/excerpt";
 import { NextResponse } from "next/server";
 import type { ZodError } from 'zod';
 
@@ -17,7 +19,7 @@ export const POST = withAuth(async (req, session) => {
   try {
     const body = await req.json();
 
-    const parsed = documentSchema.safeParse(body);
+    const parsed = createDocumentSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
         {
@@ -29,15 +31,20 @@ export const POST = withAuth(async (req, session) => {
     }
 
     const { title, content } = parsed.data;
+    // Explicit format is required for new clients; a missing format keeps the
+    // documented legacy default of LATEX during the transition.
+    const format = parsed.data.format ?? "LATEX";
     const userId = session.user.id;
 
     // Use transaction-safe unique constraint instead of manual check
     const slug = generateSlug(title);
+    const source = content ?? (format === "MARKDOWN" ? markdownTemplate(title.trim()) : latexTemplate(title.trim()));
 
     const document = await prisma.document.create({
       data: {
         title: title.trim(),
-        content,
+        content: source,
+        format,
         slug,
         userId,
       },
@@ -76,13 +83,21 @@ export const GET = withAuth(async (_req, session) => {
         title: true,
         slug: true,
         content: true,
+        format: true,
         createdAt: true,
         updatedAt: true,
       }, // avoid sending full content unnecessarily
     });
 
+    // Plain-text excerpts are derived server-side per format so cards never
+    // leak raw TeX commands, Markdown syntax, or HTML.
+    const documentsWithExcerpt = documents.map((doc) => ({
+      ...doc,
+      excerpt: plainTextExcerpt(doc.content ?? "", doc.format === "MARKDOWN" ? "MARKDOWN" : "LATEX"),
+    }));
+
     return NextResponse.json(
-      { documents },
+      { documents: documentsWithExcerpt },
       { status: 200 }
     );
 

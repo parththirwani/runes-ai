@@ -4,13 +4,19 @@ import Button from '../design/Button';
 interface EmptyStateProps {
   searchQuery?: string;
   onCreateDocument?: () => void;
+  /** True when documents exist but search/filter hides them all. */
+  filtered?: boolean;
 }
 
-export default function EmptyState({ searchQuery, onCreateDocument }: EmptyStateProps) {
-  if (searchQuery) {
+export default function EmptyState({ searchQuery, onCreateDocument, filtered }: EmptyStateProps) {
+  if (searchQuery || filtered) {
     return (
       <div className="text-center py-24">
-        <p className="text-gray-500 text-sm">No documents found matching "{searchQuery}"</p>
+        <p className="text-gray-500 text-sm">
+          {searchQuery
+            ? `No documents found matching "${searchQuery}"`
+            : 'No documents match the selected format filter'}
+        </p>
       </div>
     );
   }
@@ -22,7 +28,7 @@ export default function EmptyState({ searchQuery, onCreateDocument }: EmptyState
       </div>
       <h3 className="text-xl font-semibold mb-2">No documents yet</h3>
       <p className="text-gray-500 mb-8 text-sm max-w-sm mx-auto">
-        Create your first LaTeX document to get started
+        Create your first Markdown or LaTeX document to get started
       </p>
       <Button
         variant="primary"

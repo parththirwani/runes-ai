@@ -43,8 +43,5 @@ next-env.d.ts
 
 /src/generated/prisma
 
-# local storage and compile scratch
-/.data/
-/temp/
-/.bench-base/
-/.bench/
+temp/
+scripts/__pycache__/

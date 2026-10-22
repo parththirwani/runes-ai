@@ -99,7 +99,7 @@ describe('AI routes', () => {
     const response = await complete(request('/api/ai/complete', completionBody) as never, {} as never);
     expect(response.status).toBe(200);
     expect((await response.json()).insertion).toBeNull();
-    expect(mocks.findFirst).toHaveBeenCalledWith({ where: { id: 'doc1', userId: 'owner' }, select: { id: true } });
+    expect(mocks.findFirst).toHaveBeenCalledWith({ where: { id: 'doc1', userId: 'owner' }, select: { id: true, format: true } });
   });
 
   it('rejects another user for completion', async () => {
