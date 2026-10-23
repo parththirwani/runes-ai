@@ -1,6 +1,6 @@
 import { prisma } from '@/src/lib/db';
 import { withAuth } from '@/src/lib/withAuth';
-import { documentSchema, updateDocumentSchema, workspaceSaveSchema } from '@/src/schema/documentSchema';
+import { documentSchema, updateDocumentSchema, workspaceUpdateSchema } from '@/src/schema/documentSchema';
 import { compilationProducer } from '@/producer/queue';
 import { checkRateLimit } from '@/src/lib/rateLimit';
 import { NextResponse } from 'next/server';
@@ -43,6 +43,7 @@ export const GET = withAuth(async (req, session, context) => {
           id: workspace.document.id,
           title: workspace.document.title,
           slug: workspace.document.slug,
+          format: workspace.document.format,
           updatedAt: workspace.document.updatedAt,
           mainFilePath: workspace.document.mainFilePath,
           // Legacy shape: single source clients keep reading Document.content.
@@ -100,18 +101,17 @@ export const PUT = withAuth(async (req, session, context) => {
     await ensureDocumentMigrated(prisma, document.id);
 
     const updates: { title?: string } = {};
-    const parsedTitle = updateDocumentSchema.safeParse(body);
-    if (!parsedTitle.success) {
+    const parsedUpdate = workspaceUpdateSchema.safeParse(body);
+    if (!parsedUpdate.success) {
       return NextResponse.json({ message: 'Invalid input' }, { status: 400 });
     }
-    if (parsedTitle.data.title !== undefined) updates.title = parsedTitle.data.title;
+    if (parsedUpdate.data.title !== undefined) updates.title = parsedUpdate.data.title;
 
     // Multi file saves go through the workspace path; the legacy {content} shape keeps
     // working by writing the currently selected main file.
-    const filesPayload = workspaceSaveSchema.safeParse(body);
     const results: { path: string; revision: number; checksum: string }[] = [];
-    if (filesPayload.success && filesPayload.data.files) {
-      for (const file of filesPayload.data.files) {
+    if (parsedUpdate.data.files) {
+      for (const file of parsedUpdate.data.files) {
         const written = await writeTextFile({
           userId,
           slug,
@@ -127,8 +127,10 @@ export const PUT = withAuth(async (req, session, context) => {
         }
         if (written) results.push({ path: written.file.path, revision: written.file.revision, checksum: written.file.checksum });
       }
-    } else if (parsedTitle.data.content !== undefined) {
-      const written = await writeTextFile({ userId, slug, rawPath: document.mainFilePath, content: parsedTitle.data.content });
+    } else if (parsedUpdate.data.content !== undefined) {
+      const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+      if (!currentDocument) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
+      const written = await writeTextFile({ userId, slug, rawPath: currentDocument.mainFilePath, content: parsedUpdate.data.content });
       if (written && 'conflict' in written) {
         return NextResponse.json({ message: 'Another save changed the main file', file: written.conflict }, { status: 409 });
       }
@@ -177,9 +179,15 @@ export const PATCH = withAuth(async (req, session, context) => {
     await ensureDocumentMigrated(prisma, document.id);
 
     const { title, content } = parsedData.data;
-    const nextContent = content ?? document.content ?? '';
-    await writeTextFile({ userId, slug, rawPath: document.mainFilePath, content: nextContent });
-    const updated = await prisma.document.update({ where: { id: document.id }, data: { title, content: nextContent } });
+    if (content !== undefined) {
+      const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+      if (!currentDocument) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
+      await writeTextFile({ userId, slug, rawPath: currentDocument.mainFilePath, content });
+    }
+    const updated = await prisma.document.update({
+      where: { id: document.id },
+      data: content === undefined ? { title } : { title, content },
+    });
 
     return NextResponse.json({ message: 'Document updated successfully', document: updated }, { status: 200 });
   } catch (error) {
@@ -216,8 +224,9 @@ export const POST = withAuth(async (req, session, context) => {
     const workspaceAvailable = Boolean((prisma as unknown as { workspaceFile?: unknown }).workspaceFile);
     if (!workspaceAvailable) {
       let assets: Array<{ path: string; mediaType: string; data: string }> | undefined;
-      if (document.format === 'MARKDOWN' && (prisma as unknown as { documentAsset?: { findMany: Function } }).documentAsset) {
-        const rows = await (prisma as unknown as { documentAsset: { findMany: Function } }).documentAsset.findMany({
+      const legacyDocumentAsset = (prisma as unknown as { documentAsset?: typeof prisma.documentAsset }).documentAsset;
+      if (document.format === 'MARKDOWN' && legacyDocumentAsset) {
+        const rows = await legacyDocumentAsset.findMany({
           where: { documentId: document.id }, select: { path: true, mediaType: true, bytes: true }, orderBy: { path: 'asc' },
         });
         assets = rows.map((row: { path: string; mediaType: string; bytes: Uint8Array }) => ({ path: row.path, mediaType: row.mediaType, data: Buffer.from(row.bytes).toString('base64') }));
@@ -233,18 +242,54 @@ export const POST = withAuth(async (req, session, context) => {
       return NextResponse.json({ message: 'Compilation job queued', jobId, rateLimit: { remaining: rateLimitResult.remaining, resetAt: rateLimitResult.resetAt } }, { status: 202 });
     }
     await ensureDocumentMigrated(prisma, document.id);
+    const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+    if (!currentDocument) {
+      return NextResponse.json({ message: 'Document not found' }, { status: 404 });
+    }
+
+    if (currentDocument.format === 'MARKDOWN') {
+      const main = await prisma.workspaceFile.findUnique({
+        where: { documentId_path: { documentId: currentDocument.id, path: currentDocument.mainFilePath } },
+        select: { content: true, checksum: true, revision: true },
+      });
+      if (!main) return NextResponse.json({ message: 'Main Markdown file not found' }, { status: 404 });
+      const rows = await prisma.documentAsset.findMany({
+        where: { documentId: currentDocument.id },
+        select: { path: true, mediaType: true, bytes: true },
+        orderBy: { path: 'asc' },
+      });
+      const assets = rows.map((row) => ({
+        path: row.path,
+        mediaType: row.mediaType,
+        data: Buffer.from(row.bytes).toString('base64'),
+      }));
+      const jobId = await compilationProducer.addJob({
+        documentId: currentDocument.id,
+        userId,
+        slug: currentDocument.slug,
+        content: main.content ?? '',
+        format: 'MARKDOWN',
+        assets,
+      });
+      return NextResponse.json({
+        message: 'Compilation job queued',
+        jobId,
+        reused: 'new',
+        snapshot: { digest: main.checksum, mainFile: currentDocument.mainFilePath, files: [{ path: currentDocument.mainFilePath, checksum: main.checksum, revision: main.revision }] },
+      }, { status: 202 });
+    }
 
     const compiler = {
       engine: configuredEngine(),
       engineVersion: await engineVersion(),
-      mainFile: document.mainFilePath,
+      mainFile: currentDocument.mainFilePath,
       options: compilerOptionsForCacheKey(),
     };
 
     const snapshot = await createCompileSnapshot({
-      documentId: document.id,
+      documentId: currentDocument.id,
       userId,
-      mainFile: document.mainFilePath,
+      mainFile: currentDocument.mainFilePath,
       compiler,
     });
 
@@ -273,9 +318,9 @@ export const POST = withAuth(async (req, session, context) => {
     }
 
     const { jobId, reused } = await compilationProducer.addSnapshotJob({
-      documentId: document.id,
+      documentId: currentDocument.id,
       userId,
-      slug: document.slug,
+      slug: currentDocument.slug,
       mainFile: snapshot.manifest.mainFile,
       digest: snapshot.digest,
       files: snapshot.manifest.files,

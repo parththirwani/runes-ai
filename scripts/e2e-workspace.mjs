@@ -6,7 +6,10 @@
 // Exercises the real HTTP API, the real Redis queue, the real worker and the real
 // Tectonic engine. Exits non-zero with the failed assertion on the first problem.
 
+import { createHmac, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { loadEnvFile } from 'node:process';
+import pg from 'pg';
 import { makePng } from './bench/fixtures.mjs';
 
 const args = process.argv.slice(2);
@@ -17,6 +20,7 @@ const flag = (name, fallback) => {
 const BASE = flag('base', process.env.BENCH_BASE || 'http://127.0.0.1:3000');
 const OUT = flag('out', '/tmp/e2e-workspace');
 const TIMEOUT_MS = Number(flag('timeout', 120000));
+const EXPECT_AI_UNAVAILABLE = args.includes('--expect-ai-unavailable');
 
 if (existsSync(OUT)) rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
@@ -38,7 +42,7 @@ function check(name, condition, detail = '') {
 async function api(p, init = {}, withCookie = true) {
   const headers = {
     ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
-    ...(withCookie && cookie ? { Cookie: cookie } : {}),
+    ...(withCookie && cookie ? { Cookie: typeof withCookie === 'string' ? withCookie : cookie } : {}),
     ...(init.headers || {}),
   };
   const res = await fetch(`${BASE}${p}`, { ...init, headers });
@@ -50,6 +54,31 @@ async function api(p, init = {}, withCookie = true) {
     data = text && type.includes('json') ? JSON.parse(text) : text;
   }
   return { status: res.status, data, headers: res.headers };
+}
+
+async function otherUserCookie() {
+  if (!process.env.AUTH_SECRET && !process.env.NEXTAUTH_SECRET && existsSync('.env')) loadEnvFile('.env');
+  const secret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
+  if (!secret) throw new Error('Cross-user check needs AUTH_SECRET or NEXTAUTH_SECRET');
+  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  let id;
+  try {
+    const email = 'e2e-workspace-other@runes-ai.test';
+    await client.query('INSERT INTO users (id, email, "firstName", "lastName", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, NOW(), NOW()) ON CONFLICT (email) DO NOTHING', [randomUUID(), email, 'Other', 'Test']);
+    id = (await client.query('SELECT id FROM users WHERE email = $1', [email])).rows[0].id;
+  } finally {
+    await client.end();
+  }
+  const data = Buffer.from(JSON.stringify({
+    id,
+    email: 'e2e-workspace-other@runes-ai.test',
+    name: 'Other test user',
+    picture: null,
+    issuedAt: Date.now(),
+  })).toString('base64url');
+  const signature = createHmac('sha256', secret).update(data).digest('base64url');
+  return `dev-session=${data}.${signature}`;
 }
 
 function expectApi(res, expected, what) {
@@ -333,6 +362,131 @@ async function main() {
   check('anonymous cannot read a job', anonJob.status === 401, `status ${anonJob.status}`);
   const anonPdf = await api(`/api/pdf/${first.data.jobId}`, {}, false);
   check('anonymous cannot read a pdf', anonPdf.status === 401, `status ${anonPdf.status}`);
+
+  const aiRequests = [
+    ['/api/chat', { documentId: legacy.id, message: 'Improve the prose' }],
+    ['/api/ai/complete', { documentId: legacy.id, prefix: 'Legacy body', suffix: '' }],
+    ['/api/ai/paraphrase', { documentId: legacy.id, selectedText: 'Legacy body', before: ' ', after: ' ' }],
+  ];
+  for (const [path, body] of aiRequests) {
+    const res = await api(path, { method: 'POST', body: JSON.stringify(body) }, false);
+    check(`anonymous denied ${path}`, res.status === 401, `status ${res.status}`);
+  }
+
+  // A valid session for a different user must not expose owned resources.
+  const otherCookie = await otherUserCookie();
+  expectApi(await api('/api/document', {}, false), 401, 'anonymous cannot list documents');
+  expectApi(await api('/api/document', {
+    method: 'POST', body: JSON.stringify({ title: `anonymous ${nonce()}` }),
+  }, false), 401, 'anonymous cannot create documents');
+  const otherTitle = `other user ${nonce()}`;
+  const otherCreated = await api('/api/document', {
+    method: 'POST', body: JSON.stringify({ title: otherTitle, format: 'MARKDOWN' }),
+  }, otherCookie);
+  expectApi(otherCreated, 201, 'other user creates their own document');
+  const otherList = await api('/api/document', {}, otherCookie);
+  expectApi(otherList, 200, 'other user lists documents');
+  check('other user list contains only their own test document',
+    otherList.data.documents.some((doc) => doc.slug === otherCreated.data.slug) &&
+    !otherList.data.documents.some((doc) => doc.slug === guardSlug));
+  const ownerList = await api('/api/document');
+  expectApi(ownerList, 200, 'owner lists documents');
+  check('owner list excludes other user document',
+    ownerList.data.documents.some((doc) => doc.slug === guardSlug) &&
+    !ownerList.data.documents.some((doc) => doc.slug === otherCreated.data.slug));
+  expectApi(await api(`/api/document/${otherCreated.data.slug}`, { method: 'DELETE' }, otherCookie),
+    200, 'other user removes their test document');
+  const ownedPaths = [
+    `/api/document/${guardSlug}`,
+    `/api/document/${guardSlug}/file?path=main.tex`,
+    `/api/document/${guardSlug}/asset?path=figures/plot.png`,
+    `/api/job/${first.data.jobId}`,
+    `/api/pdf/${first.data.jobId}`,
+  ];
+  for (const p of ownedPaths) {
+    const res = await api(p, {}, otherCookie);
+    check(`other user denied ${p.split('/').pop()}`, res.status === 404, `status ${res.status}`);
+  }
+  const otherCompile = await api(`/api/document/${guardSlug}`, { method: 'POST' }, otherCookie);
+  check('other user cannot queue a compile', otherCompile.status === 404, `status ${otherCompile.status}`);
+  const otherWrite = await api(`/api/document/${guardSlug}/file`, {
+    method: 'PUT', body: JSON.stringify({ path: 'main.tex', content: 'overwritten' }),
+  }, otherCookie);
+  check('other user cannot edit a file', otherWrite.status === 404, `status ${otherWrite.status}`);
+  for (const [path, body] of aiRequests) {
+    const res = await api(path, { method: 'POST', body: JSON.stringify(body) }, otherCookie);
+    check(`other user denied ${path}`, res.status === 404, `status ${res.status}`);
+  }
+
+  // Input errors and missing provider configuration should have stable API
+  // responses for a real authenticated session, without reaching the provider.
+  for (const [path, body] of aiRequests) {
+    expectApi(await api(path, { method: 'POST', body: '{' }), 400, `${path} rejects malformed JSON`);
+    expectApi(await api(path, { method: 'POST', body: JSON.stringify({ ...body, documentId: randomUUID() }) }),
+      404, `${path} rejects an unknown document`);
+    if (EXPECT_AI_UNAVAILABLE) {
+      expectApi(await api(path, { method: 'POST', body: JSON.stringify(body) }),
+        503, `${path} reports missing AI provider`);
+    }
+  }
+
+  // Check the remaining workspace mutations, including routes that do not
+  // return document bytes. A failed delete must leave the document intact.
+  const guardedPath = `/api/document/${guardSlug}`;
+  const uploadForm = () => {
+    const form = new FormData();
+    form.append('path', 'figures/forbidden.png');
+    form.append('file', new Blob([png], { type: 'image/png' }), 'forbidden.png');
+    return form;
+  };
+  const mutationRequests = [
+    ['update document', () => ({ path: guardedPath, init: { method: 'PUT', body: JSON.stringify({ title: 'Taken over' }) } })],
+    ['patch document', () => ({ path: guardedPath, init: { method: 'PATCH', body: JSON.stringify({ title: 'Taken over' }) } })],
+    ['delete document', () => ({ path: guardedPath, init: { method: 'DELETE' } })],
+    ['delete file', () => ({ path: `${guardedPath}/file?path=chapters/methods.tex`, init: { method: 'DELETE' } })],
+    ['move file', () => ({ path: `${guardedPath}/move`, init: { method: 'POST', body: JSON.stringify({ from: 'chapters/methods.tex', to: 'chapters/stolen.tex' }) } })],
+    ['select main file', () => ({ path: `${guardedPath}/main`, init: { method: 'POST', body: JSON.stringify({ path: 'chapters/methods.tex' }) } })],
+    ['upload file', () => ({ path: `${guardedPath}/upload`, init: { method: 'POST', body: uploadForm() } })],
+  ];
+  for (const [label, auth, expected] of [['anonymous', false, 401], ['other user', otherCookie, 404]]) {
+    for (const [action, request] of mutationRequests) {
+      const { path, init } = request();
+      expectApi(await api(path, init, auth), expected, `${label} cannot ${action}`);
+    }
+  }
+  const guarded = await api(guardedPath);
+  expectApi(guarded, 200, 'owner retains document after denied mutations');
+  check('denied mutations leave title and main file unchanged', guarded.data.document.title !== 'Taken over' && guarded.data.document.mainFilePath === 'main.tex');
+  check('denied mutations leave workspace files unchanged', guarded.data.document.files.some((f) => f.path === 'chapters/methods.tex') && !guarded.data.document.files.some((f) => f.path === 'chapters/stolen.tex' || f.path === 'figures/forbidden.png'));
+
+  // Markdown assets have separate list, upload, byte-serving and delete routes.
+  const markdown = await api('/api/document', {
+    method: 'POST', body: JSON.stringify({ title: `assets ${nonce()}`, format: 'MARKDOWN' }),
+  });
+  expectApi(markdown, 201, 'create Markdown asset boundary document');
+  const assetsPath = `/api/document/${markdown.data.slug}/assets`;
+  const assetForm = () => {
+    const form = new FormData();
+    form.append('file', new Blob([png], { type: 'image/png' }), 'boundary.png');
+    return form;
+  };
+  const assetUpload = await api(assetsPath, { method: 'POST', body: assetForm() });
+  expectApi(assetUpload, 201, 'upload Markdown boundary asset');
+  const assetPath = assetUpload.data.asset.url;
+  expectApi(await api(assetsPath), 200, 'owner lists Markdown assets');
+  const ownerAsset = await api(assetPath);
+  expectApi(ownerAsset, 200, 'owner downloads Markdown asset');
+  check('Markdown asset bytes match upload', ownerAsset.data.equals(png));
+
+  for (const [label, auth, expected] of [['anonymous', false, 401], ['other user', otherCookie, 404]]) {
+    expectApi(await api(assetsPath, {}, auth), expected, `${label} cannot list Markdown assets`);
+    expectApi(await api(assetsPath, { method: 'POST', body: assetForm() }, auth), expected, `${label} cannot upload Markdown assets`);
+    expectApi(await api(assetPath, {}, auth), expected, `${label} cannot download Markdown assets`);
+    expectApi(await api(assetPath, { method: 'DELETE' }, auth), expected, `${label} cannot delete Markdown assets`);
+  }
+  expectApi(await api(assetPath, { method: 'DELETE' }), 200, 'owner deletes Markdown asset');
+  check('deleted Markdown asset cannot be downloaded', (await api(assetPath)).status === 404);
+  expectApi(await api(`/api/document/${markdown.data.slug}`, { method: 'DELETE' }), 200, 'delete Markdown boundary document');
 
   // 12. Autosave of unchanged bytes must not create a new compile.
   const idemSlug = await buildWorkspace(`idem${marker}`);

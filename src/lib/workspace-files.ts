@@ -45,7 +45,7 @@ export type WorkspaceFileRecord = {
 export type WorkspaceFileContent = WorkspaceFileRecord & { content: string | null; binary: boolean };
 
 export type WorkspaceTree = {
-  document: { id: string; slug: string; title: string; mainFilePath: string; updatedAt: Date };
+  document: { id: string; slug: string; title: string; format: 'LATEX' | 'MARKDOWN'; mainFilePath: string; updatedAt: Date };
   files: WorkspaceFileRecord[];
   tree: TreeNode[];
 };
@@ -67,30 +67,31 @@ const publicFile = (file: {
 });
 
 /**
- * Creates main.tex for documents that still only have the legacy content column.
+ * Creates the format's main file for documents that still only have the legacy content column.
  * Safe to call on every read: it only acts when no file exists yet.
  */
 export async function ensureDocumentMigrated(client: typeof prisma, documentId: string): Promise<void> {
   const fileCount = await client.workspaceFile.count({ where: { documentId } });
   if (fileCount > 0) return;
 
-  const document = await client.document.findUnique({ where: { id: documentId }, select: { content: true } });
+  const document = await client.document.findUnique({ where: { id: documentId }, select: { content: true, format: true } });
   const content = document?.content ?? '';
   const bytes = Buffer.from(content, 'utf-8');
+  const mainFile = document?.format === 'MARKDOWN' ? 'main.md' : DEFAULT_MAIN_FILE;
 
   await client.workspaceFile.create({
     data: {
       documentId,
-      path: DEFAULT_MAIN_FILE,
-      kind: 'tex',
-      mimeType: 'text/x-tex',
+      path: mainFile,
+      kind: document?.format === 'MARKDOWN' ? 'other' : 'tex',
+      mimeType: document?.format === 'MARKDOWN' ? 'text/markdown' : 'text/x-tex',
       sizeBytes: bytes.byteLength,
       checksum: checksum(bytes),
       revision: 1,
       content,
     },
   });
-  await client.document.update({ where: { id: documentId }, data: { mainFilePath: DEFAULT_MAIN_FILE } });
+  await client.document.update({ where: { id: documentId }, data: { mainFilePath: mainFile } });
 }
 
 export async function getOwnedDocument(userId: string, slug: string) {
@@ -103,6 +104,10 @@ export async function readWorkspaceTree(userId: string, slug: string): Promise<W
   const document = await getOwnedDocument(userId, slug);
   if (!document) return null;
   await ensureDocumentMigrated(prisma, document.id);
+  // Migration can replace the legacy main.tex pointer with main.md. Prisma returns
+  // distinct row objects, so the document fetched before migration is stale.
+  const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+  if (!currentDocument) return null;
 
   const files = await prisma.workspaceFile.findMany({
     where: { documentId: document.id },
@@ -111,11 +116,12 @@ export async function readWorkspaceTree(userId: string, slug: string): Promise<W
 
   return {
     document: {
-      id: document.id,
-      slug: document.slug,
-      title: document.title,
-      mainFilePath: document.mainFilePath,
-      updatedAt: document.updatedAt,
+      id: currentDocument.id,
+      slug: currentDocument.slug,
+      title: currentDocument.title,
+      format: currentDocument.format,
+      mainFilePath: currentDocument.mainFilePath,
+      updatedAt: currentDocument.updatedAt,
     },
     files: files.map(publicFile),
     tree: buildTree(files.map((file) => file.path)),
@@ -210,6 +216,8 @@ export async function writeTextFile(input: {
   const document = await getOwnedDocument(input.userId, input.slug);
   if (!document) return null;
   await ensureDocumentMigrated(prisma, document.id);
+  const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+  if (!currentDocument) return null;
 
   const path = assertSafeWorkspacePath(input.rawPath);
   const kind = kindForPath(path);
@@ -234,7 +242,7 @@ export async function writeTextFile(input: {
 
   if (!existing) await assertNoCollision(prisma, document.id, path);
 
-  const isMain = pathsCollide(path, document.mainFilePath);
+  const isMain = pathsCollide(path, currentDocument.mainFilePath);
   const file = await prisma.workspaceFile.upsert({
     where: { documentId_path: { documentId: document.id, path } },
     create: {
@@ -322,8 +330,11 @@ export async function uploadFile(input: {
 export async function deleteFile(userId: string, slug: string, rawPath: string): Promise<'deleted' | 'notfound' | 'mainfile' | null> {
   const document = await getOwnedDocument(userId, slug);
   if (!document) return null;
+  await ensureDocumentMigrated(prisma, document.id);
+  const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+  if (!currentDocument) return null;
   const path = assertSafeWorkspacePath(rawPath);
-  if (pathsCollide(path, document.mainFilePath)) return 'mainfile';
+  if (pathsCollide(path, currentDocument.mainFilePath)) return 'mainfile';
 
   const existing = await prisma.workspaceFile.findUnique({ where: { documentId_path: { documentId: document.id, path } } });
   if (!existing) return 'notfound';
@@ -341,12 +352,14 @@ export async function moveFile(input: {
   const document = await getOwnedDocument(input.userId, input.slug);
   if (!document) return null;
   await ensureDocumentMigrated(prisma, document.id);
+  const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+  if (!currentDocument) return null;
 
   const from = assertSafeWorkspacePath(input.from, 'from');
   const to = assertSafeWorkspacePath(input.to, 'to');
   if (from === to) {
     const same = await prisma.workspaceFile.findUnique({ where: { documentId_path: { documentId: document.id, path: from } } });
-    return same ? { file: publicFile(same), mainFilePath: document.mainFilePath } : 'notfound';
+    return same ? { file: publicFile(same), mainFilePath: currentDocument.mainFilePath } : 'notfound';
   }
 
   const source = await prisma.workspaceFile.findUnique({ where: { documentId_path: { documentId: document.id, path: from } } });
@@ -362,8 +375,8 @@ export async function moveFile(input: {
     data: { path: to, kind, revision: { increment: 1 } },
   });
 
-  let mainFilePath = document.mainFilePath;
-  if (pathsCollide(from, document.mainFilePath)) {
+  let mainFilePath = currentDocument.mainFilePath;
+  if (pathsCollide(from, currentDocument.mainFilePath)) {
     mainFilePath = to;
     await prisma.document.update({ where: { id: document.id }, data: { mainFilePath: to, content: file.content } });
   }
@@ -410,10 +423,15 @@ export async function resolveMainSource(document: {
   content?: string | null;
 }): Promise<string> {
   await ensureDocumentMigrated(prisma, document.id);
-  const mainPath = document.mainFilePath && document.mainFilePath.length > 0 ? document.mainFilePath : DEFAULT_MAIN_FILE;
+  // The caller's document row may predate migration or a later main-file move.
+  const currentDocument = await prisma.document.findUnique({
+    where: { id: document.id },
+    select: { mainFilePath: true, content: true },
+  });
+  const mainPath = currentDocument?.mainFilePath || DEFAULT_MAIN_FILE;
   const file = await prisma.workspaceFile.findUnique({
     where: { documentId_path: { documentId: document.id, path: mainPath } },
     select: { content: true },
   });
-  return file?.content ?? document.content ?? '';
+  return file?.content ?? currentDocument?.content ?? document.content ?? '';
 }

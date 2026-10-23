@@ -155,15 +155,17 @@ export default function WorkspacePanel(props: Props) {
             {file?.kind === 'tex' && !isMain && (
               <IconButton
                 icon={<Star className="w-3 h-3" />}
+                label="Set as main file"
                 variant="ghost"
                 size="sm"
                 onClick={() => runAction(() => onChooseMain(node.path))}
                 tooltip="Set as main file"
               />
             )}
-            <IconButton icon={<Pencil className="w-3 h-3" />} variant="ghost" size="sm" onClick={() => setModal({ kind: 'rename', from: node.path })} tooltip="Rename" />
+            <IconButton icon={<Pencil className="w-3 h-3" />} label="Rename file" variant="ghost" size="sm" onClick={() => setModal({ kind: 'rename', from: node.path })} tooltip="Rename" />
             <IconButton
               icon={<Trash2 className="w-3 h-3" />}
+              label="Delete file"
               variant="ghost"
               size="sm"
               onClick={() => setModal({ kind: 'delete', path: node.path })}
@@ -195,7 +197,7 @@ export default function WorkspacePanel(props: Props) {
             Outline
           </button>
         </div>
-        <IconButton icon={<X className="w-4 h-4" />} variant="ghost" size="sm" onClick={onClose} tooltip="Close panel" />
+        <IconButton icon={<X className="w-4 h-4" />} label="Close panel" variant="ghost" size="sm" onClick={onClose} tooltip="Close panel" />
       </div>
 
       {(error || actionError) && (
@@ -210,7 +212,7 @@ export default function WorkspacePanel(props: Props) {
         {tab === 'outline' ? (
           outline
         ) : tree.length === 0 ? (
-          <p className="px-2 py-3 text-xs text-gray-500">This workspace is empty. Create main.tex to start compiling.</p>
+          <p className="px-2 py-3 text-xs text-meta">This workspace is empty. Create a main file to start compiling.</p>
         ) : (
           <div role="tree" aria-label="Workspace files">{renderNodes(tree, 0)}</div>
         )}

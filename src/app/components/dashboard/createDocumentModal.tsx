@@ -76,7 +76,7 @@ export default function CreateDocumentModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Create New Document"
+      title="Create document"
       description="Choose a name and a format. The format sets up the right editor and PDF pipeline."
       size="md"
       footer={
@@ -92,7 +92,7 @@ export default function CreateDocumentModal({
     >
       <div className="space-y-5">
         <div>
-          <label htmlFor="new-document-title" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="new-document-title" className="mb-1 block text-sm font-medium text-foreground">
             Title
           </label>
           <input
@@ -114,34 +114,34 @@ export default function CreateDocumentModal({
             maxLength={30}
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? 'new-document-title-error' : undefined}
-            className={`w-full px-4 py-2.5 text-black border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
-              error ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-emerald-500'
+            className={`w-full rounded-lg border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-meta focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-colors ${
+              error ? 'border-destructive' : 'border-border focus-visible:border-primary'
             }`}
           />
           <div className="flex items-center justify-between mt-2">
             {error ? (
-              <p id="new-document-title-error" role="alert" className="text-sm text-red-600">
+              <p id="new-document-title-error" role="alert" className="text-sm text-destructive">
                 {error}
               </p>
             ) : (
               <div />
             )}
-            <p className="text-xs text-gray-500">{title.length}/30</p>
+            <p className="font-mono text-xs text-meta">{title.length}/30</p>
           </div>
         </div>
 
         <fieldset>
-          <legend className="text-sm font-medium text-gray-700 mb-2">Format</legend>
+          <legend className="mb-2 text-sm font-medium text-foreground">Format</legend>
           <div role="radiogroup" aria-label="Document format" className="space-y-2">
             {FORMAT_CHOICES.map((choice) => {
               const selected = format === choice.id;
               return (
                 <label
                   key={choice.id}
-                  className={`block cursor-pointer rounded-lg border-2 p-3 transition-colors ${
+                  className={`block cursor-pointer rounded-lg border p-3 transition-colors ${
                     selected
-                      ? 'border-emerald-500 bg-emerald-50'
-                      : 'border-gray-200 hover:border-gray-300'
+                      ? 'border-primary bg-primary-subtle'
+                      : 'border-border bg-surface-raised/40 hover:border-primary-border'
                   }`}
                 >
                   <span className="flex items-start gap-3">
@@ -151,17 +151,17 @@ export default function CreateDocumentModal({
                       value={choice.id}
                       checked={selected}
                       onChange={() => setFormat(choice.id)}
-                      className="mt-1 h-4 w-4 accent-emerald-600"
+                      className="mt-1 h-4 w-4 accent-primary"
                     />
                     <span>
-                      <span className="block text-sm font-semibold text-gray-900">
+                      <span className="block text-sm font-semibold text-foreground">
                         {choice.name}
-                        <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-mono text-gray-600">
+                        <span className="ml-2 rounded bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                           .{choice.id === 'MARKDOWN' ? 'md' : 'tex'}
                         </span>
                       </span>
                       <span className="sr-only">{choice.caption}</span>
-                      <span className="block text-xs text-gray-500 mt-0.5">{choice.hint}</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">{choice.hint}</span>
                     </span>
                   </span>
                 </label>

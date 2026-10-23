@@ -210,6 +210,8 @@ export default function MonacoEditorWrapper({
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof import('monaco-editor') | null>(null);
   const snippetProviderRef = useRef<{ dispose(): void } | null>(null);
+  const markdownConfigRef = useRef<{ dispose(): void } | null>(null);
+  const markdownConfigListenerRef = useRef<{ dispose(): void } | null>(null);
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -223,9 +225,39 @@ export default function MonacoEditorWrapper({
 
     snippetProviderRef.current?.dispose();
     snippetProviderRef.current = null;
+    markdownConfigListenerRef.current?.dispose();
+    markdownConfigListenerRef.current = null;
+    markdownConfigRef.current?.dispose();
+    markdownConfigRef.current = null;
 
     if (language === 'markdown') {
-      // Markdown ships with Monaco; add only the local snippet completions.
+      const configureMarkdown = () => {
+        markdownConfigRef.current?.dispose();
+        markdownConfigRef.current = monaco.languages.setLanguageConfiguration('markdown', {
+          autoClosingPairs: [
+            { open: '"', close: '"' },
+            { open: '`', close: '`' },
+            { open: '{', close: '}' },
+            { open: '[', close: ']' },
+            { open: '(', close: ')' },
+          ],
+          surroundingPairs: [
+            { open: '"', close: '"' },
+            { open: '`', close: '`' },
+            { open: '{', close: '}' },
+            { open: '[', close: ']' },
+            { open: '(', close: ')' },
+          ],
+        });
+      };
+      configureMarkdown();
+      // Monaco loads its built-in Markdown configuration asynchronously and
+      // replaces early overrides. Apply ours again after that update.
+      markdownConfigListenerRef.current = editorInstance.onDidChangeModelLanguageConfiguration(() => {
+        markdownConfigListenerRef.current?.dispose();
+        markdownConfigListenerRef.current = null;
+        configureMarkdown();
+      });
       snippetProviderRef.current = createMarkdownCompletionProvider(monaco);
     } else {
       // Register LaTeX language if not already registered
@@ -266,6 +298,10 @@ export default function MonacoEditorWrapper({
   useEffect(() => () => {
     snippetProviderRef.current?.dispose();
     snippetProviderRef.current = null;
+    markdownConfigListenerRef.current?.dispose();
+    markdownConfigListenerRef.current = null;
+    markdownConfigRef.current?.dispose();
+    markdownConfigRef.current = null;
   }, []);
 
   if (!isMounted) {
@@ -304,6 +340,7 @@ export default function MonacoEditorWrapper({
           matchBrackets: 'always',
           autoClosingBrackets: 'always',
           autoClosingQuotes: 'always',
+          inlineSuggest: { enabled: true },
           formatOnPaste: true,
           suggestOnTriggerCharacters: true,
           quickSuggestions: false,

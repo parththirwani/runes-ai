@@ -146,7 +146,7 @@ Please analyze the document and return the changes in the required JSON format.`
     // Extract text from content items
     contentString = content
       .filter((item) => item.type === "text")
-      .map((item) => (item as any).text)
+      .map((item) => item.text)
       .join("");
   } else {
     throw new Error("Unexpected content type from AI response");

@@ -7,6 +7,7 @@ import WorkspacePanel from './WorkspacePanel';
 import FileTabs from './FileTabs';
 import MonacoEditorWrapper from './MonacoEditorWrapper';
 import PDFPreview from './PDFPreview';
+import MarkdownPreviewPane from './MarkdownPreviewPane';
 import DiffReview from './DiffReview';
 import AiWorkspacePanel from './AiWorkspacePanel';
 import InputModal from '../design/InputModal';
@@ -15,14 +16,16 @@ import Button from '../design/Button';
 import { JobStatus } from '@/src/types/compilation';
 import { EditProposal, verifyAcceptance, checkStale, generateProposalId } from '@/src/lib/proposal-engine';
 import { analyzeSelection, scanContext, selectionCutsWord } from '@/src/lib/latex-utils';
+import { analyzeMarkdownSelection, markdownLineIsProse, scanMarkdownContext } from '@/src/lib/markdown-utils';
 import { buildLatexOutline } from '@/src/lib/latex-outline';
+import { buildMarkdownOutline } from '@/src/lib/markdown-outline';
 import { useWorkspace } from '@/src/hooks/useWorkspace';
 import { missingReferencesFrom, workspaceClient } from '@/src/lib/workspace-client';
 import type { WorkspaceDocumentPayload } from '@/src/lib/workspace-types';
 import type { CompileDiagnostic } from '@/src/lib/compile-errors';
 import type { MissingReference } from '@/src/lib/workspace-types';
-import type { editor } from 'monaco-editor';
-import { Wand2, RefreshCw, FileWarning } from 'lucide-react';
+import type { editor, languages } from 'monaco-editor';
+import { Wand2, RefreshCw, FileWarning, ImagePlus } from 'lucide-react';
 
 type ViewMode = 'editor' | 'split' | 'preview';
 
@@ -76,6 +79,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   // A brand new document is a one file workspace that has not been persisted yet.
   const syntheticDocument = useMemo<WorkspaceDocumentPayload>(() => initialDocument ?? {
     id: 'new',
+    format: 'LATEX',
     title: 'Untitled Document',
     slug: '',
     content: initialCode,
@@ -111,8 +115,12 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const [diagnostics, setDiagnostics] = useState<CompileDiagnostic[]>([]);
   const [missingRefs, setMissingRefs] = useState<MissingReference[]>([]);
   const [compileInfo, setCompileInfo] = useState<string | null>(null);
+  const [imageUploadStatus, setImageUploadStatus] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   const documentId = syntheticDocument.id;
+  const isMarkdown = syntheticDocument.format === 'MARKDOWN';
 
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [compilationStatus, setCompilationStatus] = useState('');
@@ -159,8 +167,8 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const fileName = activePath || 'main.tex';
 
   const outline = useMemo(
-    () => buildLatexOutline(code, activePath ? activePath.split('/').pop() || 'main.tex' : 'main.tex', currentLineNumber),
-    [code, activePath, currentLineNumber],
+    () => (isMarkdown ? buildMarkdownOutline : buildLatexOutline)(code, activePath ? activePath.split('/').pop() || workspace.mainFilePath : workspace.mainFilePath, currentLineNumber),
+    [code, activePath, currentLineNumber, isMarkdown, workspace.mainFilePath],
   );
 
   // --- Dirty tracking ---
@@ -278,7 +286,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       const start = model.getOffsetAt(selection.getStartPosition());
       const end = model.getOffsetAt(selection.getEndPosition());
       const selected = full.slice(start, end);
-      const analysis = analyzeSelection(selected, scanContext(full, start));
+      const analysis = isMarkdown
+        ? analyzeMarkdownSelection(selected, scanMarkdownContext(full, start))
+        : analyzeSelection(selected, scanContext(full, start));
       setParaphraseDisabledReason(
         !analysis.eligible ? analysis.reason || 'Unsupported selection' :
         selectionCutsWord(full.slice(0, start), selected, full.slice(end)) ? 'Select complete words' : null,
@@ -293,8 +303,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       completeProviderDisposableRef.current = null;
     }
 
-    const provider = monaco.languages.registerInlineCompletionsProvider('latex', {
-      provideInlineCompletions: async (model, position, _context, token) => {
+    const provideInlineCompletions: languages.InlineCompletionsProvider['provideInlineCompletions'] = async (model, position, _context, token) => {
         if (!autocompleteEnabledRef.current || proposalRef.current || token.isCancellationRequested || model !== editorInstance.getModel()) return { items: [] };
 
         const requestId = ++completeRequestIdRef.current;
@@ -302,8 +311,13 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
         const offset = model.getOffsetAt(position);
         const fullSource = model.getValue();
-        const ctx = scanContext(fullSource, offset);
-        if (!ctx.isInDocument || ctx.isInPreamble || ctx.isInMath || ctx.isInVerbatim || ctx.isInComment || ctx.isInCommandName || ctx.isInCommandArg) {
+        const allowed = isMarkdown
+          ? !scanMarkdownContext(fullSource, offset).inProtected && markdownLineIsProse(fullSource.slice(fullSource.lastIndexOf('\n', offset - 1) + 1, offset))
+          : (() => {
+            const ctx = scanContext(fullSource, offset);
+            return ctx.isInDocument && !ctx.isInPreamble && !ctx.isInMath && !ctx.isInVerbatim && !ctx.isInComment && !ctx.isInCommandName && !ctx.isInCommandArg;
+          })();
+        if (!allowed) {
           return { items: [] };
         }
 
@@ -387,12 +401,13 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
             }
           }, 400);
         });
-      },
-      disposeInlineCompletions: () => {},
-    });
+    };
 
-    completeProviderDisposableRef.current = provider;
-  }, [documentId]);
+    completeProviderDisposableRef.current = monaco.languages.registerInlineCompletionsProvider(
+      isMarkdown ? 'markdown' : 'latex',
+      { provideInlineCompletions, disposeInlineCompletions: () => {} },
+    );
+  }, [documentId, isMarkdown]);
 
   // --- Paraphrase action: always operates on the file that is open right now ---
   const handleParaphrase = useCallback(async (tone: string = 'Clearer') => {
@@ -415,8 +430,10 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     const endOffset = model.getOffsetAt({ lineNumber: selection.endLineNumber, column: selection.endColumn });
     const selectedText = model.getValue().slice(startOffset, endOffset);
 
-    const ctx = scanContext(model.getValue(), startOffset);
-    const analysis = analyzeSelection(selectedText, ctx);
+    const source = model.getValue();
+    const analysis = isMarkdown
+      ? analyzeMarkdownSelection(selectedText, scanMarkdownContext(source, startOffset))
+      : analyzeSelection(selectedText, scanContext(source, startOffset));
     if (!analysis.eligible || selectionCutsWord(model.getValue().slice(0, startOffset), selectedText, model.getValue().slice(endOffset))) {
       setParaphraseDisabledReason(analysis.reason || 'Select complete words');
       return;
@@ -515,7 +532,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       }
       setIsAiLoading(false);
     }
-  }, [documentId]);
+  }, [documentId, isMarkdown]);
 
   // --- Accept proposal (one undoable edit in the active file only) ---
   const handleAccept = useCallback(() => {
@@ -677,11 +694,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         setCompileError('Failed to save the workspace. Please try saving manually.');
         return;
       }
-      if (workspace.dirtyPaths.length > 0) {
-        setCompileError('Source changed while saving. Please compile again.');
-        setCompilationStatus('');
-        return;
-      }
     }
 
     setCompileError(null);
@@ -731,6 +743,21 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     document.body.removeChild(link);
   };
 
+  const handleDownloadSource = async () => {
+    const main = workspace.filesByPath[workspace.mainFilePath];
+    const source = main?.loaded
+      ? main.content
+      : (await workspaceClient.loadFile(slug, workspace.mainFilePath)).content;
+    const url = URL.createObjectURL(new Blob([source], { type: 'text/markdown;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${slug || 'document'}.md`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
   const handleTitleSubmit = (newTitle: string) => {
     setTitle(newTitle);
     setShowTitleModal(false);
@@ -775,6 +802,31 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     }
   }, [activePath, proposal, isAiLoading, workspace]);
 
+  const handleImageUpload = useCallback(async (file: File) => {
+    const editor = editorRef.current;
+    const selection = editor?.getSelection();
+    if (!slug || !editor || !selection || !activePath?.toLowerCase().endsWith('.md')) return;
+    setIsUploadingImage(true);
+    setImageUploadStatus(null);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const response = await fetch(`/api/document/${encodeURIComponent(slug)}/assets`, { method: 'POST', body: form });
+      const result = await response.json();
+      if (!response.ok || !result.asset?.url) throw new Error(result.message || 'Image upload failed');
+      const alt = result.asset.path.split('/').pop().replace(/\.[^.]+$/, '').replace(/[\[\]\\]/g, '');
+      editor.pushUndoStop();
+      editor.executeEdits('insert-image', [{ range: selection, text: `![${alt}](${result.asset.url})`, forceMoveMarkers: true }]);
+      editor.pushUndoStop();
+      editor.focus();
+      setImageUploadStatus(`Inserted ${file.name}`);
+    } catch (error) {
+      setImageUploadStatus(error instanceof Error ? error.message : 'Image upload failed');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  }, [activePath, slug]);
+
   // --- Cleanup ---
   useEffect(() => {
     const paraphraseRequestId = paraphraseRequestIdRef;
@@ -815,6 +867,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         isCompiling={isCompiling}
         hasUnsavedChanges={hasUnsavedChanges}
         compilationStatus={statusLine}
+        format={syntheticDocument.format}
+        fileName={isMarkdown ? `${slug || 'document'}.md` : undefined}
+        onDownloadSource={isMarkdown ? handleDownloadSource : undefined}
       />
 
       <div className="flex-1 relative overflow-hidden">
@@ -850,7 +905,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                 </button>
               )) : (
                 <p className="px-3 py-4 text-xs leading-5 text-gray-500">
-                  Use \section, \subsection, or related headings to build a navigable outline of the open file.
+                  {isMarkdown ? 'Use Markdown headings to build an outline of the open file.' : 'Use \\section and related headings to build an outline of the open file.'}
                 </p>
               )}
             </div>
@@ -875,6 +930,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           onCompile={handleCompile}
           onSave={() => { void handleSave(); }}
           onDownloadPdf={() => { void handleDownload(); }}
+          isMarkdown={isMarkdown}
         />
 
         <div className={`h-full flex transition-[padding] duration-300 ${showSettings ? 'pr-80 max-[500px]:pr-[90vw]' : ''}`}>
@@ -892,6 +948,33 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
               {/* AI Toolbar */}
               <div className="min-h-10 bg-[#2d2d2d] border-b border-[#3e3e3e] flex flex-wrap items-center px-3 py-1 gap-2 shrink-0">
+                {isMarkdown && (
+                  <>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => imageInputRef.current?.click()}
+                      disabled={isUploadingImage || isBinaryActive || !slug || !activePath?.toLowerCase().endsWith('.md')}
+                      icon={<ImagePlus className="w-3.5 h-3.5" />}
+                    >
+                      Insert image
+                    </Button>
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif,image/webp"
+                      aria-label="Choose image to insert"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) void handleImageUpload(file);
+                        event.target.value = '';
+                      }}
+                    />
+                    {imageUploadStatus && <span role="status" className="text-xs text-emerald-400">{imageUploadStatus}</span>}
+                    <div className="h-4 w-px bg-[#3e3e3e]" />
+                  </>
+                )}
                 <span title={paraphraseDisabledReason || 'Paraphrase selection'}>
                   <Button
                     variant="secondary"
@@ -957,13 +1040,14 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                     <p className="text-xs text-gray-400 text-center">
                       {activeFile.path} · {activeFile.sizeBytes} bytes · {activeFile.mimeType || activeFile.kind}
                     </p>
-                    <p className="text-[11px] text-gray-500">Images are read only. Reference them from a .tex file with \includegraphics{'{'}...{'}'}.</p>
+                    <p className="text-[11px] text-meta">Images are read only. {isMarkdown ? 'Insert them with Markdown image syntax.' : <>Reference them from a .tex file with \includegraphics{'{'}...{'}'}.</>}</p>
                   </div>
                 ) : activePath ? (
                   <MonacoEditorWrapper
                     key={documentId}
                     value={code}
                     onChange={handleCodeChange}
+                    language={activePath.toLowerCase().endsWith('.md') ? 'markdown' : 'latex'}
                     fileName={fileName}
                     onEditorReady={handleEditorReady}
                   />
@@ -1030,14 +1114,26 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
           {(viewMode === 'preview' || viewMode === 'split') && (
             <div className={`${viewMode === 'split' ? 'hidden md:block md:w-1/2' : 'w-full'}`}>
-              <PDFPreview
-                pdfUrl={pdfUrl}
-                isLoading={isCompiling}
-                onCompile={handleCompile}
-                onDownload={handleDownload}
-                statusMessage={statusLine}
-                isStale={pdfIsStale}
-              />
+              {isMarkdown ? (
+                <MarkdownPreviewPane
+                  source={workspace.filesByPath[workspace.mainFilePath]?.content ?? ''}
+                  pdfUrl={pdfUrl}
+                  isCompiling={isCompiling}
+                  compilationStatus={statusLine}
+                  pdfIsStale={pdfIsStale}
+                  onCompile={handleCompile}
+                  onDownloadPdf={handleDownload}
+                />
+              ) : (
+                <PDFPreview
+                  pdfUrl={pdfUrl}
+                  isLoading={isCompiling}
+                  onCompile={handleCompile}
+                  onDownload={handleDownload}
+                  statusMessage={statusLine}
+                  isStale={pdfIsStale}
+                />
+              )}
             </div>
           )}
         </div>

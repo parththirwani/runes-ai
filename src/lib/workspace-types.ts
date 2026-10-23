@@ -18,6 +18,7 @@ export type WorkspaceFileMeta = {
 
 export type WorkspaceDocumentPayload = {
   id: string;
+  format: 'LATEX' | 'MARKDOWN';
   title: string;
   slug: string;
   content: string;

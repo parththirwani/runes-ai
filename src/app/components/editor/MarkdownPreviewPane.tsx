@@ -86,6 +86,7 @@ export default function MarkdownPreviewPane({
             onDownload={onDownloadPdf}
             statusMessage={compilationStatus}
             isStale={pdfIsStale}
+            renderPages
           />
         </div>
       )}

@@ -1,5 +1,6 @@
-import { FileText, Trash2, Clock } from 'lucide-react';
+import { FileText, Clock } from 'lucide-react';
 import type { DocumentFormatValue } from '@/src/types/compilation';
+import DocumentActions from './documentActions';
 import FormatBadge from './formatBadge';
 
 interface Document {
@@ -48,6 +49,7 @@ export default function DocumentGrid({
           aria-label={`Open ${doc.title}, ${doc.format === 'MARKDOWN' ? 'Markdown' : 'LaTeX'} document`}
           onClick={() => onDocumentClick(doc.slug)}
           onKeyDown={(e) => {
+            if (e.target !== e.currentTarget) return;
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               onDocumentClick(doc.slug);
@@ -61,16 +63,7 @@ export default function DocumentGrid({
             </div>
             <div className="flex items-center gap-1">
               <FormatBadge format={doc.format} />
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDocumentDelete(doc);
-                }}
-                aria-label={`Delete ${doc.title}`}
-                className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 p-2 hover:bg-white/10 rounded-lg transition-all cursor-pointer"
-              >
-                <Trash2 className="w-4 h-4 text-gray-500 hover:text-red-400" />
-              </button>
+              <DocumentActions document={doc} onDelete={() => onDocumentDelete(doc)} />
             </div>
           </div>
           

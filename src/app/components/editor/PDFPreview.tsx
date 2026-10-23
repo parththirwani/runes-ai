@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FileText, Download, ZoomIn, ZoomOut, Maximize2, Minimize2, Clock } from 'lucide-react';
 import Button from '../design/Button';
 import IconButton from '../design/IconButton';
+import PdfCanvasPreview from './PdfCanvasPreview';
 
 interface PDFPreviewProps {
   pdfUrl?: string;
@@ -11,6 +12,7 @@ interface PDFPreviewProps {
   statusMessage?: string;
   isStale?: boolean;
   documentKind?: string;
+  renderPages?: boolean;
 }
 
 export default function PDFPreview({
@@ -21,6 +23,7 @@ export default function PDFPreview({
   statusMessage = '',
   isStale = false,
   documentKind = 'LaTeX',
+  renderPages = false,
 }: PDFPreviewProps) {
   const [zoom, setZoom] = useState(100);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -134,9 +137,10 @@ export default function PDFPreview({
       </div>
 
       {/* Preview Area */}
-      <div className="flex-1 overflow-auto bg-[#2a2a2e] flex items-center justify-center p-8 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-[#2a2a2e] hover:scrollbar-thumb-gray-500 relative">
+      <div className={`flex-1 overflow-auto bg-[#2a2a2e] scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-[#2a2a2e] hover:scrollbar-thumb-gray-500 relative ${renderPages && pdfUrl ? '' : 'flex items-center justify-center p-8'}`}>
         {/* Show PDF if available */}
-        {pdfUrl && (
+        {pdfUrl && renderPages && <PdfCanvasPreview pdfUrl={pdfUrl} zoom={zoom} />}
+        {pdfUrl && !renderPages && (
           <div
             className="shadow-2xl transition-all duration-300"
             style={{
@@ -145,7 +149,7 @@ export default function PDFPreview({
             }}
           >
             <iframe
-              src={`${pdfUrl}#view=FitH`}
+              src={`${pdfUrl}#view=FitH&navpanes=0`}
               className="w-204 h-264 border-0 block bg-white"
               title="PDF Preview"
             />

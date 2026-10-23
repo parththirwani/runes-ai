@@ -20,7 +20,7 @@ type Row = {
   storageKey: string | null;
 };
 
-type Doc = { id: string; slug: string; title: string; userId: string; content: string | null; mainFilePath: string };
+type Doc = { id: string; slug: string; title: string; userId: string; content: string | null; mainFilePath: string; format: 'LATEX' | 'MARKDOWN' };
 
 function fakePrisma(documents: Doc[], files: Row[]) {
   let nextId = 1;
@@ -31,12 +31,14 @@ function fakePrisma(documents: Doc[], files: Row[]) {
   return {
     document: {
       async findFirst({ where }: { where: { slug?: string; userId?: string; id?: string } }) {
-        return documents.find((doc) => (where.slug === undefined || doc.slug === where.slug) &&
+        const document = documents.find((doc) => (where.slug === undefined || doc.slug === where.slug) &&
           (where.userId === undefined || doc.userId === where.userId) &&
-          (where.id === undefined || doc.id === where.id)) || null;
+          (where.id === undefined || doc.id === where.id));
+        return document ? { ...document } : null;
       },
       async findUnique({ where }: { where: { id: string } }) {
-        return documents.find((doc) => doc.id === where.id) || null;
+        const document = documents.find((doc) => doc.id === where.id);
+        return document ? { ...document } : null;
       },
       async update({ where, data }: { where: { id: string }; data: Record<string, unknown> }) {
         const doc = documents.find((candidate) => candidate.id === where.id);
@@ -113,6 +115,7 @@ import {
   moveFile,
   readWorkspaceFile,
   readWorkspaceTree,
+  resolveMainSource,
   setMainFile,
   uploadFile,
   writeTextFile,
@@ -127,7 +130,7 @@ const OTHER = 'user-other';
 const DOC_ID = 'doc-1';
 
 function seed(overrides: Partial<Doc> = {}) {
-  const documents: Doc[] = [{ id: DOC_ID, slug: 'paper', title: 'Paper', userId: OWNER, content: 'legacy body', mainFilePath: 'main.tex', ...overrides }];
+  const documents: Doc[] = [{ id: DOC_ID, slug: 'paper', title: 'Paper', userId: OWNER, content: 'legacy body', mainFilePath: 'main.tex', format: 'LATEX', ...overrides }];
   const files: Row[] = [{
     id: 'file-main', documentId: DOC_ID, path: 'main.tex', kind: 'tex', mimeType: 'text/x-tex',
     sizeBytes: 11, checksum: sha('legacy body'), revision: 3, content: 'legacy body', storageKey: null,
@@ -138,6 +141,30 @@ function seed(overrides: Partial<Doc> = {}) {
 
 describe('workspace file service', () => {
   beforeEach(() => { seed(); });
+
+  it('reports the migrated Markdown main file on the first workspace load', async () => {
+    const { documents, files } = seed({ format: 'MARKDOWN', content: '# Legacy notes' });
+    files.length = 0;
+
+    const workspace = await readWorkspaceTree(OWNER, 'paper');
+
+    expect(documents[0].mainFilePath).toBe('main.md');
+    expect(workspace?.document.mainFilePath).toBe('main.md');
+    expect(workspace?.files.map((file) => file.path)).toEqual(['main.md']);
+    expect(await readWorkspaceFile(OWNER, 'paper', 'main.md')).toMatchObject({ content: '# Legacy notes' });
+  });
+
+  it('resolves the Markdown main file when the caller has an older document row', async () => {
+    const { documents, files } = seed({ format: 'MARKDOWN', content: '# Current notes' });
+    files.length = 0;
+    const staleDocument = { id: DOC_ID, mainFilePath: 'main.tex', content: '# Outdated notes' };
+    await ensureDocumentMigrated(client as never, DOC_ID);
+    files[0].content = '# Edited workspace notes';
+
+    expect(await resolveMainSource(staleDocument)).toBe('# Edited workspace notes');
+    expect(documents[0].mainFilePath).toBe('main.md');
+    expect(files.map((file) => file.path)).toEqual(['main.md']);
+  });
 
   it('returns nothing for a workspace the user does not own', async () => {
     seed();
@@ -233,6 +260,18 @@ describe('workspace file service', () => {
     expect(documents[0].content).toBe('new main source');
   });
 
+  it('updates legacy content on the first Markdown main-file save', async () => {
+    const { documents, files } = seed({ format: 'MARKDOWN', content: '# Original' });
+    files.length = 0;
+
+    const result = await writeTextFile({ userId: OWNER, slug: 'paper', rawPath: 'main.md', content: '# Edited' });
+
+    expect(result && 'file' in result && result.file.path).toBe('main.md');
+    expect(files.find((row) => row.path === 'main.md')?.content).toBe('# Edited');
+    expect(documents[0].mainFilePath).toBe('main.md');
+    expect(documents[0].content).toBe('# Edited');
+  });
+
   it('follows the main file pointer when it is renamed or moved', async () => {
     const { documents, files } = seed();
     const moved = await moveFile({ userId: OWNER, slug: 'paper', from: 'main.tex', to: 'paper/main.tex' });
@@ -241,10 +280,32 @@ describe('workspace file service', () => {
     expect(files.some((row) => row.path === 'paper/main.tex')).toBe(true);
   });
 
+  it('follows the migrated Markdown main file on its first move', async () => {
+    const { documents, files } = seed({ format: 'MARKDOWN', content: '# Original' });
+    files.length = 0;
+
+    const moved = await moveFile({ userId: OWNER, slug: 'paper', from: 'main.md', to: 'notes.md' });
+
+    expect(moved && moved !== 'notfound' && moved !== 'exists' && moved.mainFilePath).toBe('notes.md');
+    expect(documents[0].mainFilePath).toBe('notes.md');
+    expect(files.map((row) => row.path)).toEqual(['notes.md']);
+    expect(documents[0].content).toBe('# Original');
+  });
+
   it('refuses to delete the current main file', async () => {
     seed();
     expect(await deleteFile(OWNER, 'paper', 'main.tex')).toBe('mainfile');
     expect(await deleteFile(OWNER, 'paper', 'chapters/gone.tex')).toBe('notfound');
+  });
+
+  it('protects the Markdown main file on its first delete request', async () => {
+    const { documents, files } = seed({ format: 'MARKDOWN', content: '# Original' });
+    files.length = 0;
+
+    expect(await deleteFile(OWNER, 'paper', 'main.md')).toBe('mainfile');
+    expect(documents[0].mainFilePath).toBe('main.md');
+    expect(files.map((file) => file.path)).toEqual(['main.md']);
+    expect(files[0].content).toBe('# Original');
   });
 
   it('only lets a tex file become the main file', async () => {

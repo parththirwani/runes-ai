@@ -54,7 +54,7 @@ export default function TopNavBar({
   return (
     <div className="min-h-14 bg-[#2d2d2d] border-b border-[#3e3e3e] flex flex-wrap items-center justify-between gap-2 px-4 py-2 relative z-30 shrink-0">
       {/* Left Section */}
-      <div className="flex min-w-0 flex-wrap items-center gap-4">
+      <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:gap-4">
         <IconButton
           icon={<Menu className="w-5 h-5" />}
           onClick={onMenuToggle}
@@ -74,14 +74,14 @@ export default function TopNavBar({
         
         <div className="h-6 w-px bg-[#3e3e3e]" />
         
-        <div className="flex items-center gap-2 text-sm text-gray-400 min-w-0">
+        <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-gray-400 sm:flex-initial">
           <FileText className="w-4 h-4 shrink-0" />
           <button
             onClick={onTitleEdit}
-            className="max-w-50 truncate hover:text-gray-200 transition-colors flex items-center gap-1 group cursor-pointer"
+            className="flex min-w-0 max-w-50 items-center gap-1 truncate hover:text-gray-200 transition-colors group cursor-pointer"
             title="Click to edit title"
           >
-            <span>{documentTitle}</span>
+            <span className="truncate">{documentTitle}</span>
             <Edit2 className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
           </button>
           {hasUnsavedChanges && (
@@ -95,13 +95,13 @@ export default function TopNavBar({
             }`}
           >
             {isMarkdown ? 'Markdown' : 'LaTeX'}
-            {fileName ? <span className="ml-1 font-mono">{fileName}</span> : null}
+            {fileName ? <span className="ml-1 hidden font-mono sm:inline">{fileName}</span> : null}
           </span>
         </div>
       </div>
 
       {/* Right Section */}
-      <div className="flex max-w-full flex-wrap items-center gap-2">
+      <div className="flex max-w-full flex-wrap items-center gap-1 sm:gap-2">
         <ViewModeToggle value={viewMode} onChange={onViewModeChange} labels={viewLabels} />
         {onDownloadSource && (
           <IconButton
@@ -113,7 +113,7 @@ export default function TopNavBar({
           />
         )}
         
-        <div className="h-6 w-px bg-[#3e3e3e]" />
+        <div className="hidden h-6 w-px bg-[#3e3e3e] sm:block" />
 
         <Button
           variant="secondary"

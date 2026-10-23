@@ -76,7 +76,7 @@ export async function checkRateLimit(
       resetAt
     };
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[RATE_LIMIT] Error checking rate limit:', error);
     // On error, allow the request but log it
     return {
@@ -116,7 +116,7 @@ export async function getRateLimitStatus(
       error: allowed ? undefined : `Rate limit would be exceeded`
     };
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[RATE_LIMIT] Error getting rate limit status:', error);
     return {
       allowed: true,

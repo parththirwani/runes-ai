@@ -35,6 +35,18 @@ def select_second_line(page):
     page.keyboard.press("Shift+End")
 
 
+def assert_mobile_editor_nav(page, width, max_height):
+    page.set_viewport_size({"width": width, "height": 568})
+    nav = page.locator("main > div").first
+    bounds = nav.bounding_box()
+    assert bounds and bounds["height"] <= max_height, bounds
+    assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
+    for label in ("Toggle file tree", "Back to documents", "AI workspace", "Compile"):
+        button = page.get_by_role("button", name=label, exact=True)
+        rect = button.bounding_box()
+        assert rect and rect["x"] >= 0 and rect["x"] + rect["width"] <= width, (label, rect)
+
+
 with sync_playwright() as playwright:
     browser = playwright.chromium.launch(headless=True, executable_path=CHROMIUM, args=["--no-sandbox"])
     context = browser.new_context(viewport={"width": 1280, "height": 800})
@@ -42,9 +54,115 @@ with sync_playwright() as playwright:
     created_slug = None
     second_slug = None
     md_slug = None
+    navigation_slug = None
     try:
+        page.set_viewport_size({"width": 320, "height": 568})
+        page.goto(f"{BASE}/missing-browser-smoke-page", wait_until="domcontentloaded")
+        expect(page.get_by_role("heading", name="That page is not in this document")).to_be_visible()
+        error_panel = page.locator("pre").first
+        assert error_panel.evaluate("element => element.scrollWidth <= element.clientWidth")
+        assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
+        expect(page.get_by_role("link", name="Go home")).to_have_attribute("href", "/")
+        expect(page.get_by_role("link", name="Sign in", exact=True)).to_have_attribute("href", "/signin")
+
+        page.goto(BASE, wait_until="domcontentloaded")
+        menu_toggle = page.get_by_role("button", name="Open menu")
+        expect(menu_toggle).to_have_attribute("aria-expanded", "false")
+        assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
+        for section in ("Features", "How it works"):
+            menu_toggle.click()
+            expect(page.get_by_role("button", name="Close menu")).to_have_attribute("aria-expanded", "true")
+            previous_scroll = page.evaluate("scrollY")
+            page.locator("#mobile-nav").get_by_role("link", name=section).click()
+            expect(page.locator("#mobile-nav")).to_have_count(0)
+            page.wait_for_function("previous => scrollY > previous + 100", arg=previous_scroll)
+            assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
+        menu_toggle.click()
+        page.locator("#mobile-nav").get_by_role("link", name="Sign in", exact=True).click()
+        page.wait_for_url("**/signin**", timeout=15000)
+        expect(page.get_by_role("heading", name="Sign in to Runes AI")).to_be_visible()
+
+        page.set_viewport_size({"width": 390, "height": 800})
+        page.goto(BASE, wait_until="domcontentloaded")
+        page.get_by_role("link", name="Start writing").first.click()
+        page.wait_for_url("**/signin**", timeout=15000)
+        expect(page.get_by_role("heading", name="Sign in to Runes AI")).to_be_visible()
+
         page.goto(f"{BASE}/api/dev-login", wait_until="domcontentloaded")
         assert urlparse(page.url).path == "/document", page.url
+        page.set_viewport_size({"width": 320, "height": 568})
+        expect(page.get_by_role("heading", name="Documents")).to_be_visible()
+        assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
+        filter_group = page.get_by_role("group", name="Filter documents by format")
+        for label in ("All", "Markdown", "LaTeX"):
+            button = filter_group.get_by_role("button", name=label)
+            rect = button.bounding_box()
+            assert rect and rect["x"] >= 0 and rect["x"] + rect["width"] <= 320, (label, rect)
+        filter_group.get_by_role("button", name="Markdown").click()
+        expect(filter_group.get_by_role("button", name="Markdown")).to_have_attribute("aria-pressed", "true")
+        filter_group.get_by_role("button", name="All").click()
+        page.get_by_role("button", name="List view").click()
+        expect(page.get_by_role("button", name="List view")).to_have_attribute("aria-pressed", "true")
+        assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
+        page.get_by_role("button", name="Grid view").click()
+        page.get_by_role("button", name="New document").click()
+        dialog = page.get_by_role("dialog", name="Create document")
+        expect(dialog).to_be_visible()
+        page.set_viewport_size({"width": 320, "height": 400})
+        bounds = dialog.bounding_box()
+        create_bounds = dialog.get_by_role("button", name="Create", exact=True).bounding_box()
+        assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 320, bounds
+        assert bounds["y"] >= 0 and bounds["y"] + bounds["height"] <= 400, bounds
+        assert create_bounds and create_bounds["y"] + create_bounds["height"] <= 400, create_bounds
+        assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
+        page.set_viewport_size({"width": 390, "height": 800})
+        bounds = dialog.bounding_box()
+        assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 390, bounds
+        page.set_viewport_size({"width": 390, "height": 400})
+        bounds = dialog.bounding_box()
+        create_bounds = dialog.get_by_role("button", name="Create", exact=True).bounding_box()
+        assert bounds and bounds["y"] >= 0 and bounds["y"] + bounds["height"] <= 400, bounds
+        assert create_bounds and create_bounds["y"] + create_bounds["height"] <= 400, create_bounds
+        page.set_viewport_size({"width": 390, "height": 800})
+        navigation_title = f"Browser Nav {time.time_ns() % 10**12}"
+        dialog.get_by_role("textbox", name="Title", exact=True).fill(navigation_title)
+        dialog.get_by_role("radio", name="LaTeX").check()
+        dialog.get_by_role("button", name="Create", exact=True).click()
+        page.wait_for_url("**/document/*", timeout=15000)
+        navigation_slug = urlparse(page.url).path.split("/")[-1]
+        page.locator(".monaco-editor").first.wait_for(timeout=20000)
+        assert page.evaluate("window.monaco.editor.getModels()[0].getLanguageId()") == "latex"
+        assert_mobile_editor_nav(page, 390, 100)
+        assert_mobile_editor_nav(page, 320, 140)
+        page.set_viewport_size({"width": 390, "height": 800})
+        page.goto(f"{BASE}/document", wait_until="domcontentloaded")
+        actions = page.get_by_role("button", name=f"Actions for {navigation_title}")
+        expect(actions).to_be_visible()
+        actions.focus()
+        page.keyboard.press("Enter")
+        menu = page.get_by_role("menu", name=f"Actions for {navigation_title}")
+        expect(menu).to_be_visible()
+        assert urlparse(page.url).path == "/document", page.url
+        menu.get_by_role("menuitem", name="Delete document").click()
+        confirmation = page.get_by_role("dialog", name="Delete Document")
+        expect(confirmation).to_be_visible()
+        confirmation.get_by_role("button", name="Cancel").click()
+        page.get_by_role("button", name="List view").click()
+        actions = page.get_by_role("button", name=f"Actions for {navigation_title}")
+        expect(actions).to_be_visible()
+        actions.click()
+        menu = page.get_by_role("menu", name=f"Actions for {navigation_title}")
+        expect(menu).to_be_visible()
+        menu_bounds = menu.bounding_box()
+        assert menu_bounds and menu_bounds["x"] >= 0 and menu_bounds["x"] + menu_bounds["width"] <= 390, menu_bounds
+        menu.get_by_role("menuitem", name="Delete document").click()
+        confirmation = page.get_by_role("dialog", name="Delete Document")
+        expect(confirmation).to_be_visible()
+        confirmation.get_by_role("button", name="Cancel").click()
+        deleted = context.request.delete(f"{BASE}/api/document/{navigation_slug}")
+        assert deleted.status == 200, (deleted.status, deleted.text())
+        navigation_slug = None
+        page.set_viewport_size({"width": 1280, "height": 800})
 
         title = f"Smoke {time.time_ns() % 10**16}"
         created = context.request.post(f"{BASE}/api/document", data={"title": title, "content": SOURCE})
@@ -269,8 +387,10 @@ with sync_playwright() as playwright:
         rejected_job, rejected = md_compile_job()
         assert rejected["status"] == "failed", rejected
         assert "Remote images are not supported" in rejected["result"]["error"], rejected
-        page.locator(".fixed.inset-0.z-50").get_by_role("button", name="OK", exact=True).click()
-        expect(page.locator(".fixed.inset-0.z-50")).to_have_count(0, timeout=5000)
+        error_dialog = page.get_by_role("dialog", name="Error")
+        expect(error_dialog).to_contain_text("Remote images are not supported", timeout=5000)
+        error_dialog.get_by_role("button", name="Close", exact=True).last.click()
+        expect(error_dialog).to_have_count(0, timeout=5000)
         page.wait_for_timeout(300)
 
         page.get_by_role("button", name="Source", exact=True).click()
@@ -299,7 +419,11 @@ with sync_playwright() as playwright:
         page.get_by_role("button", name="Reading", exact=True).click()
         page.get_by_role("tab", name="Reading preview").wait_for(timeout=10000)
         page.get_by_role("tab", name="PDF").click()
-        page.locator('iframe[title="PDF Preview"]').wait_for(timeout=20000)
+        page.locator('[data-testid="pdf-pages"] canvas').first.wait_for(timeout=20000)
+        text_layer = page.locator('.pdf-page-text-layer').first
+        text_layer.locator('span').first.wait_for(timeout=20000)
+        assert 'Prose with' in text_layer.inner_text()
+        assert page.locator('[aria-label="PDF page 1 links"] a[href^="https://example.com"]').count() >= 1
 
         with page.expect_download() as md_download:
             page.locator(f'button[title="Download {md_slug}.md file"]').click()
@@ -319,7 +443,7 @@ with sync_playwright() as playwright:
         page.get_by_role("button", name="Source", exact=True).click()
         insert_button = page.get_by_role("button", name="Insert image", exact=True)
         expect(insert_button).to_be_visible()
-        page.locator('input[type="file"]').set_input_files(png_path)
+        page.get_by_label("Choose image to insert").set_input_files(png_path)
         expect(page.get_by_role("status").filter(has_text="Inserted logo-ui.png")).to_be_visible(timeout=15000)
         value_after_upload = source_value(page)
         assert "![logo-ui](" in value_after_upload and f"/api/document/{md_slug}/assets/logo-ui.png" in value_after_upload, value_after_upload[-200:]
@@ -339,10 +463,14 @@ with sync_playwright() as playwright:
         assert b"/Image" in ui_pdf, "uploaded image missing from PDF objects"
         ui_pdf_ok = True
         os.unlink(png_path)
-        print("browser smoke passed: latex edit/review/compile + markdown create, asset API + editor upload UI, reading preview, remote-image block, markdown PDF with embedded images, source download, dashboard badge/filter")
+        print("browser smoke passed: mobile sign-in, document creation and grid/list actions, latex edit/review/compile, markdown asset API and editor upload UI, reading preview, remote-image block, markdown PDF with embedded images, source download, dashboard badge/filter")
     finally:
+        if navigation_slug:
+            context.request.delete(f"{BASE}/api/document/{navigation_slug}")
         if created_slug:
             context.request.delete(f"{BASE}/api/document/{created_slug}")
         if second_slug:
             context.request.delete(f"{BASE}/api/document/{second_slug}")
+        if md_slug:
+            context.request.delete(f"{BASE}/api/document/{md_slug}")
         browser.close()

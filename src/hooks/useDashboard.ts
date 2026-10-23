@@ -47,8 +47,8 @@ export function useDashboard() {
 
       const data = await response.json();
       setDocuments(data.documents || []);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch documents');
     } finally {
       setLoading(false);
     }
@@ -73,8 +73,8 @@ export function useDashboard() {
       const newDoc = await response.json();
       setShowCreateModal(false);
       router.push(`/document/${newDoc.slug}`);
-    } catch (err: any) {
-      setErrorMessage(err.message);
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to create document');
       setShowCreateModal(false);
       setShowErrorModal(true);
     } finally {
@@ -103,8 +103,8 @@ export function useDashboard() {
       setDocuments(documents.filter(doc => doc.slug !== documentToDelete.slug));
       setShowDeleteModal(false);
       setDocumentToDelete(null);
-    } catch (err: any) {
-      setErrorMessage(err.message);
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to delete document');
       setShowDeleteModal(false);
       setShowErrorModal(true);
     } finally {
