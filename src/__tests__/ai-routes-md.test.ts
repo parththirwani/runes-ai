@@ -93,6 +93,20 @@ describe('Markdown paraphrase route', () => {
     expect(provider).not.toHaveBeenCalled();
   });
 
+  it('rejects a selection ending inside Markdown emphasis before calling the provider', async () => {
+    const provider = vi.fn();
+    vi.stubGlobal('fetch', provider);
+    const res = await paraphrase(request({
+      documentId: 'doc1',
+      selectedText: 'A sentence with **bold',
+      before: '',
+      after: ' text** after',
+      tone: 'Clearer',
+    }), {} as never);
+    expect(res.status).toBe(422);
+    expect(provider).not.toHaveBeenCalled();
+  });
+
   it('still routes LaTeX documents through the LaTeX rules', async () => {
     mocks.doc = { id: 'doc1', format: 'LATEX' };
     const provider = vi.fn().mockResolvedValue(new Response(JSON.stringify({

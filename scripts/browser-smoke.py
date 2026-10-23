@@ -419,7 +419,11 @@ with sync_playwright() as playwright:
         page.get_by_role("button", name="Reading", exact=True).click()
         page.get_by_role("tab", name="Reading preview").wait_for(timeout=10000)
         page.get_by_role("tab", name="PDF").click()
-        page.locator('iframe[title="PDF Preview"]').wait_for(timeout=20000)
+        page.locator('[data-testid="pdf-pages"] canvas').first.wait_for(timeout=20000)
+        text_layer = page.locator('.pdf-page-text-layer').first
+        text_layer.locator('span').first.wait_for(timeout=20000)
+        assert 'Prose with' in text_layer.inner_text()
+        assert page.locator('[aria-label="PDF page 1 links"] a[href^="https://example.com"]').count() >= 1
 
         with page.expect_download() as md_download:
             page.locator(f'button[title="Download {md_slug}.md file"]').click()

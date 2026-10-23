@@ -72,6 +72,17 @@ describe('analyzeMarkdownSelection', () => {
     expect(analyzeMarkdownSelection('a <b>tag</b> here', at(src, 'prose')).eligible).toBe(false);
   });
 
+  it('rejects selections that cut across Markdown formatting boundaries', () => {
+    const source = 'A sentence with **bold text** after';
+    const start = scanMarkdownContext(source, 0);
+    expect(analyzeMarkdownSelection('A sentence with **bold', start).eligible).toBe(false);
+    expect(analyzeMarkdownSelection('bold text** after', scanMarkdownContext(source, source.indexOf('bold'))).eligible).toBe(false);
+    expect(analyzeMarkdownSelection('See [the docs', scanMarkdownContext('See [the docs](https://example.com)', 0)).eligible).toBe(false);
+    expect(analyzeMarkdownSelection('Read `inline', scanMarkdownContext('Read `inline code` now', 0)).eligible).toBe(false);
+    expect(analyzeMarkdownSelection('A sentence with **bold text** after', start).eligible).toBe(true);
+    expect(analyzeMarkdownSelection('bold text', scanMarkdownContext(source, source.indexOf('bold'))).eligible).toBe(true);
+  });
+
   it('requires prose beyond protected tokens', () => {
     const analysis = analyzeMarkdownSelection('`only code` $and$ **math**', at('prose', 'prose'));
     expect(analysis.eligible).toBe(false);

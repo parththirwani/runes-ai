@@ -81,6 +81,12 @@ export default function MarkdownPreview({ source, className }: MarkdownPreviewPr
           : '')}
         components={{
           a: ({ node, ...props }) => <SafeLink {...props} />,
+          pre: ({ node, className: preClassName, ...props }) => (
+            <pre
+              {...props}
+              className={`my-4 max-w-full overflow-x-auto rounded-lg border border-white/15 bg-[#17191e] px-4 py-3 font-mono text-[13px] leading-6 text-gray-100 ${preClassName ?? ''}`}
+            />
+          ),
           img: ({ node, ...props }) => (
             <PreviewImage
               src={typeof props.src === 'string' ? props.src : undefined}

@@ -16,6 +16,7 @@ import Button from '../design/Button';
 import { JobStatus } from '@/src/types/compilation';
 import { EditProposal, verifyAcceptance, checkStale, generateProposalId } from '@/src/lib/proposal-engine';
 import { analyzeSelection, scanContext, selectionCutsWord } from '@/src/lib/latex-utils';
+import { analyzeMarkdownSelection, markdownLineIsProse, scanMarkdownContext } from '@/src/lib/markdown-utils';
 import { buildLatexOutline } from '@/src/lib/latex-outline';
 import { buildMarkdownOutline } from '@/src/lib/markdown-outline';
 import { useWorkspace } from '@/src/hooks/useWorkspace';
@@ -23,7 +24,7 @@ import { missingReferencesFrom, workspaceClient } from '@/src/lib/workspace-clie
 import type { WorkspaceDocumentPayload } from '@/src/lib/workspace-types';
 import type { CompileDiagnostic } from '@/src/lib/compile-errors';
 import type { MissingReference } from '@/src/lib/workspace-types';
-import type { editor } from 'monaco-editor';
+import type { editor, languages } from 'monaco-editor';
 import { Wand2, RefreshCw, FileWarning, ImagePlus } from 'lucide-react';
 
 type ViewMode = 'editor' | 'split' | 'preview';
@@ -285,7 +286,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       const start = model.getOffsetAt(selection.getStartPosition());
       const end = model.getOffsetAt(selection.getEndPosition());
       const selected = full.slice(start, end);
-      const analysis = analyzeSelection(selected, scanContext(full, start));
+      const analysis = isMarkdown
+        ? analyzeMarkdownSelection(selected, scanMarkdownContext(full, start))
+        : analyzeSelection(selected, scanContext(full, start));
       setParaphraseDisabledReason(
         !analysis.eligible ? analysis.reason || 'Unsupported selection' :
         selectionCutsWord(full.slice(0, start), selected, full.slice(end)) ? 'Select complete words' : null,
@@ -300,8 +303,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       completeProviderDisposableRef.current = null;
     }
 
-    const provider = monaco.languages.registerInlineCompletionsProvider('latex', {
-      provideInlineCompletions: async (model, position, _context, token) => {
+    const provideInlineCompletions: languages.InlineCompletionsProvider['provideInlineCompletions'] = async (model, position, _context, token) => {
         if (!autocompleteEnabledRef.current || proposalRef.current || token.isCancellationRequested || model !== editorInstance.getModel()) return { items: [] };
 
         const requestId = ++completeRequestIdRef.current;
@@ -309,8 +311,13 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
         const offset = model.getOffsetAt(position);
         const fullSource = model.getValue();
-        const ctx = scanContext(fullSource, offset);
-        if (!ctx.isInDocument || ctx.isInPreamble || ctx.isInMath || ctx.isInVerbatim || ctx.isInComment || ctx.isInCommandName || ctx.isInCommandArg) {
+        const allowed = isMarkdown
+          ? !scanMarkdownContext(fullSource, offset).inProtected && markdownLineIsProse(fullSource.slice(fullSource.lastIndexOf('\n', offset - 1) + 1, offset))
+          : (() => {
+            const ctx = scanContext(fullSource, offset);
+            return ctx.isInDocument && !ctx.isInPreamble && !ctx.isInMath && !ctx.isInVerbatim && !ctx.isInComment && !ctx.isInCommandName && !ctx.isInCommandArg;
+          })();
+        if (!allowed) {
           return { items: [] };
         }
 
@@ -394,12 +401,13 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
             }
           }, 400);
         });
-      },
-      disposeInlineCompletions: () => {},
-    });
+    };
 
-    completeProviderDisposableRef.current = provider;
-  }, [documentId]);
+    completeProviderDisposableRef.current = monaco.languages.registerInlineCompletionsProvider(
+      isMarkdown ? 'markdown' : 'latex',
+      { provideInlineCompletions, disposeInlineCompletions: () => {} },
+    );
+  }, [documentId, isMarkdown]);
 
   // --- Paraphrase action: always operates on the file that is open right now ---
   const handleParaphrase = useCallback(async (tone: string = 'Clearer') => {
@@ -422,8 +430,10 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     const endOffset = model.getOffsetAt({ lineNumber: selection.endLineNumber, column: selection.endColumn });
     const selectedText = model.getValue().slice(startOffset, endOffset);
 
-    const ctx = scanContext(model.getValue(), startOffset);
-    const analysis = analyzeSelection(selectedText, ctx);
+    const source = model.getValue();
+    const analysis = isMarkdown
+      ? analyzeMarkdownSelection(selectedText, scanMarkdownContext(source, startOffset))
+      : analyzeSelection(selectedText, scanContext(source, startOffset));
     if (!analysis.eligible || selectionCutsWord(model.getValue().slice(0, startOffset), selectedText, model.getValue().slice(endOffset))) {
       setParaphraseDisabledReason(analysis.reason || 'Select complete words');
       return;
@@ -522,7 +532,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       }
       setIsAiLoading(false);
     }
-  }, [documentId]);
+  }, [documentId, isMarkdown]);
 
   // --- Accept proposal (one undoable edit in the active file only) ---
   const handleAccept = useCallback(() => {
@@ -920,6 +930,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           onCompile={handleCompile}
           onSave={() => { void handleSave(); }}
           onDownloadPdf={() => { void handleDownload(); }}
+          isMarkdown={isMarkdown}
         />
 
         <div className={`h-full flex transition-[padding] duration-300 ${showSettings ? 'pr-80 max-[500px]:pr-[90vw]' : ''}`}>

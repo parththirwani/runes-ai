@@ -20,6 +20,7 @@ interface AiWorkspacePanelProps {
   onCompile: () => void;
   onSave: () => void;
   onDownloadPdf: () => void;
+  isMarkdown?: boolean;
 }
 
 const TONES = ['Clearer', 'Shorter', 'Formal'] as const;
@@ -42,6 +43,7 @@ export default function AiWorkspacePanel({
   onCompile,
   onSave,
   onDownloadPdf,
+  isMarkdown = false,
 }: AiWorkspacePanelProps) {
   const status = hasProposal
     ? { icon: <CheckCircle2 className="w-4 h-4 text-emerald-400" />, label: 'Proposal ready', detail: 'Review the diff below the editor.' }
@@ -107,7 +109,7 @@ export default function AiWorkspacePanel({
                 <Wand2 className="w-4 h-4 text-violet-400" />
                 Selection rewrite
               </div>
-              <p className="mt-1 text-xs text-gray-500">Select prose, then send it to AI without touching LaTeX structure.</p>
+              <p className="mt-1 text-xs text-gray-500">Select prose, then send it to AI without changing {isMarkdown ? 'Markdown syntax' : 'LaTeX structure'}.</p>
             </div>
 
             <div className="grid grid-cols-3 gap-2">

@@ -191,6 +191,12 @@ export function analyzeMarkdownSelection(selectedText: string, context: Markdown
   }
 
   const prose = masked.replace(new RegExp(`${escapeRegex(PLACEHOLDER_PREFIX)}\\d+__`, 'g'), '');
+  // Complete Markdown constructs were replaced with placeholders above. A
+  // remaining delimiter belongs to a partial construct crossing a selection
+  // boundary, so rewriting it could leave the document's formatting broken.
+  if (/[`*_~$\[\]]/.test(prose)) {
+    return fail('Select complete Markdown formatting or only the prose inside it');
+  }
   if (!/[\p{L}\p{N}]/u.test(prose)) {
     return fail('Select prose as well as Markdown tokens');
   }
