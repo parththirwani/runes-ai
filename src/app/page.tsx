@@ -9,7 +9,7 @@ import ControlReliability from "./components/landing-redesign/ControlReliability
 import SecondaryFeatures from "./components/landing-redesign/SecondaryFeatures";
 import FinalCta from "./components/landing-redesign/FinalCta";
 import { DOCUMENTS_PATH } from "@/src/lib/paths";
-import { isSignedIn } from "@/src/lib/session";
+import { resolvePageSession } from "@/src/lib/session";
 
 export const metadata: Metadata = {
   title: "Runes AI | Write and review documents with AI",
@@ -20,8 +20,10 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { themeColor: "#FAFAF7" };
 
 export default async function Home() {
-  // Signed-in users own the product, not the pitch: send them to their documents.
-  if (await isSignedIn()) redirect(DOCUMENTS_PATH);
+  // Signed-in users own the product, not the pitch. The check is the same one the
+  // document API applies, so this redirect can never target a session that /document
+  // would then reject.
+  if (await resolvePageSession()) redirect(DOCUMENTS_PATH);
 
   return (
     <div className="landing-redesign min-h-screen bg-canvas text-ink">
