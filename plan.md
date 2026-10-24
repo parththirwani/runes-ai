@@ -1,5 +1,7 @@
 # Runes AI light-theme migration plan
 
+For page-by-page layout, typography, component states, and review criteria, see [the product light design spec](docs/product-light-design-spec.md).
+
 ## Goal
 
 Bring the documents dashboard, editor, dialogs, and supporting states into the light visual language already used by the landing, start, and sign-in pages. Keep the document workflow intact: create, search, edit, review AI changes, save, compile, and export.
