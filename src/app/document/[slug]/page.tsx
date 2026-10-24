@@ -56,11 +56,11 @@ export default function DocumentPage() {
 
   if (status === 'loading' || loading || (!document && !error)) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#1e1e1e]">
+      <div className="h-screen flex items-center justify-center bg-canvas">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto mb-4" />
-          <p className="text-gray-400">Loading document...</p>
-          <p className="text-xs text-gray-600 mt-2">Opening {decodedTitle}</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-2 border-action border-t-transparent mx-auto mb-4" />
+          <p className="text-foreground">Loading document...</p>
+          <p className="text-xs text-meta mt-2">Opening {decodedTitle}</p>
         </div>
       </div>
     );
@@ -68,13 +68,13 @@ export default function DocumentPage() {
 
   if (error) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#1e1e1e]">
-        <div className="text-center">
-          <p className="text-red-400 mb-4">{error}</p>
-          <p className="text-xs text-gray-500 mb-6">Tried to open {decodedTitle}</p>
+      <div className="h-screen flex items-center justify-center bg-canvas px-5">
+        <div className="w-full max-w-sm rounded-xl border border-border bg-surface px-6 py-8 text-center shadow-paper">
+          <p className="text-destructive mb-2">{error}</p>
+          <p className="text-xs text-meta mb-6">Tried to open {decodedTitle}</p>
           <button
             onClick={() => router.push('/document')}
-            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-action px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-action-hover"
           >
             Go to Documents
           </button>

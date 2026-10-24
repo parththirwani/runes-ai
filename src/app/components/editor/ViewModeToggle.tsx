@@ -18,15 +18,15 @@ export default function ViewModeToggle({ value, onChange, labels }: ViewModeTogg
   ];
 
   return (
-    <div className="flex bg-[#3e3e3e] rounded-lg p-1">
+    <div className="flex bg-surface-raised border border-border rounded-lg p-1">
       {modes.map((mode) => (
         <button
           key={mode.id}
           onClick={() => onChange(mode.id)}
-          className={`px-3 py-1.5 rounded-md text-xs transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
+          className={`min-h-11 px-3 py-1.5 rounded-md text-xs transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
             value === mode.id
-              ? 'bg-emerald-600 text-white shadow-lg'
-              : 'text-gray-400 hover:text-white hover:bg-[#4e4e4e]'
+              ? 'bg-action text-white shadow-sm'
+              : 'text-muted-foreground hover:text-foreground hover:bg-surface'
           }`}
           title={mode.label}
         >

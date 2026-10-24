@@ -9,7 +9,7 @@ describe('MarkdownPreview code blocks', () => {
       <MarkdownPreview source={'Before\n\n```js\nconst answer = 42;\n```\n\nAfter'} />
     );
 
-    expect(html).toMatch(/<pre[^>]*class="[^"]*bg-\[#[0-9a-f]+\][^"]*"[^>]*>/);
+    expect(html).toMatch(/<pre[^>]*class="[^"]*\bbg-code-bg\b[^"]*"[^>]*>/);
     expect(html).toContain('<code class="language-js">const answer = 42;');
     expect(html).toContain('</code></pre>');
   });

@@ -24,7 +24,7 @@ function PreviewImage({ src, alt }: { src?: string; alt?: string }) {
     return (
       <span
         role="note"
-        className="inline-block border border-yellow-600/50 bg-yellow-900/20 text-yellow-300 rounded px-2 py-1 text-xs my-1"
+        className="inline-block border border-warning/40 bg-warning-subtle text-warning rounded px-2 py-1 text-xs my-1"
       >
         Unsupported image{alt ? `: “${alt}”` : ''} — only images uploaded to this document are shown or compiled.
       </span>
@@ -34,7 +34,7 @@ function PreviewImage({ src, alt }: { src?: string; alt?: string }) {
     return (
       <span
         role="note"
-        className="inline-block border border-red-600/50 bg-red-900/20 text-red-300 rounded px-2 py-1 text-xs my-1"
+        className="inline-block border border-destructive/40 bg-destructive-subtle text-destructive rounded px-2 py-1 text-xs my-1"
       >
         Image not found{alt ? `: “${alt}”` : ''} — upload it as a document asset.
       </span>
@@ -54,7 +54,7 @@ function SafeLink({ href, children }: { href?: string; children?: React.ReactNod
       href={safe}
       rel={isExternal ? 'noopener noreferrer' : undefined}
       target={isExternal ? '_blank' : undefined}
-      className="text-emerald-400 underline underline-offset-2"
+      className="text-action underline underline-offset-2"
     >
       {children}
     </a>
@@ -70,12 +70,12 @@ interface MarkdownPreviewProps {
 export default function MarkdownPreview({ source, className }: MarkdownPreviewProps) {
   return (
     <div
-      className={`markdown-preview prose prose-invert prose-sm max-w-none text-gray-200 leading-relaxed [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_pre]:whitespace-pre [&_table]:block [&_table]:overflow-x-auto [&_table]:max-w-full [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:mt-4 [&_h2]:mb-2 [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_code]:bg-white/10 [&_code]:px-1 [&_code]:rounded [&_pre_code]:bg-transparent [&_pre_code]:px-0 [&_blockquote]:border-l-4 [&_blockquote]:border-white/20 [&_blockquote]:pl-3 [&_blockquote]:text-gray-400 [&_hr]:border-white/20 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_table]:border-collapse [&_td]:border [&_td]:border-white/20 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-white/20 [&_th]:px-2 [&_th]:py-1 [&_.katex]:overflow-x-auto [&_.katex]:max-w-full`}
+      className={`markdown-preview font-serif max-w-none text-[17px] leading-7 text-foreground [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_pre]:whitespace-pre [&_table]:block [&_table]:overflow-x-auto [&_table]:max-w-full [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:mt-4 [&_h2]:mb-2 [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_p]:my-3 [&_code]:font-mono [&_code]:bg-code-bg [&_code]:text-code-text [&_code]:px-1 [&_code]:rounded [&_pre_code]:bg-transparent [&_pre_code]:text-code-text [&_pre_code]:px-0 [&_blockquote]:border-l-4 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_hr]:border-border [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_table]:border-collapse [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1 [&_.katex]:overflow-x-auto [&_.katex]:max-w-full`}
       data-testid="markdown-reading-preview"
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[[rehypeKatex, { output: 'html', throwOnError: false, strict: 'ignore', trust: false, errorColor: '#f87171' }]]}
+        rehypePlugins={[[rehypeKatex, { output: 'html', throwOnError: false, strict: 'ignore', trust: false, errorColor: '#9c3a2e' }]]}
         urlTransform={(url) => (typeof url === 'string'
           ? safePreviewUrl(url, 'link') ?? safePreviewUrl(url, 'image') ?? ''
           : '')}
@@ -84,7 +84,7 @@ export default function MarkdownPreview({ source, className }: MarkdownPreviewPr
           pre: ({ node, className: preClassName, ...props }) => (
             <pre
               {...props}
-              className={`my-4 max-w-full overflow-x-auto rounded-lg border border-white/15 bg-[#17191e] px-4 py-3 font-mono text-[13px] leading-6 text-gray-100 ${preClassName ?? ''}`}
+              className={`my-4 max-w-full overflow-x-auto rounded-lg border border-border bg-code-bg px-4 py-3 font-mono text-[13px] leading-6 text-code-text ${preClassName ?? ''}`}
             />
           ),
           img: ({ node, ...props }) => (

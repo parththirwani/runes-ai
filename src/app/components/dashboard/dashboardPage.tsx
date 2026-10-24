@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { TriangleAlert } from 'lucide-react';
 import { useDashboard } from '@/src/hooks/useDashboard';
 import AlertModal from '../design/AlertModal';
 import ConfirmModal from '../design/ConfirmModal';
@@ -10,6 +11,7 @@ import DashboardHeader from './dashboardHeader';
 import DashboardToolbar from './dashboardToolbar';
 import DocumentGrid from './documentGrid';
 import DocumentList from './documentList';
+import DocumentSkeleton from './documentSkeleton';
 import EmptyState from './emptyState';
 import CreateDocumentModal from './createDocumentModal';
 import FormatFilter, { type FormatFilterValue } from './formatFilter';
@@ -76,23 +78,31 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
 
   if (status === 'loading' || loading) {
     return (
-      <div className="min-h-screen bg-[#1e1e1e] flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-2 border-emerald-500 border-t-transparent mx-auto mb-4" />
-          <p className="text-gray-500 text-sm">Loading...</p>
-        </div>
+      <div className="min-h-screen bg-canvas">
+        <DashboardHeader onCreateDocument={() => setShowCreateModal(true)} />
+        <main className="mx-auto w-full max-w-content px-6 py-12 lg:px-8">
+          <div className="mb-10">
+            <h1 className="font-serif text-[28px] font-semibold tracking-tight text-foreground md:text-[32px] md:leading-[38px]">
+              Documents
+            </h1>
+            <span className="skeleton mt-3 block h-3 w-28" />
+          </div>
+          <DocumentSkeleton viewMode={viewMode} />
+        </main>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#1e1e1e] text-white">
+    <div className="min-h-screen bg-canvas text-foreground">
       <DashboardHeader onCreateDocument={() => setShowCreateModal(true)} />
 
-      <main className="max-w-7xl mx-auto px-6 lg:px-8 py-12">
-        <div className="mb-12">
-          <h2 className="text-3xl font-semibold mb-2 tracking-tight">Documents</h2>
-          <p className="text-gray-500 text-sm">
+      <main className="mx-auto w-full max-w-content px-6 py-12 lg:px-8">
+        <div className="mb-10">
+          <h1 className="font-serif text-[28px] font-semibold tracking-tight text-foreground md:text-[32px] md:leading-[38px]">
+            Documents
+          </h1>
+          <p className="mt-2 text-sm text-meta">
             {documents.length} {documents.length === 1 ? 'document' : 'documents'}
           </p>
         </div>
@@ -112,8 +122,12 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
         </div>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg mb-8 text-sm">
-            {error}
+          <div
+            role="alert"
+            className="mb-8 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive-subtle px-4 py-3 text-sm text-destructive"
+          >
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>{error}</span>
           </div>
         )}
 
@@ -121,6 +135,10 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
           <EmptyState
             searchQuery={searchQuery}
             onCreateDocument={() => setShowCreateModal(true)}
+            onClearFilters={() => {
+              setSearchQuery('');
+              setFormatFilter('ALL');
+            }}
             filtered={documents.length > 0}
           />
         ) : viewMode === 'grid' ? (

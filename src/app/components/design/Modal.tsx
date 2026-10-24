@@ -105,7 +105,7 @@ export default function Modal({
   return createPortal(
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div
-        className="fixed inset-0 bg-black/60 backdrop-blur-[2px]"
+        className="fixed inset-0 bg-ink/40"
         onClick={onClose}
         aria-hidden="true"
       />

@@ -198,6 +198,65 @@ function createLatexCompletionProvider(monaco: typeof import('monaco-editor')) {
   });
 }
 
+// Deliberate light editor theme tuned to the product palette: white editing
+// surface, ink text, green caret and bracket match, a warm line highlight, and
+// a readable (non-neon) syntax palette shared by LaTeX and Markdown.
+const RUNES_LIGHT_THEME = 'runes-light';
+
+function defineRunesLightTheme(monaco: typeof import('monaco-editor')) {
+  monaco.editor.defineTheme(RUNES_LIGHT_THEME, {
+    base: 'vs',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '65736a', fontStyle: 'italic' },
+      { token: 'keyword', foreground: '1d5a43', fontStyle: 'bold' },
+      { token: 'keyword.control', foreground: '1d5a43' },
+      { token: 'string', foreground: 'a15c1f' },
+      { token: 'string.escape', foreground: '9c3a2e' },
+      { token: 'number', foreground: '2c5aa0' },
+      { token: 'constant', foreground: '2c5aa0' },
+      { token: 'tag', foreground: '6d3f87' },
+      { token: 'type', foreground: '17201b' },
+      { token: 'identifier', foreground: '17201b' },
+      { token: 'delimiter', foreground: '46554e' },
+      { token: 'invalid', foreground: '9c3a2e' },
+    ],
+    colors: {
+      'editor.background': '#ffffff',
+      'editor.foreground': '#17201b',
+      'editorLineNumber.foreground': '#65736a',
+      'editorLineNumber.activeForeground': '#46554e',
+      'editor.lineHighlightBackground': '#f4f2ea',
+      'editor.selectionBackground': '#d6e4dc',
+      'editor.inactiveSelectionBackground': '#eaf1ed',
+      'editor.selectionHighlightBackground': '#eaf1ed',
+      'editor.wordHighlightBackground': '#eaf1ed',
+      'editorCursor.foreground': '#1d5a43',
+      'editorWhitespace.foreground': '#cfcdc0',
+      'editorIndentGuide.background1': '#eceae1',
+      'editorIndentGuide.activeBackground1': '#cfcdc0',
+      'editorBracketMatch.background': '#eaf1ed',
+      'editorBracketMatch.border': '#1d5a43',
+      'editorGutter.background': '#ffffff',
+      'editorWidget.background': '#ffffff',
+      'editorWidget.border': '#e3e2d9',
+      'editorWidget.foreground': '#17201b',
+      'editorSuggestWidget.background': '#ffffff',
+      'editorSuggestWidget.border': '#e3e2d9',
+      'editorSuggestWidget.foreground': '#17201b',
+      'editorSuggestWidget.selectedBackground': '#eaf1ed',
+      'editorSuggestWidget.selectedForeground': '#17201b',
+      'editorSuggestWidget.highlightForeground': '#1d5a43',
+      'editorHoverWidget.background': '#ffffff',
+      'editorHoverWidget.border': '#e3e2d9',
+      'editor.findMatchBackground': '#f4eed9',
+      'editor.findMatchHighlightBackground': '#f4eed980',
+      'scrollbarSlider.background': '#cfcdc066',
+      'scrollbarSlider.hoverBackground': '#b3b1a399',
+    },
+  });
+}
+
 export default function MonacoEditorWrapper({
   value,
   onChange,
@@ -307,11 +366,13 @@ export default function MonacoEditorWrapper({
   if (!isMounted) {
     // SSR-safe placeholder
     return (
-      <div className="h-full w-full bg-[#1e1e1e] text-gray-400 flex items-center justify-center text-sm">
+      <div className="h-full w-full bg-surface text-muted-foreground flex items-center justify-center text-sm">
         Loading editor...
       </div>
     );
   }
+
+  const geistMonoFamily = getComputedStyle(document.body).getPropertyValue('--font-geist-mono').trim();
 
   return (
     <div className="h-full w-full relative">
@@ -320,12 +381,14 @@ export default function MonacoEditorWrapper({
         language={language}
         value={value}
         onChange={handleChange}
-        theme="vs-dark"
+        theme={RUNES_LIGHT_THEME}
+        beforeMount={defineRunesLightTheme}
         path={modelUri ?? fileName}
         options={{
           readOnly,
           fontSize: 14,
-          fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace",
+          lineHeight: 22,
+          fontFamily: `${geistMonoFamily ? `${geistMonoFamily}, ` : ''}ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace`,
           lineNumbers: 'on',
           minimap: { enabled: false },
           scrollBeyondLastLine: false,
@@ -355,7 +418,7 @@ export default function MonacoEditorWrapper({
         }}
         onMount={handleEditorDidMount}
         loading={
-          <div className="h-full w-full bg-[#1e1e1e] text-gray-400 flex items-center justify-center text-sm">
+          <div className="h-full w-full bg-surface text-muted-foreground flex items-center justify-center text-sm">
             Initializing editor...
           </div>
         }

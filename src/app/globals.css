@@ -3,59 +3,62 @@
 /*
  * Runes AI design tokens
  * ----------------------
- * The document workspace and editor use a dark theme. The public landing page
- * applies its light palette inside .landing-redesign.
+ * The whole app now uses one light palette. The public landing, the documents
+ * dashboard and the editor share the same semantic roles defined here. Product
+ * components consume these roles rather than raw hex values.
  *
- * Accent  - the green sampled from the rune mark (#31cf18), desaturated so it
- *           reads as a brand colour instead of a neon highlight.
- * Neutrals - a single charcoal ramp with a faint cool cast. `canvas` is the
- *           page background, `surface` headers/panels, `surface-raised` inputs
- *           and hover targets, `surface-overlay` menus and modals.
- * Type    - Geist Sans (loaded in layout.tsx) + Geist Mono for metadata.
+ * Action    - the deep green sampled from the rune mark, dark enough to hold
+ *             white text and AA contrast on the warm canvas.
+ * Neutrals  - a warm off-white ramp. `canvas` is the page background, `surface`
+ *             cards/panels/toolbars, `surface-raised` insets and hovers,
+ *             `surface-overlay` menus and dialogs.
+ * Type      - Geist Sans (loaded in layout.tsx) + Geist Mono for metadata.
+ * The public landing keeps its `ink`/`line`/`action` aliases below for the
+ * classes written before these roles existed.
  */
 @theme {
-  /* Accent (single) */
-  --color-primary: oklch(0.746 0.2 145);
-  --color-primary-hover: oklch(0.686 0.19 145);
-  --color-primary-foreground: oklch(0.2 0.04 150);
-  --color-primary-subtle: oklch(0.746 0.2 145 / 0.14);
-  --color-primary-border: oklch(0.746 0.2 145 / 0.34);
-  --color-accent: oklch(0.746 0.2 145);
-  --color-accent-foreground: oklch(0.2 0.04 150);
+  /* Action (single) */
+  --color-primary: #1d5a43;
+  --color-primary-hover: #174834;
+  --color-primary-foreground: #ffffff;
+  --color-primary-subtle: #eaf1ed;
+  --color-primary-border: #bcd4c9;
+  --color-accent: #1d5a43;
+  --color-accent-foreground: #ffffff;
 
   /* Surfaces */
-  --color-background: oklch(0.185 0.009 255);
-  --color-canvas: oklch(0.185 0.009 255);
-  --color-surface: oklch(0.232 0.009 255);
-  --color-surface-raised: oklch(0.272 0.01 255);
-  --color-surface-overlay: oklch(0.31 0.011 255);
-  --color-card: oklch(0.232 0.009 255);
-  --color-card-foreground: oklch(0.965 0.004 255);
-  --color-popover: oklch(0.31 0.011 255);
-  --color-popover-foreground: oklch(0.965 0.004 255);
+  --color-background: #fafaf7;
+  --color-canvas: #fafaf7;
+  --color-surface: #ffffff;
+  --color-surface-raised: #f4f2ea;
+  --color-surface-overlay: #ffffff;
+  --color-card: #ffffff;
+  --color-card-foreground: #17201b;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #17201b;
 
   /* Lines */
-  --color-border: oklch(0.325 0.011 255);
-  --color-border-subtle: oklch(0.278 0.01 255);
-  --color-input: oklch(0.325 0.011 255);
-  --color-ring: oklch(0.746 0.2 145);
+  --color-border: #e3e2d9;
+  --color-border-subtle: #eceae1;
+  --color-input: #cfcdc0;
+  --color-ring: #1d5a43;
 
   /* Text */
-  --color-foreground: oklch(0.965 0.004 255);
-  --color-muted: oklch(0.272 0.01 255);
-  --color-muted-foreground: oklch(0.735 0.012 255);
-  --color-secondary: oklch(0.272 0.01 255);
-  --color-secondary-foreground: oklch(0.965 0.004 255);
-  --color-meta: oklch(0.66 0.014 255);
+  --color-foreground: #17201b;
+  --color-muted: #f4f2ea;
+  --color-muted-foreground: #46554e;
+  --color-secondary: #f4f2ea;
+  --color-secondary-foreground: #17201b;
+  --color-meta: #65736a;
 
   /* Status */
-  --color-destructive: oklch(0.67 0.19 25);
-  --color-destructive-foreground: oklch(0.98 0.01 25);
-  --color-destructive-subtle: oklch(0.67 0.19 25 / 0.12);
-  --color-warning: oklch(0.81 0.14 85);
-  --color-warning-subtle: oklch(0.81 0.14 85 / 0.12);
-  --color-success: oklch(0.746 0.17 150);
-  --color-success-subtle: oklch(0.746 0.17 150 / 0.12);
+  --color-destructive: #9c3a2e;
+  --color-destructive-foreground: #ffffff;
+  --color-destructive-subtle: #f6e4e0;
+  --color-warning: #80641d;
+  --color-warning-subtle: #f4eed9;
+  --color-success: #1d5a43;
+  --color-success-subtle: #eaf1ed;
 
   /* Radius */
   --radius: 0.625rem;
@@ -66,16 +69,17 @@
 
   /* Type */
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: Georgia, "Times New Roman", serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", monospace;
 
-  /* Elevation - tinted to the background hue, never a neon halo */
-  --shadow-panel: 0 18px 40px -24px rgb(0 0 0 / 0.7);
-  --shadow-overlay: 0 24px 60px -20px rgb(0 0 0 / 0.75);
-  --shadow-accent: 0 10px 30px -18px oklch(0.746 0.2 145 / 0.55);
+  /* Elevation - soft warm shadows, never a neon halo */
+  --shadow-panel: 0 1px 3px rgb(23 32 27 / 0.07);
+  --shadow-overlay: 0 8px 28px rgb(23 32 27 / 0.12);
+  --shadow-accent: 0 6px 20px -10px rgb(29 90 67 / 0.4);
 }
 
-/* Tailwind utilities for the light public landing page. Its canvas and surface
- * values are scoped in landing-redesign.css to preserve the product theme. */
+/* Landing aliases. These predate the semantic roles above and are still used by
+ * the public-page classes. Values match the light system one-to-one. */
 @theme {
   --color-ink: #17201b;
   --color-ink-soft: #46554e;
@@ -137,12 +141,13 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-primary);
+    outline: 2px solid var(--color-ring);
     outline-offset: 2px;
   }
 
   ::selection {
-    background-color: oklch(0.746 0.2 145 / 0.28);
+    background-color: #d6e4dc;
+    color: var(--color-foreground);
   }
 }
 
@@ -150,20 +155,20 @@
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
-  background-image: linear-gradient(to right, var(--color-primary), oklch(0.82 0.16 150));
+  background-image: linear-gradient(to right, var(--color-primary), #3c7f63);
 }
 
 /* Hairline grid used behind marketing sections */
 @utility grid-pattern {
   background-image:
-    linear-gradient(to right, oklch(0.965 0.004 255 / 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, oklch(0.965 0.004 255 / 0.035) 1px, transparent 1px);
+    linear-gradient(to right, rgb(23 32 27 / 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(23 32 27 / 0.04) 1px, transparent 1px);
   background-size: 72px 72px;
 }
 
 /* 1px gradient edge, for framing real product screenshots */
 @utility edge-highlight {
-  box-shadow: inset 0 1px 0 0 oklch(0.965 0.004 255 / 0.08);
+  box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.6);
 }
 
 .markdown-preview :is(h1, h2, h3) {
@@ -221,11 +226,11 @@
 /* Skeleton sweep for loading states */
 @utility skeleton {
   border-radius: var(--radius-md);
-  background-color: oklch(0.965 0.004 255 / 0.05);
+  background-color: #ecebe2;
   background-image: linear-gradient(
     90deg,
     transparent,
-    oklch(0.965 0.004 255 / 0.05),
+    #f8f7f1,
     transparent
   );
   background-size: 200% 100%;

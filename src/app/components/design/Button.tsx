@@ -10,7 +10,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const baseStyles =
-  'inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors duration-150 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 active:translate-y-[1px]';
+  'inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors duration-150 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 active:translate-y-[1px] [@media(pointer:coarse)]:min-h-11';
 
 const variants: Record<NonNullable<ButtonProps['variant']>, string> = {
   primary: 'bg-primary text-primary-foreground hover:bg-primary-hover',

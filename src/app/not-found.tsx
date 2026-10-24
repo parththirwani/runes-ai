@@ -8,20 +8,18 @@ import { FEATURES_ANCHOR, SIGN_IN_PATH } from "@/src/lib/paths";
 
 const NotFound = () => {
   return (
-    <main id="main" className="relative flex min-h-dvh items-center overflow-hidden bg-background">
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 grid-pattern opacity-40" />
-
-      <div className="mx-auto w-full max-w-2xl px-5 py-20 lg:px-8">
-        <p className="font-mono text-sm text-primary">404</p>
-        <h1 className="mt-3 text-3xl font-semibold text-foreground md:text-4xl">
+    <main id="main" className="relative flex min-h-dvh items-center bg-canvas">
+      <div className="mx-auto w-full max-w-2xl px-6 py-20 lg:px-8">
+        <p className="font-mono text-sm text-action">404</p>
+        <h1 className="mt-3 font-serif text-[28px] font-semibold tracking-tight text-foreground md:text-[32px] md:leading-[38px]">
           That page is not in this document
         </h1>
 
-        <div className="mt-8 overflow-hidden rounded-lg border border-border bg-surface">
-          <div className="border-b border-border-subtle bg-surface-raised/50 px-4 py-2 font-mono text-xs text-meta">
+        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-surface shadow-paper">
+          <div className="border-b border-border bg-surface-raised px-4 py-2 font-mono text-xs text-meta">
             latex.out
           </div>
-          <pre className="whitespace-pre-wrap break-words px-4 py-4 font-mono text-sm leading-relaxed text-muted-foreground">
+          <pre className="whitespace-pre-wrap break-words px-4 py-4 font-mono text-sm leading-relaxed text-code-text">
             <code>
               <span className="text-destructive">! LaTeX Error: File `requested-page` not found.</span>
               {"\n"}
@@ -53,16 +51,16 @@ const NotFound = () => {
           </Button>
         </div>
 
-        <nav aria-label="Helpful links" className="mt-12 border-t border-border-subtle pt-6">
+        <nav aria-label="Helpful links" className="mt-12 border-t border-border pt-6">
           <p className="text-sm text-meta">Or jump to:</p>
           <ul className="mt-3 flex flex-wrap gap-x-8 gap-y-2">
             <li>
-              <Link href={FEATURES_ANCHOR} className="text-sm text-primary hover:text-primary-hover">
+              <Link href={FEATURES_ANCHOR} className="text-sm text-action hover:text-action-hover">
                 Features
               </Link>
             </li>
             <li>
-              <Link href={SIGN_IN_PATH} className="text-sm text-primary hover:text-primary-hover">
+              <Link href={SIGN_IN_PATH} className="text-sm text-action hover:text-action-hover">
                 Sign in
               </Link>
             </li>

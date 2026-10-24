@@ -52,7 +52,7 @@ export default function DocumentActions({ document: doc, onDelete }: DocumentAct
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Actions for ${doc.title}`}
-        className="inline-flex size-9 items-center justify-center rounded-md text-meta transition-colors hover:bg-surface-raised hover:text-foreground"
+        className="inline-flex size-11 items-center justify-center rounded-md text-meta transition-colors hover:bg-surface-raised hover:text-foreground"
       >
         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
       </button>

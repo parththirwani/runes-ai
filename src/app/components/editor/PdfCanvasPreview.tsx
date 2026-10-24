@@ -119,16 +119,16 @@ function PdfPage({ document: pdfDocument, pageNumber, zoom, availableWidth }: { 
   };
 
   return (
-    <div ref={placeholderRef} data-pdf-page={pageNumber} className="relative mx-auto mb-4 w-fit min-h-64 bg-white shadow-2xl">
+    <div ref={placeholderRef} data-pdf-page={pageNumber} className="relative mx-auto mb-4 w-fit min-h-64 bg-white border border-border shadow-paper">
       <canvas ref={canvasRef} className="block max-w-none" aria-label={`PDF page ${pageNumber}`} role="img" />
       <div ref={textLayerRef} className="pdf-page-text-layer" />
       <div className="absolute inset-0 z-10 pointer-events-none" aria-label={`PDF page ${pageNumber} links`}>
         {links.map((link) => {
           const style = { left: link.left, top: link.top, width: link.width, height: link.height };
           return link.href ? (
-            <a key={link.id} href={link.href} target="_blank" rel="noopener noreferrer" title={link.href} style={style} className="absolute pointer-events-auto hover:bg-yellow-300/20" />
+            <a key={link.id} href={link.href} target="_blank" rel="noopener noreferrer" title={link.href} style={style} className="absolute pointer-events-auto hover:bg-action/10" />
           ) : (
-            <button key={link.id} type="button" aria-label="Jump to PDF section" onClick={() => void followDestination(link.destination!)} style={style} className="absolute pointer-events-auto cursor-pointer hover:bg-yellow-300/20" />
+            <button key={link.id} type="button" aria-label="Jump to PDF section" onClick={() => void followDestination(link.destination!)} style={style} className="absolute pointer-events-auto cursor-pointer hover:bg-action/10" />
           );
         })}
       </div>
@@ -186,9 +186,9 @@ export default function PdfCanvasPreview({ pdfUrl, zoom }: PdfCanvasPreviewProps
   return (
     <div ref={containerRef} className="w-full min-w-0 py-4" data-testid="pdf-pages">
       {error ? (
-        <p className="p-6 text-center text-sm text-red-300">Could not display the PDF preview. You can still download it.</p>
+        <p className="p-6 text-center text-sm text-destructive">Could not display the PDF preview. You can still download it.</p>
       ) : !document || !availableWidth ? (
-        <p className="p-6 text-center text-sm text-gray-400">Loading PDF preview...</p>
+        <p className="p-6 text-center text-sm text-muted-foreground">Loading PDF preview...</p>
       ) : Array.from({ length: document.numPages }, (_, index) => (
         <PdfPage key={index + 1} document={document} pageNumber={index + 1} zoom={zoom} availableWidth={availableWidth} />
       ))}

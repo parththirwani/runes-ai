@@ -69,18 +69,18 @@ export default function PDFPreview({
   };
 
   return (
-    <div className="h-full w-full bg-[#2a2a2e] flex flex-col">
+    <div className="h-full w-full bg-canvas flex flex-col">
       {/* Preview Toolbar */}
-      <div className="h-12 bg-[#2d2d2d] border-b border-[#3e3e3e] flex items-center justify-between px-4">
+      <div className="h-12 bg-surface border-b border-border flex items-center justify-between px-4">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-400">PDF Preview</span>
+          <span className="text-sm text-muted-foreground">PDF Preview</span>
           {pdfUrl && !isLoading && (
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isStale ? 'bg-yellow-900/30 text-yellow-300' : 'bg-emerald-900/30 text-emerald-300'}`}>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isStale ? 'bg-status-staleSoft text-status-stale' : 'bg-status-savedSoft text-status-saved'}`}>
               {isStale ? 'Outdated' : 'Up to date'}
             </span>
           )}
           {isLoading && statusMessage && (
-            <div className="flex items-center gap-2 text-xs text-emerald-400">
+            <div className="flex items-center gap-2 text-xs text-status-compiling">
               <Clock className="w-3 h-3 animate-pulse" />
               <span>{statusMessage}</span>
             </div>
@@ -99,7 +99,7 @@ export default function PDFPreview({
           />
           <button
             onClick={handleResetZoom}
-            className="px-3 py-1.5 text-xs text-gray-400 hover:text-white min-w-15 text-center transition-colors cursor-pointer"
+            className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground min-w-15 text-center transition-colors cursor-pointer"
             title="Reset zoom"
           >
             {zoom}%
@@ -113,7 +113,7 @@ export default function PDFPreview({
             disabled={zoom >= 200}
             className="cursor-pointer"
           />
-          <div className="h-6 w-px bg-[#3e3e3e] mx-1" />
+          <div className="h-6 w-px bg-border mx-1" />
           {/* Fullscreen Toggle */}
           <IconButton
             icon={isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -137,12 +137,12 @@ export default function PDFPreview({
       </div>
 
       {/* Preview Area */}
-      <div className={`flex-1 overflow-auto bg-[#2a2a2e] scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-[#2a2a2e] hover:scrollbar-thumb-gray-500 relative ${renderPages && pdfUrl ? '' : 'flex items-center justify-center p-8'}`}>
+      <div className={`flex-1 overflow-auto bg-canvas relative ${renderPages && pdfUrl ? '' : 'flex items-center justify-center p-8'}`}>
         {/* Show PDF if available */}
         {pdfUrl && renderPages && <PdfCanvasPreview pdfUrl={pdfUrl} zoom={zoom} />}
         {pdfUrl && !renderPages && (
           <div
-            className="shadow-2xl transition-all duration-300"
+            className="shadow-lift transition-all duration-300"
             style={{
               transform: `scale(${zoom / 100})`,
               transformOrigin: 'center top'
@@ -159,13 +159,13 @@ export default function PDFPreview({
         {/* Empty state - only show if NEVER started compiling AND no PDF */}
         {!pdfUrl && !hasStartedCompilation && (
           <div className="text-center max-w-md">
-            <div className="w-48 h-64 bg-gray-700 rounded-lg shadow-lg mx-auto mb-6 flex items-center justify-center">
-              <FileText className="w-20 h-20 text-gray-600" />
+            <div className="w-48 h-64 bg-surface border border-border shadow-paper rounded-lg mx-auto mb-6 flex items-center justify-center">
+              <FileText className="w-20 h-20 text-meta" />
             </div>
-            <h3 className="text-xl font-semibold text-white mb-2">
+            <h3 className="text-xl font-semibold text-foreground mb-2">
               No PDF Generated Yet
             </h3>
-            <p className="text-gray-400 text-sm mb-6">
+            <p className="text-muted-foreground text-sm mb-6">
               Click the compile button to generate a PDF preview of your {documentKind} document
             </p>
             <Button
@@ -180,13 +180,13 @@ export default function PDFPreview({
 
         {/* Loading overlay - shown when compiling (for first compile AND recompiles) */}
         {isLoading && (
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-10">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto mb-4" />
-              <p className="text-white text-sm font-medium mb-2">
+          <div className="absolute inset-0 bg-canvas/85 flex items-center justify-center z-10">
+            <div className="text-center rounded-xl border border-border bg-surface px-6 py-5 shadow-soft">
+              <div className="animate-spin rounded-full h-12 w-12 border-2 border-action border-t-transparent mx-auto mb-4" />
+              <p className="text-foreground text-sm font-medium mb-2">
                 {statusMessage || 'Compiling your document...'}
               </p>
-              <p className="text-gray-400 text-xs">
+              <p className="text-muted-foreground text-xs">
                 This may take a few moments
               </p>
             </div>
@@ -195,11 +195,11 @@ export default function PDFPreview({
 
         {/* Optional: During queue/waiting (isLoading false but hasStarted=true & no pdfUrl) show a waiting message */}
         {!pdfUrl && hasStartedCompilation && !isLoading && (
-          <div className="text-center text-gray-300">
+          <div className="text-center text-muted-foreground">
             <div className="animate-pulse mb-4">
-              <Clock className="w-12 h-12 mx-auto text-emerald-400" />
+              <Clock className="w-12 h-12 mx-auto text-action" />
             </div>
-            <p className="text-lg">Job queued – waiting for compilation...</p>
+            <p className="text-lg text-foreground">Job queued – waiting for compilation...</p>
             <p className="text-sm mt-2">Your PDF will appear here once ready</p>
           </div>
         )}

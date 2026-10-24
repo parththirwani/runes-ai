@@ -898,13 +898,13 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                   key={node.id}
                   type="button"
                   onClick={() => handleOutlineSelect(node)}
-                  className="w-full text-left px-3 py-1.5 rounded text-[13px] text-gray-300 hover:bg-[#2a2d2e] flex items-center justify-between gap-2"
+                  className="w-full text-left px-3 py-1.5 rounded text-[13px] text-foreground hover:bg-surface-raised flex items-center justify-between gap-2"
                 >
                   <span className="truncate">{node.name}</span>
-                  <span className="text-[10px] text-gray-500 tabular-nums">L{node.lineNumber}</span>
+                  <span className="text-[10px] text-meta tabular-nums">L{node.lineNumber}</span>
                 </button>
               )) : (
-                <p className="px-3 py-4 text-xs leading-5 text-gray-500">
+                <p className="px-3 py-4 text-xs leading-5 text-muted-foreground">
                   {isMarkdown ? 'Use Markdown headings to build an outline of the open file.' : 'Use \\section and related headings to build an outline of the open file.'}
                 </p>
               )}
@@ -935,7 +935,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
         <div className={`h-full flex transition-[padding] duration-300 ${showSettings ? 'pr-80 max-[500px]:pr-[90vw]' : ''}`}>
           {(viewMode === 'editor' || viewMode === 'split') && (
-            <div className={`${viewMode === 'split' ? 'w-full md:w-1/2' : 'w-full'} border-r border-[#3e3e3e] flex flex-col`}>
+            <div className={`${viewMode === 'split' ? 'w-full md:w-1/2' : 'w-full'} border-r border-border flex flex-col`}>
               <FileTabs
                 openPaths={workspace.openPaths}
                 files={workspace.filesByPath}
@@ -947,7 +947,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
               />
 
               {/* AI Toolbar */}
-              <div className="min-h-10 bg-[#2d2d2d] border-b border-[#3e3e3e] flex flex-wrap items-center px-3 py-1 gap-2 shrink-0">
+              <div className="min-h-10 bg-surface border-b border-border flex flex-wrap items-center px-3 py-1 gap-2 shrink-0">
                 {isMarkdown && (
                   <>
                     <Button
@@ -971,8 +971,8 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                         event.target.value = '';
                       }}
                     />
-                    {imageUploadStatus && <span role="status" className="text-xs text-emerald-400">{imageUploadStatus}</span>}
-                    <div className="h-4 w-px bg-[#3e3e3e]" />
+                    {imageUploadStatus && <span role="status" className="text-xs text-action">{imageUploadStatus}</span>}
+                    <div className="h-4 w-px bg-border" />
                   </>
                 )}
                 <span title={paraphraseDisabledReason || 'Paraphrase selection'}>
@@ -988,16 +988,16 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                   </Button>
                 </span>
 
-                <div className="h-4 w-px bg-[#3e3e3e]" />
+                <div className="h-4 w-px bg-border" />
 
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-gray-500">Tone:</span>
+                  <span className="text-[10px] text-meta">Tone:</span>
                   {['Clearer', 'Shorter', 'Formal'].map((tone) => (
                     <button
                       key={tone}
                       onClick={() => handleParaphrase(tone)}
                       disabled={isAiLoading || !!proposal || !!paraphraseDisabledReason || isBinaryActive}
-                      className="text-[11px] px-1.5 py-0.5 rounded text-gray-400 hover:text-white hover:bg-[#3e3e3e] transition-colors disabled:opacity-40"
+                      className="text-[11px] px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-surface-raised transition-colors disabled:opacity-40"
                     >
                       {tone}
                     </button>
@@ -1006,20 +1006,20 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
                 <div className="ml-auto flex items-center gap-2">
                   {isAiLoading && (
-                    <span className="text-xs text-blue-400 flex items-center gap-1">
+                    <span className="text-xs text-status-compiling flex items-center gap-1">
                       <RefreshCw className="w-3 h-3 animate-spin" />
                       AI working...
                     </span>
                   )}
-                  {aiError && !proposal && <span className="text-xs text-yellow-400">{aiError}</span>}
-                  {autocompleteNotice && <span role="status" className="text-xs text-yellow-400">{autocompleteNotice}</span>}
+                  {aiError && !proposal && <span className="text-xs text-status-error">{aiError}</span>}
+                  {autocompleteNotice && <span role="status" className="text-xs text-status-stale">{autocompleteNotice}</span>}
 
-                  <label className="hidden sm:flex items-center gap-1.5 text-[11px] text-gray-500 cursor-pointer">
+                  <label className="hidden sm:flex items-center gap-1.5 text-[11px] text-meta cursor-pointer">
                     <input
                       type="checkbox"
                       checked={autocompleteEnabled}
                       onChange={(event) => setAutocompleteEnabled(event.target.checked)}
-                      className="w-3 h-3 accent-emerald-500"
+                      className="w-3 h-3 accent-action"
                     />
                     AI complete
                   </label>
@@ -1029,15 +1029,15 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
               {/* Editor, binary preview, or empty state */}
               <div className="flex-1 overflow-hidden">
                 {isBinaryActive && activeFile ? (
-                  <div className="h-full overflow-auto p-4 flex flex-col items-center gap-3 bg-[#1e1e1e]">
+                  <div className="h-full overflow-auto p-4 flex flex-col items-center gap-3 bg-surface-raised">
                     {/* The preview is the user's own uploaded file, served raw by the asset route. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={workspaceClient.assetUrl(slug, activeFile.path)}
                       alt={activeFile.path}
-                      className="max-w-full border border-[#3e3e3e] rounded bg-white"
+                      className="max-w-full border border-border rounded bg-white"
                     />
-                    <p className="text-xs text-gray-400 text-center">
+                    <p className="text-xs text-muted-foreground text-center">
                       {activeFile.path} · {activeFile.sizeBytes} bytes · {activeFile.mimeType || activeFile.kind}
                     </p>
                     <p className="text-[11px] text-meta">Images are read only. {isMarkdown ? 'Insert them with Markdown image syntax.' : <>Reference them from a .tex file with \includegraphics{'{'}...{'}'}.</>}</p>
@@ -1052,14 +1052,14 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                     onEditorReady={handleEditorReady}
                   />
                 ) : (
-                  <div className="h-full flex items-center justify-center text-sm text-gray-500 px-6 text-center">
+                  <div className="h-full flex items-center justify-center text-sm text-muted-foreground px-6 text-center">
                     Open a file from the workspace panel, or create one to start writing.
                   </div>
                 )}
               </div>
 
               {proposal && (
-                <div className="border-t border-[#3e3e3e] shrink-0">
+                <div className="border-t border-border shrink-0">
                   <DiffReview
                     proposal={proposal}
                     onAccept={handleAccept}
@@ -1071,18 +1071,18 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
               )}
 
               {(compileError || diagnostics.length > 0 || missingRefs.length > 0) && (
-                <div className="border-t border-red-900/60 bg-red-950/40 max-h-32 overflow-y-auto shrink-0" role="status">
-                  <div className="flex items-center gap-1.5 px-3 pt-2 text-[11px] text-red-300">
+                <div className="border-t border-destructive/30 bg-destructive-subtle max-h-32 overflow-y-auto shrink-0" role="status">
+                  <div className="flex items-center gap-1.5 px-3 pt-2 text-[11px] text-destructive">
                     <FileWarning className="w-3.5 h-3.5" />
                     <span>{diagnostics.length || missingRefs.length ? 'Compiler diagnostics' : 'Compile problem'}</span>
                   </div>
                   {compileError && !diagnostics.length && !missingRefs.length && (
-                    <p className="px-3 pt-1 text-[11px] text-red-200 whitespace-pre-line">{compileError}</p>
+                    <p className="px-3 pt-1 text-[11px] text-destructive whitespace-pre-line">{compileError}</p>
                   )}
                   <ul className="px-3 pb-2 pt-1 space-y-0.5">
                     {missingRefs.map((ref, index) => (
                       <li key={'missing-' + index}>
-                        <span className="text-[11px] text-red-200">
+                        <span className="text-[11px] text-destructive">
                           {ref.file}: {ref.command} target &apos;{ref.reference}&apos; was not found in the workspace
                         </span>
                       </li>
@@ -1091,7 +1091,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                       <li key={'diag-' + index}>
                         <button
                           type="button"
-                          className="text-[11px] text-left text-red-200 hover:underline"
+                          className="text-[11px] text-left text-destructive hover:underline"
                           onClick={() => openDiagnostic(diagnostic.file, diagnostic.line)}
                         >
                           {diagnostic.file ? diagnostic.file + (diagnostic.line ? ':' + diagnostic.line : '') : 'engine'}: {diagnostic.message}
@@ -1103,7 +1103,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
               )}
 
               {pdfIsStale && pdfUrl && (
-                <div className="h-7 bg-yellow-900/30 border-t border-yellow-700/50 flex items-center px-3 text-[11px] text-yellow-400 shrink-0">
+                <div className="h-7 bg-warning-subtle border-t border-warning/30 flex items-center px-3 text-[11px] text-warning shrink-0">
                   <span>
                     PDF is older than the current source — {workspace.stalePaths.length} file(s) changed since it was compiled
                   </span>

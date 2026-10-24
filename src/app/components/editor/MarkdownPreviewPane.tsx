@@ -40,14 +40,14 @@ export default function MarkdownPreviewPane({
   }, [source]);
 
   return (
-    <div className="h-full flex flex-col bg-[#2a2a2e]">
-      <div role="tablist" aria-label="Markdown preview mode" className="flex items-center gap-1 px-3 py-2 bg-[#2d2d2d] border-b border-[#3e3e3e] shrink-0">
+    <div className="h-full flex flex-col bg-canvas">
+      <div role="tablist" aria-label="Markdown preview mode" className="flex items-center gap-1 px-3 py-2 bg-surface border-b border-border shrink-0">
         <button
           role="tab"
           aria-selected={tab === 'reading'}
           onClick={() => setTab('reading')}
-          className={`px-3 py-1.5 rounded-md text-xs cursor-pointer ${
-            tab === 'reading' ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:text-white hover:bg-[#4e4e4e]'
+          className={`min-h-11 px-3 py-1.5 rounded-md text-xs cursor-pointer ${
+            tab === 'reading' ? 'bg-action text-white' : 'text-muted-foreground hover:text-foreground hover:bg-surface-raised'
           }`}
         >
           Reading preview
@@ -56,13 +56,13 @@ export default function MarkdownPreviewPane({
           role="tab"
           aria-selected={tab === 'pdf'}
           onClick={() => setTab('pdf')}
-          className={`px-3 py-1.5 rounded-md text-xs cursor-pointer flex items-center gap-1.5 ${
-            tab === 'pdf' ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:text-white hover:bg-[#4e4e4e]'
+          className={`min-h-11 px-3 py-1.5 rounded-md text-xs cursor-pointer flex items-center gap-1.5 ${
+            tab === 'pdf' ? 'bg-action text-white' : 'text-muted-foreground hover:text-foreground hover:bg-surface-raised'
           }`}
         >
           PDF
           {tab === 'pdf' && pdfIsStale && pdfUrl && (
-            <span className="rounded-full bg-yellow-900/50 px-1.5 py-0.5 text-[9px] text-yellow-300">Outdated</span>
+            <span className="rounded-full bg-status-staleSoft px-1.5 py-0.5 text-[9px] text-status-stale">Outdated</span>
           )}
         </button>
       </div>
@@ -70,11 +70,13 @@ export default function MarkdownPreviewPane({
       {tab === 'reading' ? (
         <div className="flex-1 overflow-auto" data-testid="markdown-reading-pane">
           <p className="sr-only">Reading preview of the current source. The PDF tab shows the latest successful compile.</p>
-          <div className="px-3 py-1.5 text-[10px] uppercase tracking-wide text-gray-500 bg-[#26262a] border-b border-[#3e3e3e]">
+          <div className="px-3 py-1.5 text-[10px] uppercase tracking-wide text-meta bg-surface-raised border-b border-border">
             Reading preview — current source
           </div>
-          <div className="p-6">
-            <MarkdownPreview source={previewSource} />
+          <div className="bg-surface px-6 py-8">
+            <div className="mx-auto max-w-2xl">
+              <MarkdownPreview source={previewSource} />
+            </div>
           </div>
         </div>
       ) : (

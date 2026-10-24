@@ -25,10 +25,10 @@ export default function FormatFilter({ value, onChange, counts }: FormatFilterPr
             type="button"
             aria-pressed={selected}
             onClick={() => onChange(option.id)}
-            className={`px-3 py-1.5 rounded-full text-xs border transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-500 ${
+            className={`min-h-11 rounded-full border px-3 py-1.5 text-xs transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
               selected
-                ? 'bg-emerald-600 border-emerald-500 text-white'
-                : 'bg-transparent border-white/15 text-gray-400 hover:text-white hover:border-white/30'
+                ? 'border-action bg-action text-white'
+                : 'border-line bg-surface text-ink-soft hover:border-line-strong hover:text-ink'
             }`}
           >
             {option.label}
