@@ -52,7 +52,7 @@ export default function TopNavBar({
     : { editor: 'Code', split: 'Split', preview: 'PDF' };
 
   return (
-    <div className="min-h-14 bg-[#2d2d2d] border-b border-[#3e3e3e] flex flex-wrap items-center justify-between gap-2 px-4 py-2 relative z-30 shrink-0">
+    <div className="min-h-14 bg-surface border-b border-border flex flex-wrap items-center justify-between gap-2 px-4 py-2 relative z-30 shrink-0">
       {/* Left Section */}
       <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:gap-4">
         <IconButton
@@ -72,26 +72,26 @@ export default function TopNavBar({
           <Logo variant="mark" size="sm" className="sm:hidden" alt="Runes AI" />
         </button>
         
-        <div className="h-6 w-px bg-[#3e3e3e]" />
+        <div className="h-6 w-px bg-border" />
         
-        <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-gray-400 sm:flex-initial">
-          <FileText className="w-4 h-4 shrink-0" />
+        <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground sm:flex-initial">
+          <FileText className="w-4 h-4 shrink-0 text-meta" />
           <button
             onClick={onTitleEdit}
-            className="flex min-w-0 max-w-50 items-center gap-1 truncate hover:text-gray-200 transition-colors group cursor-pointer"
+            className="flex min-w-0 max-w-50 items-center gap-1 truncate text-foreground hover:text-action transition-colors group cursor-pointer"
             title="Click to edit title"
           >
             <span className="truncate">{documentTitle}</span>
             <Edit2 className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
           </button>
           {hasUnsavedChanges && (
-            <span className="w-2 h-2 bg-yellow-500 rounded-full" title="Unsaved changes" />
+            <span className="w-2 h-2 bg-status-unsaved rounded-full" title="Unsaved changes" aria-hidden="true" />
           )}
           <span
             className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium whitespace-nowrap ${
               isMarkdown
-                ? 'border-sky-400/40 bg-sky-400/10 text-sky-300'
-                : 'border-amber-400/40 bg-amber-400/10 text-amber-300'
+                ? 'border-status-compiling/25 bg-status-compilingSoft text-status-compiling'
+                : 'border-status-unsaved/25 bg-status-unsavedSoft text-status-unsaved'
             }`}
           >
             {isMarkdown ? 'Markdown' : 'LaTeX'}
@@ -113,7 +113,7 @@ export default function TopNavBar({
           />
         )}
         
-        <div className="hidden h-6 w-px bg-[#3e3e3e] sm:block" />
+        <div className="hidden h-6 w-px bg-border sm:block" />
 
         <Button
           variant="secondary"

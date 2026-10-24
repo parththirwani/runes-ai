@@ -17,8 +17,8 @@ interface FileTreeProps {
 }
 
 const FileIcon = ({ type }: { type: string }) => {
-  if (type === 'file') return <FileText className="w-4 h-4 text-blue-400" />;
-  return <ListTree className="w-4 h-4 text-emerald-400" />;
+  if (type === 'file') return <FileText className="w-4 h-4 text-status-compiling" />;
+  return <ListTree className="w-4 h-4 text-action" />;
 };
 
 const FileTreeItem = ({ 
@@ -44,14 +44,14 @@ const FileTreeItem = ({
             onSelect?.(file);
           }
         }}
-        className={`w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 hover:bg-[#2a2d2e] transition-colors ${
-          file.active ? 'bg-[#37373d] text-white ring-1 ring-emerald-500/40' : 'text-gray-300'
+        className={`w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 hover:bg-surface-raised transition-colors ${
+          file.active ? 'bg-action-soft text-action ring-1 ring-action/20' : 'text-foreground'
         }`}
         style={{ paddingLeft: `${12 + level * 16}px` }}
         title={file.type === 'section' ? `Jump to line ${file.lineNumber}` : file.name}
       >
         {hasChildren && (
-          <span className="shrink-0 text-gray-500">
+          <span className="shrink-0 text-meta">
             {effectiveExpanded ? (
               <ChevronDown className="w-3 h-3" />
             ) : (
@@ -63,7 +63,7 @@ const FileTreeItem = ({
         <FileIcon type={file.type} />
         <span className="truncate flex-1">{file.name}</span>
         {file.type === 'section' && (
-          <span className="text-[10px] text-gray-500 tabular-nums">L{file.lineNumber}</span>
+          <span className="text-[10px] text-meta tabular-nums">L{file.lineNumber}</span>
         )}
       </button>
       
@@ -97,14 +97,14 @@ export default function FileTree({
 
   return (
     <div
-      className={`absolute top-0 left-0 bottom-0 w-64 bg-[#252526] border-r border-[#3e3e3e] transform transition-transform duration-300 z-20 ${
+      className={`absolute top-0 left-0 bottom-0 w-64 bg-surface border-r border-border transform transition-transform duration-300 z-20 ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
       }`}
     >
       <div className="h-full flex flex-col">
         {/* Header */}
-        <div className="h-14 border-b border-[#3e3e3e] flex items-center justify-between px-4">
-          <span className="text-white font-semibold text-sm">{title}</span>
+        <div className="h-14 border-b border-border flex items-center justify-between px-4">
+          <span className="text-foreground font-semibold text-sm">{title}</span>
           <IconButton
             icon={<X className="w-4 h-4" />}
             variant="ghost"
@@ -121,14 +121,14 @@ export default function FileTree({
               <FileTreeItem key={file.id} file={file} onSelect={onFileSelect} />
             ))
           ) : (
-            <div className="px-3 py-4 text-xs leading-5 text-gray-500">
+            <div className="px-3 py-4 text-xs leading-5 text-muted-foreground">
               {emptyMessage}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="p-2 border-t border-[#3e3e3e]">
+        <div className="p-2 border-t border-border">
           <Button
             variant="primary"
             size="sm"
@@ -150,11 +150,11 @@ export default function FileTree({
           background: transparent;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #3e3e3e;
+          background: #cfcdc0;
           border-radius: 4px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #4e4e4e;
+          background: #b3b1a3;
         }
       `}</style>
     </div>

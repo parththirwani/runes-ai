@@ -46,70 +46,70 @@ export default function AiWorkspacePanel({
   isMarkdown = false,
 }: AiWorkspacePanelProps) {
   const status = hasProposal
-    ? { icon: <CheckCircle2 className="w-4 h-4 text-emerald-400" />, label: 'Proposal ready', detail: 'Review the diff below the editor.' }
+    ? { icon: <CheckCircle2 className="w-4 h-4 text-action" />, label: 'Proposal ready', detail: 'Review the diff below the editor.' }
     : isAiLoading
-      ? { icon: <Clock3 className="w-4 h-4 text-blue-400" />, label: 'AI thinking', detail: 'Keep writing or wait for the current suggestion.' }
+      ? { icon: <Clock3 className="w-4 h-4 text-status-compiling" />, label: 'AI thinking', detail: 'Keep writing or wait for the current suggestion.' }
       : aiError
-        ? { icon: <XCircle className="w-4 h-4 text-yellow-400" />, label: 'Attention needed', detail: aiError }
+        ? { icon: <XCircle className="w-4 h-4 text-status-error" />, label: 'Attention needed', detail: aiError }
         : autocompleteNotice
-          ? { icon: <AlertTriangle className="w-4 h-4 text-yellow-400" />, label: 'AI limited', detail: autocompleteNotice }
-          : { icon: <Sparkles className="w-4 h-4 text-emerald-400" />, label: 'AI ready', detail: 'Autocomplete and paraphrase are available in prose.' };
+          ? { icon: <AlertTriangle className="w-4 h-4 text-status-stale" />, label: 'AI limited', detail: autocompleteNotice }
+          : { icon: <Sparkles className="w-4 h-4 text-action" />, label: 'AI ready', detail: 'Autocomplete and paraphrase are available in prose.' };
 
   return (
     <aside
-      className={`absolute top-0 right-0 bottom-0 w-80 max-w-[90vw] bg-[#252526] border-l border-[#3e3e3e] transform transition-transform duration-300 z-20 ${
+      className={`absolute top-0 right-0 bottom-0 w-80 max-w-[90vw] bg-canvas border-l border-border transform transition-transform duration-300 z-20 ${
         isOpen ? 'translate-x-0' : 'translate-x-full'
       }`}
       aria-label="AI workspace"
     >
       <div className="h-full flex flex-col">
-        <div className="h-14 border-b border-[#3e3e3e] px-4 flex items-center justify-between">
+        <div className="h-14 border-b border-border px-4 flex items-center justify-between">
           <div>
-            <div className="text-white font-semibold text-sm">AI workspace</div>
-            <div className="text-[11px] text-gray-500">Native editing controls for this draft</div>
+            <div className="text-foreground font-semibold text-sm">AI workspace</div>
+            <div className="text-[11px] text-meta">Native editing controls for this draft</div>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-sm transition-colors">Close</button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-sm transition-colors">Close</button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 text-sm text-gray-300">
-          <section className="rounded-lg border border-[#3e3e3e] bg-[#1f1f20] p-3 space-y-2">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-500">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 text-sm text-foreground">
+          <section className="rounded-lg border border-border bg-surface p-3 space-y-2">
+            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-meta">
               {status.icon}
               <span>{status.label}</span>
             </div>
-            <p className="text-sm text-gray-300">{status.detail}</p>
+            <p className="text-sm text-muted-foreground">{status.detail}</p>
           </section>
 
-          <section className="rounded-lg border border-[#3e3e3e] bg-[#1f1f20] p-3 space-y-3">
+          <section className="rounded-lg border border-border bg-surface p-3 space-y-3">
             <div>
-              <div className="flex items-center gap-2 text-white font-medium">
-                <Zap className="w-4 h-4 text-emerald-400" />
+              <div className="flex items-center gap-2 text-foreground font-medium">
+                <Zap className="w-4 h-4 text-action" />
                 Inline autocomplete
               </div>
-              <p className="mt-1 text-xs text-gray-500">Ghost text appears only in prose. Press Tab to accept.</p>
+              <p className="mt-1 text-xs text-meta">Ghost text appears only in prose. Press Tab to accept.</p>
             </div>
 
-            <label className="flex items-center justify-between rounded-md bg-[#2a2a2d] px-3 py-2 cursor-pointer">
+            <label className="flex items-center justify-between rounded-md bg-surface-raised px-3 py-2 cursor-pointer">
               <span>
-                <span className="block text-sm text-gray-200">Enable AI complete</span>
-                <span className="block text-[11px] text-gray-500">Session-only preference</span>
+                <span className="block text-sm text-foreground">Enable AI complete</span>
+                <span className="block text-[11px] text-meta">Session-only preference</span>
               </span>
               <input
                 type="checkbox"
                 checked={autocompleteEnabled}
                 onChange={(event) => onAutocompleteEnabledChange(event.target.checked)}
-                className="w-4 h-4 accent-emerald-500"
+                className="w-4 h-4 accent-action"
               />
             </label>
           </section>
 
-          <section className="rounded-lg border border-[#3e3e3e] bg-[#1f1f20] p-3 space-y-3">
+          <section className="rounded-lg border border-border bg-surface p-3 space-y-3">
             <div>
-              <div className="flex items-center gap-2 text-white font-medium">
-                <Wand2 className="w-4 h-4 text-violet-400" />
+              <div className="flex items-center gap-2 text-foreground font-medium">
+                <Wand2 className="w-4 h-4 text-status-compiling" />
                 Selection rewrite
               </div>
-              <p className="mt-1 text-xs text-gray-500">Select prose, then send it to AI without changing {isMarkdown ? 'Markdown syntax' : 'LaTeX structure'}.</p>
+              <p className="mt-1 text-xs text-meta">Select prose, then send it to AI without changing {isMarkdown ? 'Markdown syntax' : 'LaTeX structure'}.</p>
             </div>
 
             <div className="grid grid-cols-3 gap-2">
@@ -128,21 +128,21 @@ export default function AiWorkspacePanel({
               ))}
             </div>
 
-            <div className="rounded-md bg-[#2a2a2d] px-3 py-2 text-xs text-gray-400">
+            <div className="rounded-md bg-surface-raised px-3 py-2 text-xs text-muted-foreground">
               {paraphraseDisabledReason || 'Ready for the current selection.'}
             </div>
           </section>
 
-          <section className="rounded-lg border border-[#3e3e3e] bg-[#1f1f20] p-3 space-y-3">
-            <div className="text-white font-medium">Compile loop</div>
-            <div className="space-y-2 text-xs text-gray-400">
-              <div className="flex items-center justify-between rounded-md bg-[#2a2a2d] px-3 py-2">
+          <section className="rounded-lg border border-border bg-surface p-3 space-y-3">
+            <div className="text-foreground font-medium">Compile loop</div>
+            <div className="space-y-2 text-xs text-muted-foreground">
+              <div className="flex items-center justify-between rounded-md bg-surface-raised px-3 py-2">
                 <span>Source status</span>
-                <span className={hasUnsavedChanges ? 'text-yellow-300' : 'text-emerald-400'}>{hasUnsavedChanges ? 'Unsaved' : 'Saved'}</span>
+                <span className={hasUnsavedChanges ? 'text-status-unsaved' : 'text-status-saved'}>{hasUnsavedChanges ? 'Unsaved' : 'Saved'}</span>
               </div>
-              <div className="flex items-center justify-between rounded-md bg-[#2a2a2d] px-3 py-2">
+              <div className="flex items-center justify-between rounded-md bg-surface-raised px-3 py-2">
                 <span>Preview freshness</span>
-                <span className={pdfIsStale ? 'text-yellow-300' : 'text-emerald-400'}>{pdfIsStale ? 'Needs compile' : hasPdf ? 'Current' : 'No PDF yet'}</span>
+                <span className={pdfIsStale ? 'text-status-stale' : 'text-status-saved'}>{pdfIsStale ? 'Needs compile' : hasPdf ? 'Current' : 'No PDF yet'}</span>
               </div>
             </div>
 

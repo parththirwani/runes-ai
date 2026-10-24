@@ -26,7 +26,7 @@ export default function FileTabs({ openPaths, files, activePath, mainFilePath, d
   const dirty = new Set(dirtyPaths);
 
   return (
-    <div role="tablist" aria-label="Open files" className="flex items-stretch bg-[#252526] border-b border-[#3e3e3e] overflow-x-auto shrink-0">
+    <div role="tablist" aria-label="Open files" className="flex items-stretch bg-surface-raised border-b border-border overflow-x-auto shrink-0">
       {openPaths.map((path) => {
         const file = files[path];
         const isActive = path === activePath;
@@ -35,8 +35,8 @@ export default function FileTabs({ openPaths, files, activePath, mainFilePath, d
             key={path}
             role="tab"
             aria-selected={isActive}
-            className={`group flex items-center gap-1.5 pl-3 pr-2 py-1.5 text-xs border-r border-[#3e3e3e] cursor-pointer whitespace-nowrap ${
-              isActive ? 'bg-[#1e1e1e] text-white border-t-2 border-t-emerald-500' : 'bg-[#2d2d2d] text-gray-400 hover:bg-[#333]'
+            className={`group flex items-center gap-1.5 pl-3 pr-2 py-1.5 text-xs border-r border-border cursor-pointer whitespace-nowrap ${
+              isActive ? 'bg-surface text-foreground border-t-2 border-t-action' : 'bg-surface-raised text-muted-foreground hover:bg-surface hover:text-foreground'
             }`}
             title={path}
             onClick={() => onSelect(path)}
@@ -48,14 +48,14 @@ export default function FileTabs({ openPaths, files, activePath, mainFilePath, d
             }}
             tabIndex={0}
           >
-            {path === mainFilePath && <Star className="w-3 h-3 text-emerald-400 fill-emerald-400 shrink-0" aria-label="Main file" />}
+            {path === mainFilePath && <Star className="w-3 h-3 text-action fill-action shrink-0" aria-label="Main file" />}
             <span className="truncate max-w-40">{fileNameOf(path)}</span>
-            {dirty.has(path) && <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0" aria-label="Unsaved changes" />}
-            {file?.binary && <span className="text-[10px] text-gray-500">binary</span>}
+            {dirty.has(path) && <span className="w-1.5 h-1.5 rounded-full bg-status-unsaved shrink-0" aria-label="Unsaved changes" />}
+            {file?.binary && <span className="text-[10px] text-meta">binary</span>}
             <button
               type="button"
               aria-label={'Close ' + path}
-              className="opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-white"
+              className="text-meta opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-foreground"
               onClick={(event) => {
                 event.stopPropagation();
                 onClose(path);
