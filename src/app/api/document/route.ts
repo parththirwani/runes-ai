@@ -57,7 +57,7 @@ export const POST = withAuth(async (req, session) => {
     // Handle unique constraint properly (Prisma error code)
     if (error instanceof Error && 'code' in error && error.code === "P2002") {
       return NextResponse.json(
-        { error: "Document with this title already exists" },
+        { error: "A document with this name or URL already exists" },
         { status: 409 }
       );
     }

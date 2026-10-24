@@ -1,12 +1,11 @@
 import React from 'react';
 import { Code, Eye, Split } from 'lucide-react';
 
-type ViewMode = 'editor' | 'split' | 'preview';
+export type ViewMode = 'editor' | 'split' | 'preview';
 
 interface ViewModeToggleProps {
   value: ViewMode;
   onChange: (mode: ViewMode) => void;
-  /** Format-specific labels; Markdown renames Preview to Reading. */
   labels?: Partial<Record<ViewMode, string>>;
 }
 
@@ -16,21 +15,24 @@ export default function ViewModeToggle({ value, onChange, labels }: ViewModeTogg
     { id: 'split', icon: <Split className="w-4 h-4" />, label: labels?.split ?? 'Split' },
     { id: 'preview', icon: <Eye className="w-4 h-4" />, label: labels?.preview ?? 'Preview' }
   ];
-
   return (
-    <div className="flex bg-surface-raised border border-border rounded-lg p-1">
+    <div className="grid w-[240px] max-w-full grid-cols-3 bg-surface-raised border border-border rounded-lg p-1">
       {modes.map((mode) => (
         <button
           key={mode.id}
+          type="button"
           onClick={() => onChange(mode.id)}
-          className={`min-h-11 px-3 py-1.5 rounded-md text-xs transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
+          className={`min-h-10 w-full justify-center px-1.5 py-1 rounded-md text-xs transition-all duration-200 flex items-center gap-1 cursor-pointer ${
             value === mode.id
               ? 'bg-action text-white shadow-sm'
               : 'text-muted-foreground hover:text-foreground hover:bg-surface'
           }`}
           title={mode.label}
+          aria-label={mode.label}
+          aria-pressed={value === mode.id}
         >
           {mode.icon}
+          <span className="hidden min-[380px]:inline sm:hidden">{mode.id === 'preview' ? 'Reading' : mode.label}</span>
           <span className="hidden sm:inline">{mode.label}</span>
         </button>
       ))}

@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from 'react';
+import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { Menu, Close } from './icons';
 import { buttonClass } from './Button';
 import StartWritingLink from '../landing/startWritingLink';
 import Logo from '../brand/logo';
+import SignOutButton from '../auth/SignOutButton';
 import { SIGN_IN_PATH } from '@/src/lib/paths';
 
 const navLinks = [
@@ -15,6 +17,7 @@ const navLinks = [
 
 export default function Navigation() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const { status } = useSession();
 
   return (
     <header className="sticky top-0 z-50 border-b border-line bg-canvas/95 backdrop-blur-md">
@@ -40,9 +43,13 @@ export default function Navigation() {
 
           {/* Desktop actions */}
           <div className="hidden md:flex items-center gap-2">
-            <Link href={SIGN_IN_PATH} className={buttonClass('ghost', 'sm')}>
-              Sign in
-            </Link>
+            {status === 'authenticated' ? (
+              <SignOutButton className={buttonClass('ghost', 'sm')} />
+            ) : (
+              <Link href={SIGN_IN_PATH} className={buttonClass('ghost', 'sm')}>
+                Sign in
+              </Link>
+            )}
             <StartWritingLink className={buttonClass('primary', 'sm')}>
               Start writing
             </StartWritingLink>
@@ -75,9 +82,13 @@ export default function Navigation() {
                 </a>
               ))}
               <div className="flex flex-col gap-2 pt-3 mt-2 border-t border-line">
-                <Link href={SIGN_IN_PATH} className={buttonClass('secondary', 'md')}>
-                  Sign in
-                </Link>
+                {status === 'authenticated' ? (
+                  <SignOutButton className={`${buttonClass('secondary', 'md')} w-full`} />
+                ) : (
+                  <Link href={SIGN_IN_PATH} className={buttonClass('secondary', 'md')}>
+                    Sign in
+                  </Link>
+                )}
                 <StartWritingLink className={buttonClass('primary', 'md')}>
                   Start writing
                 </StartWritingLink>

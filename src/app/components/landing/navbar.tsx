@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useSession } from "next-auth/react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import Logo from "../brand/logo";
+import SignOutButton from "../auth/SignOutButton";
 import StartWritingLink from "./startWritingLink";
 import { Button } from "../ui/button";
 import { SIGN_IN_PATH, FEATURES_ANCHOR, HOW_IT_WORKS_ANCHOR } from "@/src/lib/paths";
@@ -16,6 +18,7 @@ const NAV_ITEMS = [
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
+  const { status } = useSession();
   const reduceMotion = useReducedMotion();
 
   const scrollToSection = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
@@ -57,11 +60,15 @@ export default function Navbar() {
         </ul>
 
         <div className="hidden items-center gap-2 md:flex">
-          <Link href={SIGN_IN_PATH}>
-            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-              Sign in
-            </Button>
-          </Link>
+          {status === 'authenticated' ? (
+            <SignOutButton />
+          ) : (
+            <Link href={SIGN_IN_PATH}>
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+                Sign in
+              </Button>
+            </Link>
+          )}
           <StartWritingLink>
             <Button size="sm">Start writing</Button>
           </StartWritingLink>
@@ -105,11 +112,15 @@ export default function Navbar() {
                 <StartWritingLink>
                   <Button className="w-full">Start writing</Button>
                 </StartWritingLink>
-                <Link href={SIGN_IN_PATH}>
-                  <Button variant="outline" className="w-full">
-                    Sign in
-                  </Button>
-                </Link>
+                {status === 'authenticated' ? (
+                  <SignOutButton className="w-full border border-border bg-surface text-foreground" />
+                ) : (
+                  <Link href={SIGN_IN_PATH}>
+                    <Button variant="outline" className="w-full">
+                      Sign in
+                    </Button>
+                  </Link>
+                )}
               </li>
             </ul>
           </motion.div>

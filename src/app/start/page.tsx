@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import Logo from "../components/brand/logo";
 import GoogleSignInButton from "../components/auth/GoogleSignInButton";
+import SignOutButton from "../components/auth/SignOutButton";
 import { buttonClass } from "../components/landing-redesign/Button";
 import { createDocumentPath, SIGN_IN_PATH, type CreateFormat } from "@/src/lib/paths";
 import "../landing-redesign.css";
@@ -45,10 +46,13 @@ export default function StartPage() {
           <Link href="/" className="inline-flex items-center text-ink transition-opacity hover:opacity-70" aria-label="Runes AI home">
             <Logo variant="wordmark" size="sm" decorative />
           </Link>
-          <Link href="/" className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-ink-soft transition-colors hover:text-ink">
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            Back to home
-          </Link>
+          <div className="flex shrink-0 items-center gap-2">
+            <Link href="/" className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-ink-soft transition-colors hover:text-ink">
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              Back to home
+            </Link>
+            <SignOutButton className="text-ink-soft hover:bg-surface hover:text-ink" />
+          </div>
         </div>
       </header>
 

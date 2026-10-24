@@ -67,7 +67,7 @@ export function useDashboard() {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to create document');
+        throw new Error(error.message || error.error || 'Failed to create document');
       }
 
       const newDoc = await response.json();

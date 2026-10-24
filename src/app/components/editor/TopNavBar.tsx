@@ -3,10 +3,9 @@ import { useRouter } from 'next/navigation';
 import Button from '../design/Button';
 import IconButton from '../design/IconButton';
 import Logo from '../brand/logo';
-import ViewModeToggle from './ViewModeToggle';
+import SignOutButton from '../auth/SignOutButton';
+import ViewModeToggle, { type ViewMode } from './ViewModeToggle';
 import type { DocumentFormatValue } from '@/src/types/compilation';
-
-type ViewMode = 'editor' | 'split' | 'preview';
 
 interface TopNavBarProps {
   documentTitle: string;
@@ -52,7 +51,7 @@ export default function TopNavBar({
     : { editor: 'Code', split: 'Split', preview: 'PDF' };
 
   return (
-    <div className="min-h-14 bg-surface border-b border-border flex flex-wrap items-center justify-between gap-2 px-4 py-2 relative z-30 shrink-0">
+    <div className="min-h-12 bg-surface border-b border-border flex flex-wrap items-center justify-between gap-2 px-4 py-1.5 relative z-30 shrink-0">
       {/* Left Section */}
       <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:gap-4">
         <IconButton
@@ -66,10 +65,9 @@ export default function TopNavBar({
         <button
           onClick={() => router.push('/document')}
           aria-label="Back to documents"
-          className="flex cursor-pointer items-center transition-opacity hover:opacity-80"
+          className="flex shrink-0 cursor-pointer items-center transition-opacity hover:opacity-80"
         >
-          <Logo variant="wordmark" size="sm" className="hidden sm:block" />
-          <Logo variant="mark" size="sm" className="sm:hidden" alt="Runes AI" />
+          <Logo variant="wordmark" size="sm" />
         </button>
         
         <div className="h-6 w-px bg-border" />
@@ -102,6 +100,7 @@ export default function TopNavBar({
 
       {/* Right Section */}
       <div className="flex max-w-full flex-wrap items-center gap-1 sm:gap-2">
+        <SignOutButton className="min-h-9 px-2 text-xs sm:px-3 sm:text-sm" />
         <ViewModeToggle value={viewMode} onChange={onViewModeChange} labels={viewLabels} />
         {onDownloadSource && (
           <IconButton

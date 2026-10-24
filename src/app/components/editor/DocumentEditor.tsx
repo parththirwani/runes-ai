@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import TopNavBar from './TopNavBar';
+import type { ViewMode } from './ViewModeToggle';
 import WorkspacePanel from './WorkspacePanel';
 import FileTabs from './FileTabs';
 import MonacoEditorWrapper from './MonacoEditorWrapper';
@@ -26,8 +27,6 @@ import type { CompileDiagnostic } from '@/src/lib/compile-errors';
 import type { MissingReference } from '@/src/lib/workspace-types';
 import type { editor, languages } from 'monaco-editor';
 import { Wand2, RefreshCw, FileWarning, ImagePlus } from 'lucide-react';
-
-type ViewMode = 'editor' | 'split' | 'preview';
 
 const initialCode = `\\documentclass{article}
 \\usepackage[utf8]{inputenc}
@@ -103,6 +102,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const [title, setTitle] = useState(initialDocument?.title || 'Untitled Document');
   const [slug, setSlug] = useState(initialDocument?.slug || '');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
+  const [previewTab, setPreviewTab] = useState<'reading' | 'pdf'>('reading');
   const [showFileTree, setShowFileTree] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -708,6 +708,10 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       if (response.snapshot) workspace.setCompiledSnapshot(response.snapshot);
       setCompilationStatus(response.reused === 'new' ? 'Queued...' : 'Reusing compile for identical source');
       setCurrentJobId(response.jobId);
+      if (isMarkdown) {
+        setPreviewTab('pdf');
+        if (viewMode === 'editor') setViewMode('split');
+      }
     } catch (error: unknown) {
       setIsCompiling(false);
       const missing = missingReferencesFrom(error);
@@ -853,11 +857,14 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const statusLine = [compilationStatus, compileInfo].filter(Boolean).join(' · ');
 
   return (
-    <main id="main" className="flex h-screen flex-col overflow-hidden bg-canvas">
+    <main id="main" className="document-editor flex h-screen flex-col overflow-hidden bg-canvas">
       <TopNavBar
         documentTitle={title}
         viewMode={viewMode}
-        onViewModeChange={setViewMode}
+        onViewModeChange={(mode) => {
+          if (mode === 'preview' && isMarkdown) setPreviewTab('reading');
+          setViewMode(mode);
+        }}
         onMenuToggle={() => setShowFileTree(!showFileTree)}
         onSave={handleSave}
         onCompile={handleCompile}
@@ -933,9 +940,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           isMarkdown={isMarkdown}
         />
 
-        <div className={`h-full flex transition-[padding] duration-300 ${showSettings ? 'pr-80 max-[500px]:pr-[90vw]' : ''}`}>
+        <div className={`h-full flex flex-col md:flex-row transition-[padding] duration-300 ${showSettings ? 'pr-80 max-[500px]:pr-[90vw]' : ''}`}>
           {(viewMode === 'editor' || viewMode === 'split') && (
-            <div className={`${viewMode === 'split' ? 'w-full md:w-1/2' : 'w-full'} border-r border-border flex flex-col`}>
+            <div className={`${viewMode === 'split' ? 'h-1/2 w-full border-b border-border md:h-full md:w-1/2 md:border-b-0 md:border-r' : 'h-full w-full'} min-h-0 min-w-0 flex flex-col`}>
               <FileTabs
                 openPaths={workspace.openPaths}
                 files={workspace.filesByPath}
@@ -1113,10 +1120,11 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           )}
 
           {(viewMode === 'preview' || viewMode === 'split') && (
-            <div className={`${viewMode === 'split' ? 'hidden md:block md:w-1/2' : 'w-full'}`}>
+            <div className={`${viewMode === 'split' ? 'h-1/2 w-full md:h-full md:w-1/2' : 'h-full w-full'} min-h-0 min-w-0 overflow-hidden`}>
               {isMarkdown ? (
                 <MarkdownPreviewPane
                   source={workspace.filesByPath[workspace.mainFilePath]?.content ?? ''}
+                  tab={previewTab}
                   pdfUrl={pdfUrl}
                   isCompiling={isCompiling}
                   compilationStatus={statusLine}

@@ -176,6 +176,19 @@
   padding-bottom: 0.5rem;
 }
 
+.markdown-preview :is(pre, code) {
+  font-family: var(--font-geist-mono, ui-monospace), "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.document-editor button[class*="min-h-"] {
+  min-height: 2.25rem !important;
+}
+
+.document-editor button[class*="size-"] {
+  width: 2.25rem !important;
+  height: 2.25rem !important;
+}
+
 /* PDF.js positions transparent text above each canvas for selection and find. */
 .pdf-page-text-layer {
   position: absolute;
