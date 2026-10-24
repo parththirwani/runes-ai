@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "./auth";
-import { prisma } from "./db";
-import { verifyDevSession } from './dev-session';
-import type { Session } from 'next-auth';
+import type { Session } from "next-auth";
+import { resolveRequestSession } from "./session";
 
 type RouteContext = { params: Promise<Record<string, string>> };
 
@@ -10,29 +8,9 @@ export function withAuth<C extends { params: Promise<Record<string, string | str
   handler: (req: NextRequest, session: Session, context: C) => Promise<Response>
 ) {
   return async (req: NextRequest, context: C) => {
-    let session = await auth();
-
-    // Dev-mode bypass: check for dev-session cookie
-    if (!session?.user?.id && process.env.NODE_ENV === "development") {
-      const payload = await verifyDevSession(req.cookies.get('dev-session')?.value);
-      if (payload) {
-        try {
-          const dbUser = await prisma.user.findUnique({ where: { id: payload.id } });
-          if (dbUser) {
-            session = {
-              user: {
-                id: dbUser.id,
-                email: dbUser.email,
-                name: `${dbUser.firstName || ""} ${dbUser.lastName || ""}`.trim(),
-              },
-              expires: new Date(Date.now() + 86400000).toISOString(),
-            };
-          }
-        } catch {
-          // Invalid cookie — ignore
-        }
-      }
-    }
+    // Same acceptance rule the server pages use: a user id, and a development
+    // identity that still exists in the database.
+    const session = await resolveRequestSession(req.cookies.get("dev-session")?.value);
 
     if (!session?.user?.id) {
       return NextResponse.json(

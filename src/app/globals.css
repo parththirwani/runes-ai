@@ -176,6 +176,23 @@
   padding-bottom: 0.5rem;
 }
 
+/* The Markdown reading view is set in the serif prose stack, so fenced blocks and
+ * inline code must pin themselves to the mono stack. The explicit fallback keeps a
+ * missing Geist Mono variable from silently inheriting Georgia/Times New Roman. */
+.markdown-preview :is(pre, code) {
+  font-family: var(
+    --font-mono,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    "Courier New",
+    monospace
+  );
+}
+
 /* PDF.js positions transparent text above each canvas for selection and find. */
 .pdf-page-text-layer {
   position: absolute;
