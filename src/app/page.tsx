@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { redirect } from "next/navigation";
 import "./landing-redesign.css";
 import Navigation from "./components/landing-redesign/Navigation";
 import Hero from "./components/landing-redesign/Hero";
@@ -7,6 +8,8 @@ import FormatChoice from "./components/landing-redesign/FormatChoice";
 import ControlReliability from "./components/landing-redesign/ControlReliability";
 import SecondaryFeatures from "./components/landing-redesign/SecondaryFeatures";
 import FinalCta from "./components/landing-redesign/FinalCta";
+import { DOCUMENTS_PATH } from "@/src/lib/paths";
+import { isSignedIn } from "@/src/lib/session";
 
 export const metadata: Metadata = {
   title: "Runes AI | Write and review documents with AI",
@@ -16,7 +19,10 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { themeColor: "#FAFAF7" };
 
-export default function Home() {
+export default async function Home() {
+  // Signed-in users own the product, not the pitch: send them to their documents.
+  if (await isSignedIn()) redirect(DOCUMENTS_PATH);
+
   return (
     <div className="landing-redesign min-h-screen bg-canvas text-ink">
       <Navigation />
