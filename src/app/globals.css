@@ -40,7 +40,7 @@
   /* Lines */
   --color-border: #e3e2d9;
   --color-border-subtle: #eceae1;
-  --color-input: #cfdcc0;
+  --color-input: #cfcdc0;
   --color-ring: #1d5a43;
 
   /* Text */
@@ -69,6 +69,7 @@
 
   /* Type */
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: Georgia, "Times New Roman", serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", monospace;
 
   /* Elevation - soft warm shadows, never a neon halo */

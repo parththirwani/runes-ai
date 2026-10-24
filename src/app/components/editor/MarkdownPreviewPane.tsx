@@ -46,7 +46,7 @@ export default function MarkdownPreviewPane({
           role="tab"
           aria-selected={tab === 'reading'}
           onClick={() => setTab('reading')}
-          className={`px-3 py-1.5 rounded-md text-xs cursor-pointer ${
+          className={`min-h-11 px-3 py-1.5 rounded-md text-xs cursor-pointer ${
             tab === 'reading' ? 'bg-action text-white' : 'text-muted-foreground hover:text-foreground hover:bg-surface-raised'
           }`}
         >
@@ -56,7 +56,7 @@ export default function MarkdownPreviewPane({
           role="tab"
           aria-selected={tab === 'pdf'}
           onClick={() => setTab('pdf')}
-          className={`px-3 py-1.5 rounded-md text-xs cursor-pointer flex items-center gap-1.5 ${
+          className={`min-h-11 px-3 py-1.5 rounded-md text-xs cursor-pointer flex items-center gap-1.5 ${
             tab === 'pdf' ? 'bg-action text-white' : 'text-muted-foreground hover:text-foreground hover:bg-surface-raised'
           }`}
         >

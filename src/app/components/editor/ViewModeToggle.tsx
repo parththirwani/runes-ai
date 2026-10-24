@@ -23,7 +23,7 @@ export default function ViewModeToggle({ value, onChange, labels }: ViewModeTogg
         <button
           key={mode.id}
           onClick={() => onChange(mode.id)}
-          className={`px-3 py-1.5 rounded-md text-xs transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
+          className={`min-h-11 px-3 py-1.5 rounded-md text-xs transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
             value === mode.id
               ? 'bg-action text-white shadow-sm'
               : 'text-muted-foreground hover:text-foreground hover:bg-surface'

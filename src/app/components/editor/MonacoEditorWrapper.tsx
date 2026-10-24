@@ -224,7 +224,7 @@ function defineRunesLightTheme(monaco: typeof import('monaco-editor')) {
     colors: {
       'editor.background': '#ffffff',
       'editor.foreground': '#17201b',
-      'editorLineNumber.foreground': '#a7a99b',
+      'editorLineNumber.foreground': '#65736a',
       'editorLineNumber.activeForeground': '#46554e',
       'editor.lineHighlightBackground': '#f4f2ea',
       'editor.selectionBackground': '#d6e4dc',
@@ -372,6 +372,8 @@ export default function MonacoEditorWrapper({
     );
   }
 
+  const geistMonoFamily = getComputedStyle(document.body).getPropertyValue('--font-geist-mono').trim();
+
   return (
     <div className="h-full w-full relative">
       <Editor
@@ -386,7 +388,7 @@ export default function MonacoEditorWrapper({
           readOnly,
           fontSize: 14,
           lineHeight: 22,
-          fontFamily: "'JetBrains Mono', 'Fira Code', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace",
+          fontFamily: `${geistMonoFamily ? `${geistMonoFamily}, ` : ''}ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace`,
           lineNumbers: 'on',
           minimap: { enabled: false },
           scrollBeyondLastLine: false,

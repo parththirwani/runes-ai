@@ -25,7 +25,7 @@ export default function FormatFilter({ value, onChange, counts }: FormatFilterPr
             type="button"
             aria-pressed={selected}
             onClick={() => onChange(option.id)}
-            className={`rounded-full border px-3 py-1.5 text-xs transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
+            className={`min-h-11 rounded-full border px-3 py-1.5 text-xs transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
               selected
                 ? 'border-action bg-action text-white'
                 : 'border-line bg-surface text-ink-soft hover:border-line-strong hover:text-ink'

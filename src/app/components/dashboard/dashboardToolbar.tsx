@@ -28,7 +28,7 @@ export default function DashboardToolbar({
       onClick={() => onViewModeChange(mode)}
       aria-pressed={viewMode === mode}
       aria-label={`${label} view`}
-      className={`inline-flex size-9 items-center justify-center rounded-md transition-colors ${
+      className={`inline-flex size-11 items-center justify-center rounded-md transition-colors ${
         viewMode === mode
           ? "bg-surface-raised text-foreground"
           : "text-meta hover:bg-surface-raised hover:text-foreground"
@@ -55,14 +55,14 @@ export default function DashboardToolbar({
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder="Search by title"
           aria-describedby={`${labelledBy}-count`}
-          className="w-full rounded-md border border-border bg-background py-2.5 pl-10 pr-10 text-sm text-foreground placeholder:text-meta focus:border-primary focus:outline-none"
+          className="min-h-11 w-full rounded-md border border-border bg-surface py-2.5 pl-10 pr-10 text-sm text-foreground placeholder:text-meta focus:border-primary focus:outline-none"
         />
         {searchQuery && (
           <button
             type="button"
             onClick={() => onSearchChange("")}
             aria-label="Clear search"
-            className="absolute right-2 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-meta transition-colors hover:bg-surface-raised hover:text-foreground"
+            className="absolute right-0 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-md text-meta transition-colors hover:bg-surface-raised hover:text-foreground"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>

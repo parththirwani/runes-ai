@@ -24,7 +24,7 @@ export default function EmptyState({
         <h3 className="font-serif text-lg font-semibold text-foreground">No matching documents</h3>
         <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
           {searchQuery
-            ? `No documents match “${searchQuery}” with the current format filter.`
+            ? `No documents match “${searchQuery}”. Try another search or clear the filters.`
             : 'No documents match the selected format filter.'}
         </p>
         {onClearFilters && (

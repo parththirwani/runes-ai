@@ -10,7 +10,7 @@ interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> 
 }
 
 const baseStyles =
-  'inline-flex items-center justify-center rounded-md transition-colors duration-150 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 active:translate-y-[1px]';
+  'inline-flex items-center justify-center rounded-md transition-colors duration-150 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 active:translate-y-[1px] [@media(pointer:coarse)]:size-11';
 
 const variants = {
   default: 'bg-surface-raised text-muted-foreground border border-border hover:text-foreground hover:bg-surface-overlay',
