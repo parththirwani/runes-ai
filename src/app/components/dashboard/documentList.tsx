@@ -55,26 +55,26 @@ export default function DocumentList({
               onDocumentClick(doc.slug);
             }
           }}
-          className="group bg-white/3 border border-white/10 rounded-xl p-4 hover:bg-white/6 hover:border-white/20 transition-all cursor-pointer flex items-center gap-4 focus-visible:outline-2 focus-visible:outline-emerald-500"
+          className="group flex cursor-pointer items-center gap-4 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-line-strong hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
-          <div className="w-10 h-10 bg-emerald-500/10 rounded-lg flex items-center justify-center shrink-0">
-            <FileText className="w-5 h-5 text-emerald-400" />
+          <div className="w-10 h-10 bg-action-soft rounded-lg flex items-center justify-center shrink-0">
+            <FileText className="w-5 h-5 text-action" />
           </div>
           
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1 min-w-0">
-              <h3 className="font-medium text-white truncate">
+              <h3 className="font-medium text-foreground truncate">
                 {doc.title}
               </h3>
               <FormatBadge format={doc.format} />
             </div>
             {doc.excerpt && doc.excerpt.length > 0 && (
-              <p className="text-xs text-gray-500 truncate mb-1">{doc.excerpt}</p>
+              <p className="text-xs text-muted-foreground truncate mb-1">{doc.excerpt}</p>
             )}
-            <div className="flex items-center gap-2 text-xs text-gray-600">
+            <div className="flex items-center gap-2 text-xs text-meta">
               <Clock className="w-3.5 h-3.5" />
               <span>{formatDate(doc.updatedAt)}</span>
-              <span className="font-mono text-[10px] text-gray-500">
+              <span className="font-mono text-[10px] text-meta">
                 .{doc.format === 'MARKDOWN' ? 'md' : 'tex'}
               </span>
             </div>

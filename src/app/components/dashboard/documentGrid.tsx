@@ -55,11 +55,11 @@ export default function DocumentGrid({
               onDocumentClick(doc.slug);
             }
           }}
-          className="group bg-white/3 border border-white/10 rounded-xl p-5 hover:bg-white/6 hover:border-white/20 transition-all cursor-pointer relative focus-visible:outline-2 focus-visible:outline-emerald-500"
+          className="group relative cursor-pointer rounded-xl border border-border bg-surface p-5 transition-colors hover:border-line-strong hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           <div className="flex items-start justify-between mb-4">
-            <div className="w-10 h-10 bg-emerald-500/10 rounded-lg flex items-center justify-center">
-              <FileText className="w-5 h-5 text-emerald-400" />
+            <div className="w-10 h-10 bg-action-soft rounded-lg flex items-center justify-center">
+              <FileText className="w-5 h-5 text-action" />
             </div>
             <div className="flex items-center gap-1">
               <FormatBadge format={doc.format} />
@@ -67,18 +67,18 @@ export default function DocumentGrid({
             </div>
           </div>
           
-          <h3 className="font-medium text-white mb-2 truncate text-base">
+          <h3 className="font-medium text-foreground mb-2 truncate text-base">
             {doc.title}
           </h3>
           
-          <p className="text-sm text-gray-500 line-clamp-2 mb-4 leading-relaxed">
+          <p className="text-sm text-muted-foreground line-clamp-2 mb-4 leading-relaxed">
             {doc.excerpt && doc.excerpt.length > 0 ? doc.excerpt : 'No preview available.'}
           </p>
           
-          <div className="flex items-center gap-2 text-xs text-gray-600">
+          <div className="flex items-center gap-2 text-xs text-meta">
             <Clock className="w-3.5 h-3.5" />
             <span>{formatDate(doc.updatedAt)}</span>
-            <span className="ml-auto font-mono text-[10px] text-gray-500">
+            <span className="ml-auto font-mono text-[10px] text-meta">
               .{doc.format === 'MARKDOWN' ? 'md' : 'tex'}
             </span>
           </div>
