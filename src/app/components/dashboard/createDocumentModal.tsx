@@ -9,6 +9,7 @@ interface CreateDocumentModalProps {
   onSubmit: (title: string, format: DocumentFormatValue) => void;
   isLoading?: boolean;
   existingTitles: string[];
+  initialFormat?: DocumentFormatValue;
 }
 
 const FORMAT_CHOICES: { id: DocumentFormatValue; name: string; caption: string; hint: string }[] = [
@@ -32,9 +33,10 @@ export default function CreateDocumentModal({
   onSubmit,
   isLoading = false,
   existingTitles,
+  initialFormat = 'MARKDOWN',
 }: CreateDocumentModalProps) {
   const [title, setTitle] = useState('');
-  const [format, setFormat] = useState<DocumentFormatValue>('MARKDOWN');
+  const [format, setFormat] = useState<DocumentFormatValue>(initialFormat);
   const [error, setError] = useState<string | null>(null);
   const [wasOpen, setWasOpen] = useState(isOpen);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -43,7 +45,7 @@ export default function CreateDocumentModal({
     setWasOpen(isOpen);
     if (isOpen) {
       setTitle('');
-      setFormat('MARKDOWN');
+      setFormat(initialFormat);
       setError(null);
     }
   }

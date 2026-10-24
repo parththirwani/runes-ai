@@ -1,0 +1,63 @@
+.landing-redesign {
+  --color-canvas: #fafaf7;
+  --color-surface: #ffffff;
+  --font-serif: Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+.landing-redesign .section {
+  padding-inline: 1.5rem;
+}
+
+.landing-redesign .section-inner {
+  width: 100%;
+  max-width: 68rem;
+  margin-inline: auto;
+}
+
+.landing-redesign .eyebrow {
+  color: var(--color-ink-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.landing-redesign .doc-prose {
+  color: var(--color-ink);
+  font-family: var(--font-serif);
+  line-height: 1.625;
+}
+
+.landing-redesign :is(#top, #workflow, #features) {
+  scroll-margin-top: 4rem;
+}
+
+.landing-redesign :focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.landing-redesign ::selection {
+  background: #d6e4dc;
+  color: var(--color-ink);
+}
+
+@media (min-width: 768px) {
+  .landing-redesign .section {
+    padding-inline: 2rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-redesign *,
+  .landing-redesign *::before,
+  .landing-redesign *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

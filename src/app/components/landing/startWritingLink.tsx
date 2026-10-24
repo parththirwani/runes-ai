@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useSession } from "next-auth/react";
-import { startWritingPath, type AuthStatus } from "@/src/lib/paths";
+import { startWritingPath } from "@/src/lib/paths";
 
 /**
- * Primary signup intent. Guests are sent to sign-in, signed-in users go
- * straight to their documents, so the label can never point at a dead route.
+ * Primary writing intent. Everyone can choose a source format before
+ * continuing to the document workspace.
  */
 export default function StartWritingLink({
   children,
@@ -15,9 +14,8 @@ export default function StartWritingLink({
   children: React.ReactNode;
   className?: string;
 }) {
-  const { status } = useSession();
   return (
-    <Link href={startWritingPath(status as AuthStatus)} className={className}>
+    <Link href={startWritingPath()} className={className}>
       {children}
     </Link>
   );

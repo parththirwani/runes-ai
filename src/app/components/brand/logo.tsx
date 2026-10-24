@@ -1,18 +1,7 @@
 import Image from "next/image";
 import { cn } from "@/src/lib/utils";
 
-/**
- * Shared logo. Both assets are tightly cropped derivatives of the original
- * artwork (public/logo.png and public/small-logo.png), so the drawing is
- * unchanged while the intrinsic ratio now matches what the header asks for.
- *
- *  wordmark  rune mark + RUNES AI lettering, 367x73  -> header / nav
- *  mark      rune mark only, 179x179                 -> compact contexts
- */
-const ASSETS = {
-  wordmark: { src: "/logo-wordmark.png", width: 367, height: 73, alt: "Runes AI" },
-  mark: { src: "/logo-mark.png", width: 179, height: 179, alt: "Runes AI rune mark" },
-} as const;
+const LOGO_SRC = "/brand-logo.png";
 
 const HEIGHTS = {
   sm: "h-6",
@@ -21,7 +10,7 @@ const HEIGHTS = {
   xl: "h-14",
 } as const;
 
-export type LogoVariant = keyof typeof ASSETS;
+export type LogoVariant = "wordmark" | "mark";
 export type LogoSize = keyof typeof HEIGHTS;
 
 interface LogoProps {
@@ -40,16 +29,27 @@ export default function Logo({
   alt,
   decorative = false,
 }: LogoProps) {
-  const asset = ASSETS[variant];
+  const image = (
+    <Image
+      src={LOGO_SRC}
+      alt={variant === "mark" && !decorative ? (alt ?? "Runes AI") : ""}
+      width={701}
+      height={698}
+      priority
+      className={cn("aspect-square w-auto shrink-0 object-contain", HEIGHTS[size])}
+    />
+  );
+
+  if (variant === "mark") {
+    return <span className={cn("inline-flex shrink-0 items-center", className)}>{image}</span>;
+  }
 
   return (
-    <Image
-      src={asset.src}
-      alt={decorative ? "" : (alt ?? asset.alt)}
-      width={asset.width}
-      height={asset.height}
-      priority
-      className={cn("w-auto object-contain", HEIGHTS[size], className)}
-    />
+    <span className={cn("inline-flex shrink-0 items-center gap-2 whitespace-nowrap", className)}>
+      {image}
+      <span aria-hidden={decorative || undefined} className="text-[1rem] font-semibold tracking-tight text-current">
+        Runes AI
+      </span>
+    </span>
   );
 }

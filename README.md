@@ -6,7 +6,7 @@ Runes AI is a document editor built with Next.js, Monaco, Prisma, Redis, and a s
 
 1. Install dependencies with `bun install` and copy `.env.example` to `.env`.
 2. Configure Postgres, Redis, `NEXTAUTH_SECRET`, and Google OAuth credentials. Set `OPENROUTER_API_KEY` to use AI suggestions.
-3. Start Postgres, Redis, and the worker with `docker compose up -d`, then apply the Prisma schema with `bunx prisma migrate deploy`.
+3. Start Postgres, Redis, and the worker with `docker compose -f docker/docker-compose.yml up -d`, then apply the Prisma schema with `bunx prisma migrate deploy`.
 4. Start the web app with `bun run dev`. The compose worker uses the pinned Tectonic binary in its image for PDF compilation.
 
 The optional `DEV_AUTH_BYPASS=1` flag enables `/api/dev-login` only in development for local smoke testing. Use it with a loopback-bound server, for example `DEV_AUTH_BYPASS=1 bun run dev -H 127.0.0.1`. The flag is off by default. The test cookie is signed with `AUTH_SECRET` or `NEXTAUTH_SECRET` and expires after one day.

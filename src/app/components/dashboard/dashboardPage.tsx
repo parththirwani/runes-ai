@@ -13,9 +13,10 @@ import DocumentList from './documentList';
 import EmptyState from './emptyState';
 import CreateDocumentModal from './createDocumentModal';
 import FormatFilter, { type FormatFilterValue } from './formatFilter';
+import { DOCUMENTS_PATH, type CreateFormat } from '@/src/lib/paths';
 
 
-export default function DashboardPage() {
+export default function DashboardPage({ initialCreateFormat = null }: { initialCreateFormat?: CreateFormat | null }) {
   const router = useRouter();
   const { status } = useSession();
   const [searchQuery, setSearchQuery] = useState('');
@@ -46,6 +47,17 @@ export default function DashboardPage() {
       router.push('/signin');
     }
   }, [status, router]);
+
+  useEffect(() => {
+    if (status === 'authenticated' && initialCreateFormat) {
+      setShowCreateModal(true);
+    }
+  }, [status, initialCreateFormat, setShowCreateModal]);
+
+  const closeCreateModal = () => {
+    setShowCreateModal(false);
+    if (initialCreateFormat) router.replace(DOCUMENTS_PATH);
+  };
 
   const titleMatches = documents.filter(doc =>
     doc.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -128,10 +140,11 @@ export default function DashboardPage() {
 
       <CreateDocumentModal
         isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
+        onClose={closeCreateModal}
         onSubmit={handleCreateDocument}
         isLoading={isCreating}
         existingTitles={documents.map((doc) => doc.title)}
+        initialFormat={initialCreateFormat ?? 'MARKDOWN'}
       />
 
       <ConfirmModal

@@ -4,12 +4,17 @@
 
 export const LANDING_PATH = "/";
 export const SIGN_IN_PATH = "/signin";
+export const START_PATH = "/start";
 export const DOCUMENTS_PATH = "/document";
 export const DOCUMENT_PATH = (slug: string) => `${DOCUMENTS_PATH}/${slug}`;
 export const FEATURES_ANCHOR = "/#features";
 export const HOW_IT_WORKS_ANCHOR = "/#how-it-works";
 
-export type AuthStatus = "authenticated" | "unauthenticated" | "loading" | "unknown";
+export type CreateFormat = "MARKDOWN" | "LATEX";
+
+export function createDocumentPath(format: CreateFormat): string {
+  return `${DOCUMENTS_PATH}?create=${format}`;
+}
 
 const MAX_REDIRECT_LENGTH = 2_048;
 
@@ -33,9 +38,9 @@ export function resolveRedirect(value: unknown, fallback: string = DOCUMENTS_PAT
   return isSafeRedirect(value) ? value : fallback;
 }
 
-/** Guests sign in first, signed-in users go straight to their documents. */
-export function startWritingPath(status: AuthStatus): string {
-  return status === "authenticated" ? DOCUMENTS_PATH : SIGN_IN_PATH;
+/** Start writing has a format choice before opening the document dialog. */
+export function startWritingPath(): string {
+  return START_PATH;
 }
 
 /** Sign-in href that remembers where the user was heading, when it is safe. */

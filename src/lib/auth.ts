@@ -44,8 +44,8 @@ export const {
 
         return true;
       } catch (error) {
-        console.error("[SIGNIN_ERROR]", error);
-        return false;
+        console.error("[SIGNIN_DATABASE_ERROR]", error);
+        return "/signin?error=service-unavailable";
       }
     },
     async jwt({ token, user }) {
@@ -64,7 +64,7 @@ export const {
       
       return token;
     },
-    async session({ session, token }) {
+    async session({ session }) {
       if (session.user) {
         const dbUser = await prisma.user.findUnique({
           where: { email: session.user.email! },

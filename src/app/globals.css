@@ -3,8 +3,8 @@
 /*
  * Runes AI design tokens
  * ----------------------
- * One dark theme, one accent, one radius/spacing/type system shared by the
- * marketing page, the documents workspace and the editor.
+ * The document workspace and editor use a dark theme. The public landing page
+ * applies its light palette inside .landing-redesign.
  *
  * Accent  - the green sampled from the rune mark (#31cf18), desaturated so it
  *           reads as a brand colour instead of a neon highlight.
@@ -72,6 +72,43 @@
   --shadow-panel: 0 18px 40px -24px rgb(0 0 0 / 0.7);
   --shadow-overlay: 0 24px 60px -20px rgb(0 0 0 / 0.75);
   --shadow-accent: 0 10px 30px -18px oklch(0.746 0.2 145 / 0.55);
+}
+
+/* Tailwind utilities for the light public landing page. Its canvas and surface
+ * values are scoped in landing-redesign.css to preserve the product theme. */
+@theme {
+  --color-ink: #17201b;
+  --color-ink-soft: #46554e;
+  --color-ink-muted: #65736a;
+  --color-line: #e3e2d9;
+  --color-line-strong: #cfcdc0;
+  --color-action: #1d5a43;
+  --color-action-hover: #174834;
+  --color-action-soft: #eaf1ed;
+  --color-focus: #1d5a43;
+  --color-code-bg: #f4f2ea;
+  --color-code-text: #2a332e;
+  --color-code-border: #e3e2d9;
+  --color-status-saved: #1d5a43;
+  --color-status-unsaved: #966019;
+  --color-status-compiling: #2c5aa0;
+  --color-status-stale: #80641d;
+  --color-status-error: #9c3a2e;
+  --color-status-savedSoft: #eaf1ed;
+  --color-status-unsavedSoft: #fbf1e0;
+  --color-status-compilingSoft: #e6eef8;
+  --color-status-staleSoft: #f4eed9;
+  --color-status-errorSoft: #f6e4e0;
+  --shadow-paper: 0 1px 3px rgb(23 32 27 / 0.07);
+  --shadow-lift: 0 4px 16px rgb(23 32 27 / 0.08);
+  --shadow-soft: 0 8px 28px rgb(23 32 27 / 0.09);
+  --radius-xl2: 1rem;
+  --container-content: 68rem;
+  --container-narrow: 42rem;
+  --text-eyebrow: 0.75rem;
+  --text-eyebrow--line-height: 1.2;
+  --text-eyebrow--letter-spacing: 0.08em;
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @layer base {

@@ -9,13 +9,5 @@ import { DOCUMENTS_PATH, resolveRedirect } from "@/src/lib/paths";
  */
 export async function handleGoogleSignIn(redirectTo?: unknown) {
   const destination = resolveRedirect(redirectTo, DOCUMENTS_PATH);
-  try {
-    await signIn("google", { redirectTo: destination });
-  } catch (error: unknown) {
-    if (error instanceof Error && (error as Error & { digest?: string }).digest?.startsWith("NEXT_REDIRECT")) {
-      throw error;
-    }
-    console.error("[GOOGLE_SIGN_IN_ERROR]", error);
-    throw error;
-  }
+  await signIn("google", { redirectTo: destination });
 }

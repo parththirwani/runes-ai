@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   DOCUMENTS_PATH,
   SIGN_IN_PATH,
+  START_PATH,
+  createDocumentPath,
   isSafeRedirect,
   resolveRedirect,
   signInPath,
@@ -42,11 +44,10 @@ describe("resolveRedirect", () => {
 });
 
 describe("startWritingPath", () => {
-  it("sends guests to sign-in and members to their documents", () => {
-    expect(startWritingPath("unauthenticated")).toBe(SIGN_IN_PATH);
-    expect(startWritingPath("loading")).toBe(SIGN_IN_PATH);
-    expect(startWritingPath("unknown")).toBe(SIGN_IN_PATH);
-    expect(startWritingPath("authenticated")).toBe(DOCUMENTS_PATH);
+  it("opens the format choice flow", () => {
+    expect(startWritingPath()).toBe(START_PATH);
+    expect(createDocumentPath("MARKDOWN")).toBe("/document?create=MARKDOWN");
+    expect(createDocumentPath("LATEX")).toBe("/document?create=LATEX");
   });
 });
 
