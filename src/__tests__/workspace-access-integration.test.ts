@@ -175,6 +175,9 @@ suite('workspace access against a real database', () => {
     expect(await getDocumentAccess(actors.teammate.userId, teamDoc.id)).toBeNull();
     const orphaned = await prisma.document.findUnique({ where: { id: memberDoc.id } });
     expect(orphaned?.userId).toBe(actors.teammate.userId);
+    await expect(moveDocument({ userId: actors.teammate.userId, documentId: memberDoc.id, toWorkspaceId: actors.teammate.workspaceId }))
+      .rejects.toMatchObject({ status: 403 });
+    expect((await prisma.document.findUnique({ where: { id: memberDoc.id } }))?.workspaceId).toBe(workspace!.id);
 
     // The last admin cannot be removed, and a member cannot remove anybody.
     const adminMembership = (await listTeamMembers(team.id)).find((m) => m.userId === actors.author.userId)!;

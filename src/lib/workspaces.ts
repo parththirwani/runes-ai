@@ -6,7 +6,7 @@
 import { prisma } from './db';
 import { generateSlug } from './slug';
 import { latexTemplate, markdownTemplate } from './templates';
-import { getWorkspaceAccess, listReadableDocumentsInWorkspace, type AccessWorkspace } from './access';
+import { getWorkspaceAccess, listReadableDocumentsInWorkspace, writableDocument, type AccessClient, type AccessWorkspace } from './access';
 import { DEFAULT_PERSONAL_WORKSPACE_NAME } from './workspaces-backfill';
 
 export class WorkspaceInputError extends Error {
@@ -302,6 +302,9 @@ export async function moveDocument(input: { userId: string; documentId: string; 
   const document = await prisma.document.findUnique({ where: { id: input.documentId } });
   if (!document) throw new WorkspaceInputError('Document not found', 404);
   if (document.userId !== input.userId) throw new WorkspaceInputError('Only the author can move this document', 403);
+  if (!await writableDocument(input.userId, document.id)) {
+    throw new WorkspaceInputError('You can no longer move this document', 403);
+  }
   if (document.workspaceId === input.toWorkspaceId) {
     return { document, unchanged: true as const };
   }
@@ -320,9 +323,11 @@ export async function moveDocument(input: { userId: string; documentId: string; 
   }
 
   const updated = await prisma.$transaction(async (tx) => {
-    // Re-read the destination membership inside the transaction: a member removed a moment ago
-    // must not be able to complete a move.
-    const stillAllowed = await getWorkspaceAccess(input.userId, input.toWorkspaceId);
+    // Re-read source and destination access through the transaction so a revoked team member
+    // cannot move a document they authored out of the team workspace.
+    const source = await writableDocument(input.userId, document.id, tx as unknown as AccessClient);
+    if (!source) throw new WorkspaceInputError('You can no longer move this document', 403);
+    const stillAllowed = await getWorkspaceAccess(input.userId, input.toWorkspaceId, tx as unknown as AccessClient);
     if (!stillAllowed || !stillAllowed.capabilities.canCreate) {
       throw new WorkspaceInputError('You can no longer add documents to that workspace', 403);
     }
