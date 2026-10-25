@@ -60,6 +60,13 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
     };
   }, [open]);
 
+  const menuIsPositioned = menuPosition !== null;
+  useLayoutEffect(() => {
+    if (open && menuIsPositioned) {
+      menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    }
+  }, [open, menuIsPositioned]);
+
   useEffect(() => {
     if (!open) return undefined;
 
@@ -84,6 +91,19 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
   }, [open]);
 
   const stop = (event: React.MouseEvent) => event.stopPropagation();
+
+  const onMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])') ?? []);
+    if (!items.length) return;
+    event.preventDefault();
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? items.length - 1
+        : event.key === 'ArrowDown' ? (current + 1) % items.length
+          : (current - 1 + items.length) % items.length;
+    items[next]?.focus();
+  };
 
   // Prefer the id everywhere: the slug fallback only serves rows from before id-keyed links.
   const href = openHref ?? DOCUMENT_PATH(doc.id ?? doc.slug);
@@ -122,6 +142,7 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
           role="menu"
           aria-label={`Actions for ${doc.title}`}
           onClick={stop}
+          onKeyDown={onMenuKeyDown}
           style={{ left: menuPosition?.left ?? 0, top: menuPosition?.top ?? 0, visibility: menuPosition ? 'visible' : 'hidden' }}
           className="fixed z-[60] max-h-[calc(100dvh-16px)] w-44 max-w-[calc(100vw-16px)] overflow-y-auto rounded-md border border-border bg-surface-overlay p-1 shadow-overlay"
         >
@@ -206,6 +227,7 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
           {canManage && (
           <div className="border-t border-border-subtle pt-1" onClick={(event) => event.stopPropagation()}>
             <HoldToConfirm
+              role="menuitem"
               label="Hold to delete"
               icon={<Trash2 className="h-4 w-4" aria-hidden="true" />}
               confirmedLabel="Deleting…"
