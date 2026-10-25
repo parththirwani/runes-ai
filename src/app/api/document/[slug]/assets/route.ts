@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { prisma } from "@/src/lib/db";
 import { withAuth } from "@/src/lib/withAuth";
+import { resolveForRead, resolveForWrite } from "@/src/lib/workspace-files";
 import {
   MAX_ASSET_BYTES,
   MAX_ASSETS_PER_DOCUMENT,
@@ -45,12 +46,15 @@ async function readBoundedForm(req: Request): Promise<FormData | 'too-large' | n
   }).formData().catch(() => null);
 }
 
-async function findOwnedMarkdownDocument(slug: string, userId: string): Promise<OwnedResult> {
-  const document = await prisma.document.findFirst({
-    where: { slug, userId },
-    select: { id: true, format: true },
-  });
-  if (!document) return { kind: 'missing' };
+async function findMarkdownDocument(
+  slug: string,
+  userId: string,
+  intent: "read" | "write",
+): Promise<OwnedResult> {
+  // Read intent shows a shared document's images; write intent is author-only.
+  const access = intent === "write" ? await resolveForWrite(userId, slug) : await resolveForRead(userId, slug);
+  if (!access) return { kind: 'missing' };
+  const document = { id: access.document.id, format: access.document.format };
   if (document.format !== "MARKDOWN") {
     return { kind: 'error', response: NextResponse.json({ message: "Assets are only supported for Markdown documents" }, { status: 400 }) };
   }
@@ -61,7 +65,7 @@ async function findOwnedMarkdownDocument(slug: string, userId: string): Promise<
 export const GET = withAuth(async (req, session, context) => {
   try {
     const { slug } = await context.params;
-    const owned = await findOwnedMarkdownDocument(slug, session.user.id);
+    const owned = await findMarkdownDocument(slug, session.user.id, "read");
     if (owned.kind === "error") return owned.response;
     if (owned.kind === "missing") return NextResponse.json({ message: "Document not found" }, { status: 404 });
 
@@ -83,7 +87,8 @@ export const GET = withAuth(async (req, session, context) => {
 export const POST = withAuth(async (req, session, context) => {
   try {
     const { slug } = await context.params;
-    const owned = await findOwnedMarkdownDocument(slug, session.user.id);
+    // Uploading bytes is a write, so it stays with the document's author.
+    const owned = await findMarkdownDocument(slug, session.user.id, "write");
     if (owned.kind === "error") return owned.response;
     if (owned.kind === "missing") return NextResponse.json({ message: "Document not found" }, { status: 404 });
 

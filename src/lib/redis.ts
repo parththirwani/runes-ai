@@ -21,6 +21,11 @@ export const RESULT_PREFIX = 'latex:result:';
 export const PDF_PREFIX = 'latex:pdf:';
 // Maps an immutable snapshot digest to the job that produced (or is producing) it.
 export const SNAPSHOT_JOB_PREFIX = 'latex:snapshot:job:';
+// Recent jobs per document, newest last. Lets a reader fetch a completed PDF through a
+// document-scoped endpoint instead of an opaque job id, so revoking document access also
+// revokes the PDF on the next request.
+export const DOCUMENT_JOBS_PREFIX = 'latex:document-jobs:';
+export const DOCUMENT_JOBS_KEPT = 10;
 
 // TTL for results and PDFs (24 hours)
 export const RESULT_TTL = 86400;

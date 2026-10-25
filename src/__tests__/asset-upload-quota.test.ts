@@ -20,6 +20,14 @@ vi.mock('@/src/lib/db', () => ({
   },
 }));
 
+
+// Capability decisions live in src/__tests__/access-policy.test.ts. This suite is about files
+// and routes, so the access service is pinned to the author case it has always described.
+vi.mock('@/src/lib/access', async () => {
+  const actual = await vi.importActual<typeof import('@/src/lib/access')>('@/src/lib/access');
+  const { ownerOnlyAccessStub } = await import('@/src/__tests__/helpers/access-stub');
+  return { ...actual, ...ownerOnlyAccessStub() };
+});
 import { POST } from '@/src/app/api/document/[slug]/assets/route';
 
 const context = { params: Promise.resolve({ slug: 'doc' }) };

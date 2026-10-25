@@ -8,11 +8,13 @@ import { prisma } from "./db";
 import {
   AccessError,
   capabilitiesForMany,
+  readableWhere,
   requireDocumentEdit,
   requireWorkspaceCreate,
   requireWorkspaceRead,
   listAccessibleWorkspaces,
 } from "./access";
+import { plainTextExcerpt } from "./excerpt";
 import { ensureDefaultPersonalWorkspace } from "./workspace-ownership";
 import { generateSlug } from "./slug";
 import { latexTemplate, markdownTemplate } from "./templates";
@@ -303,4 +305,75 @@ export async function listDocumentsInWorkspace(client: DbClient, userId: string,
         };
       }),
   };
+}
+
+// The dashboard "all documents" list. It spans every collection the actor can read (own work,
+// accepted document grants, accepted personal-workspace grants, team membership) and drops any
+// row the capability service refuses, so the list can never advertise a document that the
+// document routes would then deny. Content itself is never returned; a derived excerpt is.
+export async function listLibraryDocuments(client: DbClient, userId: string, search?: string) {
+  const rows = await client.document.findMany({
+    where: {
+      AND: [
+        readableWhere(userId),
+        ...(search && search.length > 0
+          ? [
+              {
+                OR: [
+                  { title: { contains: search, mode: "insensitive" as const } },
+                  { slug: { contains: search, mode: "insensitive" as const } },
+                ],
+              },
+            ]
+          : []),
+      ],
+    },
+    select: {
+      id: true,
+      title: true,
+      slug: true,
+      content: true,
+      format: true,
+      isFavorite: true,
+      createdAt: true,
+      updatedAt: true,
+      userId: true,
+      workspaceId: true,
+      workspace: { select: { id: true, name: true, kind: true } },
+      user: { select: { id: true, email: true, firstName: true, lastName: true, image: true } },
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  const capabilities = await capabilitiesForMany(client, userId, rows.map((row) => row.id));
+
+  const documents = rows
+    .filter((row) => capabilities.has(row.id))
+    .map((row) => {
+      const caps = capabilities.get(row.id)!;
+      return {
+        id: row.id,
+        title: row.title,
+        slug: row.slug,
+        format: row.format,
+        isFavorite: row.isFavorite,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        workspaceId: row.workspaceId,
+        workspace: row.workspace,
+        excerpt: plainTextExcerpt(row.content ?? "", row.format === "MARKDOWN" ? "MARKDOWN" : "LATEX"),
+        author: {
+          id: row.user.id,
+          email: row.user.email,
+          name: row.user.firstName || row.user.lastName
+            ? [row.user.firstName, row.user.lastName].filter(Boolean).join(" ")
+            : row.user.email,
+          image: row.user.image,
+        },
+        canEdit: caps.canEdit,
+        canShare: caps.canShare,
+      };
+    });
+
+  return { documents };
 }

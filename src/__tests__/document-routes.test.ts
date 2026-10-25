@@ -23,6 +23,13 @@ vi.mock('@/src/lib/db', () => ({
       create: mocks.create,
       findMany: mocks.findMany,
       findFirst: mocks.findFirst,
+      // The capability check resolves the document, then the route reads the stored row, which
+      // is where format and content come from. Each fixture below describes one document, so
+      // the same row answers both lookups.
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+        const row = await mocks.findFirst({ where: { id: where.id } });
+        return row && row.id === where.id ? row : null;
+      }),
       update: mocks.update,
       delete: mocks.delete,
     },
@@ -33,6 +40,14 @@ vi.mock('@/src/lib/db', () => ({
 }));
 vi.mock('@/producer/queue', () => ({ compilationProducer: { addJob: mocks.addJob } }));
 vi.mock('@/src/lib/rateLimit', () => ({ checkRateLimit: mocks.rateLimit }));
+
+// Capability decisions live in src/__tests__/access-policy.test.ts. This suite is about files
+// and routes, so the access service is pinned to the author case it has always described.
+vi.mock('@/src/lib/access', async () => {
+  const actual = await vi.importActual<typeof import('@/src/lib/access')>('@/src/lib/access');
+  const { ownerOnlyAccessStub } = await import('@/src/__tests__/helpers/access-stub');
+  return { ...actual, ...ownerOnlyAccessStub() };
+});
 
 import { POST as createDocument, GET as listDocuments } from '@/src/app/api/document/route';
 import { POST as compileDocument, PUT as updateDocument } from '@/src/app/api/document/[slug]/route';
@@ -92,9 +107,17 @@ describe('POST /api/document (creation)', () => {
 
 describe('GET /api/document (dashboard list)', () => {
   it('returns format and plain-text excerpts per format', async () => {
+    const author = { id: 'owner', email: 'owner@example.com', firstName: 'Own', lastName: 'Er', image: null };
+    const workspace = { id: 'ws-default', name: 'My documents', kind: 'PERSONAL' };
     mocks.findMany.mockResolvedValue([
-      { id: '1', title: 'Md', slug: 'md', content: '# Head\n\n**bold** text', format: 'MARKDOWN', createdAt: '', updatedAt: '' },
-      { id: '2', title: 'Tex', slug: 'tex', content: '\\section{Intro}\nHello world', format: 'LATEX', createdAt: '', updatedAt: '' },
+      {
+        id: '1', title: 'Md', slug: 'md', content: '# Head\n\n**bold** text', format: 'MARKDOWN',
+        isFavorite: false, createdAt: '', updatedAt: '', userId: 'owner', workspaceId: 'ws-default', workspace, user: author,
+      },
+      {
+        id: '2', title: 'Tex', slug: 'tex', content: '\\section{Intro}\nHello world', format: 'LATEX',
+        isFavorite: false, createdAt: '', updatedAt: '', userId: 'owner', workspaceId: 'ws-default', workspace, user: author,
+      },
     ]);
     const res = await listDocuments(new NextRequest('http://localhost/api/document'), {} as never);
     const data = await res.json();

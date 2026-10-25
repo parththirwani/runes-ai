@@ -3,7 +3,7 @@ import { generateSlug } from "@/src/lib/slug";
 import { withAuth } from "@/src/lib/withAuth";
 import { createDocumentSchema } from "@/src/schema/documentSchema";
 import { latexTemplate, markdownTemplate } from "@/src/lib/templates";
-import { plainTextExcerpt } from "@/src/lib/excerpt";
+import { listLibraryDocuments } from "@/src/lib/workspaces";
 import { ensureDefaultPersonalWorkspace } from "@/src/lib/workspace-ownership";
 import { NextResponse } from "next/server";
 import type { ZodError } from 'zod';
@@ -79,34 +79,18 @@ export const POST = withAuth(async (req, session) => {
 });
 
 /* -------------------- GET DOCUMENTS -------------------- */
-export const GET = withAuth(async (_req, session) => {
+// The library spans every document the actor may read (own work, accepted document grants,
+// accepted personal-workspace grants, team membership) and carries the per-document
+// capabilities the interface uses to show or hide edit/share/delete affordances.
+export const GET = withAuth(async (req, session) => {
   try {
     const userId = session.user.id;
+    const search = new URL(req.url).searchParams.get("search") ?? undefined;
 
-    const documents = await prisma.document.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" }, // useful UX improvement
-      select: {
-        id: true,
-        title: true,
-        slug: true,
-        content: true,
-        format: true,
-        isFavorite: true,
-        createdAt: true,
-        updatedAt: true,
-      }, // avoid sending full content unnecessarily
-    });
-
-    // Plain-text excerpts are derived server-side per format so cards never
-    // leak raw TeX commands, Markdown syntax, or HTML.
-    const documentsWithExcerpt = documents.map((doc) => ({
-      ...doc,
-      excerpt: plainTextExcerpt(doc.content ?? "", doc.format === "MARKDOWN" ? "MARKDOWN" : "LATEX"),
-    }));
+    const { documents } = await listLibraryDocuments(prisma, userId, search);
 
     return NextResponse.json(
-      { documents: documentsWithExcerpt },
+      { documents },
       { status: 200 }
     );
 

@@ -4,6 +4,8 @@ import redis, {
   QUEUE_NAME,
   RESULT_PREFIX,
   PDF_PREFIX,
+  DOCUMENT_JOBS_PREFIX,
+  DOCUMENT_JOBS_KEPT,
 } from '@/src/lib/redis';
 import { snapshotJobKey } from '@/src/lib/snapshot-job-key';
 import { CompilationJob, JobStatus, JobStatusResponse, SnapshotFileRef, StageTimings } from '@/src/types/compilation';
@@ -74,8 +76,29 @@ export class CompilationProducer {
       JSON.stringify({ status: JobStatus.PENDING, createdAt: requestedAt, timings: { requestedAt, enqueuedAt: Date.now() }, snapshot: { digest: input.digest, mainFile: input.mainFile, files: input.files } } satisfies JobStatusResponse),
     );
     await pipeline.exec();
+    await this.recordDocumentJob(input.documentId, jobId);
 
     return { jobId, reused: 'new' };
+  }
+
+  /**
+   * Keeps a short newest-last list of jobs per document. The document-scoped PDF read uses
+   * it so a reader never needs a job id: access is decided by the document on every request,
+   * which is what makes revocation work while the PDF itself is still cached.
+   */
+  async recordDocumentJob(documentId: string, jobId: string): Promise<void> {
+    const key = `${DOCUMENT_JOBS_PREFIX}${documentId}`;
+    const pipeline = redis.pipeline();
+    pipeline.rpush(key, jobId);
+    pipeline.ltrim(key, -DOCUMENT_JOBS_KEPT, -1);
+    pipeline.expire(key, RESULT_TTL);
+    await pipeline.exec();
+  }
+
+  /** Job ids for one document, newest first. */
+  async documentJobIds(documentId: string): Promise<string[]> {
+    const ids = await redis.lrange(`${DOCUMENT_JOBS_PREFIX}${documentId}`, 0, -1);
+    return ids.reverse();
   }
 
   /** Legacy single-source enqueue, kept for in-flight jobs during a rolling deploy. */
@@ -92,6 +115,7 @@ export class CompilationProducer {
       JSON.stringify({ status: JobStatus.PENDING, createdAt: compilationJob.createdAt, timings: { requestedAt: compilationJob.createdAt, enqueuedAt: Date.now() } }),
     );
     await pipeline.exec();
+    await this.recordDocumentJob(compilationJob.documentId, jobId);
 
     return jobId;
   }

@@ -461,3 +461,20 @@ export async function capabilitiesForMany(
 }
 
 export { ensureDefaultPersonalWorkspace };
+
+/**
+ * Author-only check for the endpoints that stay with the document's author in v1: AI
+ * completion, paraphrase, and chat. Those calls spend quota and may send source to a
+ * provider, so a reader is never allowed to trigger them.
+ *
+ * This is the same capability question as everything else here, expressed for the author-only
+ * case, so no route writes its own ownership comparison.
+ */
+export async function findAuthorOnlyDocument<Client extends DbClient, TSelect extends object>(
+  client: Client,
+  userId: string,
+  documentId: string,
+  select: TSelect,
+) {
+  return client.document.findFirst({ where: { id: documentId, userId }, select });
+}
