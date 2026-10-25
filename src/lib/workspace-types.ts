@@ -16,6 +16,18 @@ export type WorkspaceFileMeta = {
   updatedAt: string;
 };
 
+/** What the capability service decided for the signed-in user and this document. */
+export type DocumentAccessFlags = {
+  canEdit: boolean;
+  canShare: boolean;
+  canMove: boolean;
+  canDelete: boolean;
+  level: 'Edit' | 'View';
+  source: string | null;
+};
+
+export type DocumentAuthor = { id: string; name?: string | null; email?: string | null };
+
 export type WorkspaceDocumentPayload = {
   id: string;
   format: 'LATEX' | 'MARKDOWN';
@@ -27,6 +39,9 @@ export type WorkspaceDocumentPayload = {
   mainFile: { path: string; revision: number; checksum: string } | null;
   files: WorkspaceFileMeta[];
   tree: TreeNode[];
+  /** The editor renders viewers from these two; the server repeats the check per request. */
+  author?: DocumentAuthor | null;
+  access?: DocumentAccessFlags;
 };
 
 export type CompileResponse = {

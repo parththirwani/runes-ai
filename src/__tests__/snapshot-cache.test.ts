@@ -13,6 +13,8 @@ const redis = vi.hoisted(() => ({
   rpush: vi.fn(),
   llen: vi.fn(),
   lrem: vi.fn(),
+  ltrim: vi.fn(),
+  lrange: vi.fn(),
   getBuffer: vi.fn(),
   pipeline: vi.fn(),
 }));
@@ -25,6 +27,8 @@ vi.mock('@/src/lib/redis', () => ({
   QUEUE_NAME: 'latex:compilation:queue',
   PROCESSING_SET: 'latex:compilation:processing',
   SNAPSHOT_JOB_PREFIX: 'latex:snapshot:job:',
+  DOCUMENT_JOBS_PREFIX: 'latex:document-jobs:',
+  DOCUMENT_JOBS_KEPT: 10,
   RESULT_TTL: 86400,
 }));
 
@@ -69,10 +73,23 @@ beforeEach(() => {
     queues.set(queue, list);
     return removed;
   });
+  redis.ltrim.mockImplementation(async (key: string, start: number, stop: number) => {
+    const list = queues.get(key) || [];
+    const from = start < 0 ? Math.max(0, list.length + start) : start;
+    const to = stop < 0 ? list.length + stop : stop;
+    queues.set(key, list.slice(from, to + 1));
+    return 1;
+  });
+  redis.lrange.mockImplementation(async (key: string, start: number, stop: number) => {
+    const list = queues.get(key) || [];
+    const from = start < 0 ? Math.max(0, list.length + start) : start;
+    const to = stop < 0 ? list.length + stop : stop;
+    return list.slice(from, to + 1);
+  });
   redis.pipeline.mockImplementation(() => {
     const ops: Array<() => Promise<unknown>> = [];
     const chain: Record<string, (...args: unknown[]) => unknown> = {};
-    for (const method of ['setex', 'rpush', 'expire', 'set', 'del']) {
+    for (const method of ['setex', 'rpush', 'expire', 'ltrim', 'set', 'del']) {
       chain[method] = (...args: unknown[]) => {
         const operation = (redis as unknown as Record<string, (...values: unknown[]) => Promise<unknown>>)[method];
         ops.push(() => operation(...args));

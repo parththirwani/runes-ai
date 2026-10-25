@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { withAuth } from '@/src/lib/withAuth';
 import { prisma } from '@/src/lib/db';
+import { findAuthorOnlyDocument } from '@/src/lib/access';
 import { z } from 'zod';
 import { acquireAiSlot, checkAiRateLimit } from '@/src/lib/ai-rate-limit';
 import { filterCompletion } from '@/src/lib/latex-utils';
@@ -36,12 +37,10 @@ export const POST = withAuth(async (req, session) => {
       });
     }
 
-    // Ownership check. Format comes from the owned row — a client cannot
-    // claim MARKDOWN for a LaTeX document.
-    const doc = await prisma.document.findFirst({
-      where: { id: documentId, userId },
-      select: { id: true, format: true },
-    });
+    // Author-only in v1: an AI call spends quota and can send source to a provider, so a
+    // reader of a shared document is refused here as well as in the user interface.
+    // Format comes from the stored row, so a client cannot claim MARKDOWN for LaTeX.
+    const doc = await findAuthorOnlyDocument(prisma, userId, documentId, { id: true, format: true });
     if (!doc) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }

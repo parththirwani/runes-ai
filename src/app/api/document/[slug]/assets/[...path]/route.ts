@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/src/lib/db";
 import { withAuth } from "@/src/lib/withAuth";
 import { assetMediaTypeFor, normalizeAssetPath } from "@/src/lib/markdown-assets";
+import { resolveForRead, resolveForWrite } from "@/src/lib/workspace-files";
 
 type Ctx = { params: Promise<{ slug: string; path: string | string[] }> };
 
@@ -15,15 +16,19 @@ type ResolveResult =
   | { kind: 'response'; response: NextResponse }
   | { kind: 'ok'; document: { id: string; format: string }; asset: { id: string; path: string; mediaType: string; size: number; bytes: Uint8Array } };
 
-async function resolve(req: { url: string }, session: { user: { id: string } }, context: Ctx): Promise<ResolveResult> {
+async function resolve(
+  req: { url: string },
+  session: { user: { id: string } },
+  context: Ctx,
+  intent: "read" | "write" = "read",
+): Promise<ResolveResult> {
   const params = await context.params as unknown as { slug: string; path: string | string[] };
   const { slug } = params;
   const rawPath = joinParamsPath(params.path);
 
-  const document = await prisma.document.findFirst({
-    where: { slug, userId: session.user.id },
-    select: { id: true, format: true },
-  });
+  // Serving an image is a read; deleting it is a write.
+  const access = intent === "write" ? await resolveForWrite(session.user.id, slug) : await resolveForRead(session.user.id, slug);
+  const document = access ? { id: access.document.id, format: access.document.format } : null;
   if (!document) {
     return { kind: 'response', response: NextResponse.json({ message: "Not found" }, { status: 404 }) };
   }
@@ -40,7 +45,7 @@ async function resolve(req: { url: string }, session: { user: { id: string } }, 
   return { kind: 'ok', document, asset };
 }
 
-/* Serve asset bytes — authenticated, ownership-checked, no-store. */
+/* Serve asset bytes — authenticated, capability-checked, no-store. */
 export const GET = withAuth(async (_req, session, context: Ctx) => {
   try {
     const result = await resolve(_req, session as never, context as never);
@@ -71,7 +76,7 @@ export const GET = withAuth(async (_req, session, context: Ctx) => {
 /* Delete an asset (also expires with the document via cascade). */
 export const DELETE = withAuth(async (_req, session, context: Ctx) => {
   try {
-    const result = await resolve(_req, session as never, context as never);
+    const result = await resolve(_req, session as never, context as never, "write");
     if (result.kind === "response") return result.response;
 
     await prisma.documentAsset.delete({ where: { id: result.asset.id } });

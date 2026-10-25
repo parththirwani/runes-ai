@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { withAuth } from '@/src/lib/withAuth';
 import { WorkspaceError, WorkspacePathError, uploadFile } from '@/src/lib/workspace-files';
+import { accessErrorResponse } from '@/src/lib/access';
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
@@ -41,7 +42,9 @@ export const POST = withAuth(async (req, session, context) => {
     if (error instanceof WorkspaceError || error instanceof WorkspacePathError) {
       return NextResponse.json({ message: error.message }, { status: error.status });
     }
-    console.error('[WORKSPACE_UPLOAD_ERROR]', error instanceof Error ? error.message : 'unknown');
+    const access = accessErrorResponse(error);
+    if (access) return access;
+    console.error('[WORKSPACE_UPLOAD_ERROR]', error instanceof Error ? error.constructor.name : 'unknown');
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }
 });

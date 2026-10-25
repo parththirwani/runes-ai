@@ -7,6 +7,8 @@ export const createDocumentSchema = z.object({
   title: z.string().min(1, "Title is required").max(30, "Title cant be longer than 30 chars"),
   content: z.string().min(1, "Content is required").max(MAX_DOCUMENT_CONTENT_CHARS, "Content is too large").optional(),
   format: documentFormatSchema.optional(),
+  // Optional target collection. Omitted means the author's default personal workspace.
+  workspaceId: z.string().min(1).max(64).optional(),
 });
 export const updateDocumentSchema = z.object({
   title: z.string().min(1, "Title is required").max(30, "Title cant be longer than 30 chars").optional(),

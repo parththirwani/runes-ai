@@ -4,6 +4,7 @@ import { prisma } from "@/src/lib/db";
 import { ChatCompletion, DiffResponse } from "@/src/lib/openrouter";
 import { resolveMainSource } from "@/src/lib/workspace-files";
 import { withAuth } from "@/src/lib/withAuth";
+import { findAuthorOnlyDocument } from "@/src/lib/access";
 import type { ZodError } from 'zod';
 
 function formatZodError(error: ZodError) {
@@ -28,10 +29,12 @@ export const POST = withAuth(async (req: NextRequest, session) => {
 
     const { message, documentId } = parsed.data;
 
-    // Fetch document WITH ownership check
-    const document = await prisma.document.findFirst({
-      where: { id: documentId, userId },
-      select: { id: true, title: true, content: true, mainFilePath: true },
+    // Author-only in v1, like the other AI routes.
+    const document = await findAuthorOnlyDocument(prisma, userId, documentId, {
+      id: true,
+      title: true,
+      content: true,
+      mainFilePath: true,
     });
 
     if (!document) {

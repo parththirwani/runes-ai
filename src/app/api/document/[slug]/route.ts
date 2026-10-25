@@ -4,11 +4,13 @@ import { documentSchema, favoriteDocumentSchema, updateDocumentSchema, workspace
 import { compilationProducer } from '@/producer/queue';
 import { checkRateLimit } from '@/src/lib/rateLimit';
 import { NextResponse } from 'next/server';
+import { accessErrorResponse } from '@/src/lib/access';
 import {
   WorkspaceError,
   WorkspacePathError,
   ensureDocumentMigrated,
   readWorkspaceTree,
+  resolveForWrite,
   writeTextFile,
 } from '@/src/lib/workspace-files';
 import { createCompileSnapshot } from '@/src/lib/workspace-snapshot';
@@ -18,10 +20,12 @@ function errorResponse(error: unknown) {
   if (error instanceof WorkspaceError || error instanceof WorkspacePathError) {
     return NextResponse.json({ message: error.message }, { status: error.status });
   }
+  const access = accessErrorResponse(error);
+  if (access) return access;
   throw error;
 }
 
-/* ------------------------- GET workspace with file metadata ------------------------- */
+/* --------- GET workspace with file metadata (any reader, author included) --------- */
 export const GET = withAuth(async (req, session, context) => {
   try {
     const { slug } = await context.params;
@@ -30,11 +34,20 @@ export const GET = withAuth(async (req, session, context) => {
       return NextResponse.json({ message: 'Document not found' }, { status: 404 });
     }
 
-    const main = workspace.files.find((file) => file.path === workspace.document.mainFilePath);
-    const mainRecord = await prisma.workspaceFile.findUnique({
-      where: { documentId_path: { documentId: workspace.document.id, path: workspace.document.mainFilePath } },
-      select: { content: true },
+    // Readers are shown who wrote the document; the name comes from the author row, not the
+    // client, and a viewer is allowed to see it by design.
+    const authorRow = await prisma.user.findUnique({
+      where: { id: workspace.document.authorId },
+      select: { id: true, email: true, firstName: true, lastName: true },
     });
+
+    const main = workspace.files.find((file) => file.path === workspace.document.mainFilePath);
+    const mainRecord = main
+      ? await prisma.workspaceFile.findUnique({
+          where: { documentId_path: { documentId: workspace.document.id, path: workspace.document.mainFilePath } },
+          select: { content: true },
+        })
+      : null;
 
     return NextResponse.json(
       {
@@ -47,10 +60,27 @@ export const GET = withAuth(async (req, session, context) => {
           updatedAt: workspace.document.updatedAt,
           mainFilePath: workspace.document.mainFilePath,
           // Legacy shape: single source clients keep reading Document.content.
-          content: mainRecord?.content ?? '',
+          content: mainRecord?.content ?? workspace.legacyMainSource ?? '',
           mainFile: main ? { path: main.path, revision: main.revision, checksum: main.checksum } : null,
           files: workspace.files,
           tree: workspace.tree,
+          // The editor renders a viewer from these. Server checks stay authoritative: a
+          // client that hides a button is a courtesy, not a control.
+          author: {
+            id: workspace.document.authorId,
+            name: authorRow
+              ? [authorRow.firstName, authorRow.lastName].filter(Boolean).join(' ').trim() || authorRow.email
+              : null,
+            email: authorRow?.email ?? null,
+          },
+          access: {
+            canEdit: workspace.capabilities.canEdit,
+            canShare: workspace.capabilities.canShare,
+            canMove: workspace.capabilities.canMove,
+            canDelete: workspace.capabilities.canDelete,
+            level: workspace.capabilities.canEdit ? 'Edit' : 'View',
+            source: workspace.capabilities.access,
+          },
         },
       },
       { status: 200 },
@@ -63,16 +93,14 @@ export const GET = withAuth(async (req, session, context) => {
 export const DELETE = withAuth(async (req, session, context) => {
   try {
     const { slug } = await context.params;
-    const userId = session.user.id;
 
-    const document = await prisma.document.findFirst({ where: { slug, userId } });
-    if (!document) {
-      return NextResponse.json({ message: 'Document not found' }, { status: 404 });
-    }
+    // Deleting is a write, and in v1 writes belong to the document's author alone.
+    const access = await resolveForWrite(session.user.id, slug);
+    if (!access) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
 
     // Workspace files cascade with the document; stored asset bytes are content addressed
     // and are reclaimed by the storage prune job.
-    await prisma.document.delete({ where: { id: document.id } });
+    await prisma.document.delete({ where: { id: access.document.id } });
 
     return NextResponse.json({ message: 'Document deleted successfully' }, { status: 200 });
   } catch (error) {
@@ -87,18 +115,18 @@ export const PUT = withAuth(async (req, session, context) => {
     const userId = session.user.id;
     const body = await req.json();
 
-    const document = await prisma.document.findFirst({ where: { slug, userId } });
-    if (!document) {
-      return NextResponse.json({ message: 'Document not found' }, { status: 404 });
-    }
+    const access = await resolveForWrite(userId, slug);
+    if (!access) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
+    const documentId = access.document.id;
+
     const workspaceAvailable = Boolean((prisma as unknown as { workspaceFile?: unknown }).workspaceFile);
     if (!workspaceAvailable) {
       const legacy = updateDocumentSchema.safeParse(body);
       if (!legacy.success) return NextResponse.json({ message: 'Invalid input' }, { status: 400 });
-      const updated = await prisma.document.update({ where: { id: document.id }, data: legacy.data });
+      const updated = await prisma.document.update({ where: { id: documentId }, data: legacy.data });
       return NextResponse.json({ message: 'Document updated successfully', document: updated }, { status: 200 });
     }
-    await ensureDocumentMigrated(prisma, document.id);
+    await ensureDocumentMigrated(prisma, documentId);
 
     const updates: { title?: string } = {};
     const parsedUpdate = workspaceUpdateSchema.safeParse(body);
@@ -108,7 +136,8 @@ export const PUT = withAuth(async (req, session, context) => {
     if (parsedUpdate.data.title !== undefined) updates.title = parsedUpdate.data.title;
 
     // Multi file saves go through the workspace path; the legacy {content} shape keeps
-    // working by writing the currently selected main file.
+    // working by writing the currently selected main file. writeTextFile re-checks author
+    // access for every file it writes.
     const results: { path: string; revision: number; checksum: string }[] = [];
     if (parsedUpdate.data.files) {
       for (const file of parsedUpdate.data.files) {
@@ -128,7 +157,7 @@ export const PUT = withAuth(async (req, session, context) => {
         if (written) results.push({ path: written.file.path, revision: written.file.revision, checksum: written.file.checksum });
       }
     } else if (parsedUpdate.data.content !== undefined) {
-      const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+      const currentDocument = await prisma.document.findUnique({ where: { id: documentId } });
       if (!currentDocument) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
       const written = await writeTextFile({ userId, slug, rawPath: currentDocument.mainFilePath, content: parsedUpdate.data.content });
       if (written && 'conflict' in written) {
@@ -138,10 +167,10 @@ export const PUT = withAuth(async (req, session, context) => {
     }
 
     if (updates.title !== undefined) {
-      await prisma.document.update({ where: { id: document.id }, data: { title: updates.title } });
+      await prisma.document.update({ where: { id: documentId }, data: { title: updates.title } });
     }
 
-    const updated = await prisma.document.findUnique({ where: { id: document.id } });
+    const updated = await prisma.document.findUnique({ where: { id: documentId } });
     return NextResponse.json(
       {
         message: 'Document updated successfully',
@@ -160,39 +189,43 @@ export const PATCH = withAuth(async (req, session, context) => {
     const { slug } = await context.params;
     const userId = session.user.id;
     const body = await req.json();
+
+    const access = await resolveForWrite(userId, slug);
+    if (!access) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
+    const documentId = access.document.id;
+    const document = await prisma.document.findUnique({ where: { id: documentId } });
+    if (!document) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
+
     const favoriteData = favoriteDocumentSchema.safeParse(body);
     if (favoriteData.success) {
-      const document = await prisma.document.findFirst({ where: { slug, userId } });
-      if (!document) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
-      const updated = await prisma.document.update({ where: { id: document.id }, data: favoriteData.data });
+      const updated = await prisma.document.update({ where: { id: documentId }, data: favoriteData.data });
       return NextResponse.json({ message: 'Favorite status updated', document: updated }, { status: 200 });
     }
-    const parsedData = documentSchema.safeParse(body);
 
+    const parsedData = documentSchema.safeParse(body);
     if (!parsedData.success) {
       return NextResponse.json({ message: 'Invalid input' }, { status: 400 });
     }
 
-    const document = await prisma.document.findFirst({ where: { slug, userId } });
-    if (!document) {
-      return NextResponse.json({ message: 'Document not found' }, { status: 404 });
-    }
     const workspaceAvailable = Boolean((prisma as unknown as { workspaceFile?: unknown }).workspaceFile);
     if (!workspaceAvailable) {
       const { title, content } = parsedData.data;
-      const updated = await prisma.document.update({ where: { id: document.id }, data: { title, content: content ?? document.content ?? '' } });
+      const updated = await prisma.document.update({
+        where: { id: documentId },
+        data: { title, content: content ?? document.content ?? '' },
+      });
       return NextResponse.json({ message: 'Document updated successfully', document: updated }, { status: 200 });
     }
-    await ensureDocumentMigrated(prisma, document.id);
+    await ensureDocumentMigrated(prisma, documentId);
 
     const { title, content } = parsedData.data;
     if (content !== undefined) {
-      const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+      const currentDocument = await prisma.document.findUnique({ where: { id: documentId } });
       if (!currentDocument) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
       await writeTextFile({ userId, slug, rawPath: currentDocument.mainFilePath, content });
     }
     const updated = await prisma.document.update({
-      where: { id: document.id },
+      where: { id: documentId },
       data: content === undefined ? { title } : { title, content },
     });
 
@@ -208,10 +241,14 @@ export const POST = withAuth(async (req, session, context) => {
     const { slug } = await context.params;
     const userId = session.user.id;
 
-    const document = await prisma.document.findFirst({ where: { slug, userId } });
-    if (!document) {
-      return NextResponse.json({ message: 'Document not found' }, { status: 404 });
-    }
+    // Compiling costs worker time and writes under the author's snapshot claim, so it stays
+    // author-only in v1. A viewer's request lands on the document-scoped PDF read instead.
+    const access = await resolveForWrite(userId, slug);
+    if (!access) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
+
+    const document = await prisma.document.findUnique({ where: { id: access.document.id } });
+    if (!document) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
+
     const rateLimitResult = await checkRateLimit(document.id);
     if (!rateLimitResult.allowed) {
       return NextResponse.json(
@@ -351,7 +388,12 @@ export const POST = withAuth(async (req, session, context) => {
       },
     );
   } catch (error) {
-    console.error('[PDF_COMPILE_ERROR]', error instanceof Error ? error.message : error);
+    console.error('[PDF_COMPILE_ERROR]', error instanceof Error ? error.constructor.name : 'unknown');
+    if (error instanceof WorkspaceError || error instanceof WorkspacePathError) {
+      return NextResponse.json({ message: error.message }, { status: error.status });
+    }
+    const access = accessErrorResponse(error);
+    if (access) return access;
     return NextResponse.json({ message: 'Failed to queue compilation', error: 'Internal server error' }, { status: 500 });
   }
 });

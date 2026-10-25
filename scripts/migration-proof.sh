@@ -13,7 +13,9 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-DB_URL="${DATABASE_URL:-postgresql://runes:runes@localhost:5432/runes-ai}"
+# psql rejects the ?schema= parameter that Prisma connection strings carry.
+DB_URL_RAW="${DATABASE_URL:-postgresql://runes:runes@localhost:5432/runes-ai}"
+DB_URL="${DB_URL_RAW%%\?*}"
 PROOF_DB="${DB_URL%/*}/migration_proof"
 
 psql_admin() { psql "$DB_URL" -v ON_ERROR_STOP=1 -tA -c "$1"; }
@@ -24,7 +26,12 @@ psql_admin 'CREATE DATABASE migration_proof;' >/dev/null
 export DATABASE_URL="$PROOF_DB"
 
 echo "== applying pre-migration schema (all migrations before document_format)"
+MARKER="20261021120000_document_format_and_assets"
 for dir in prisma/migrations/2026*; do
+  name="$(basename "$dir")"
+  # The proof needs the schema exactly as it stood before that migration. Anything newer
+  # belongs to a later feature and would change what a legacy row even means.
+  if [[ "$name" > "$MARKER" ]]; then continue; fi
   case "$dir" in
     *document_format_and_assets*) continue ;;
   esac

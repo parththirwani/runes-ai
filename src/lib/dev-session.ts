@@ -1,4 +1,6 @@
-export type DevSession = { id: string; email: string; name: string; picture: string | null; issuedAt: number };
+// Presentation hints only. `isAdmin` mirrors the session flag so the local stack shows the same
+// navigation as production; every admin route re-reads the database flag regardless.
+export type DevSession = { id: string; email: string; name: string; picture: string | null; issuedAt: number; isAdmin?: boolean };
 
 function secret(): string | null {
   return process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || null;

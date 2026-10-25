@@ -1,7 +1,8 @@
-// Serves binary workspace assets (figures) to the owner only.
+// Serves binary workspace assets (figures) to anyone who may read the document.
 import { NextResponse } from 'next/server';
 import { withAuth } from '@/src/lib/withAuth';
 import { WorkspaceError, WorkspacePathError, readWorkspaceAsset } from '@/src/lib/workspace-files';
+import { accessErrorResponse } from '@/src/lib/access';
 
 export const GET = withAuth(async (req, session, context) => {
   try {
@@ -25,7 +26,9 @@ export const GET = withAuth(async (req, session, context) => {
     if (error instanceof WorkspaceError || error instanceof WorkspacePathError) {
       return NextResponse.json({ message: error.message }, { status: error.status });
     }
-    console.error('[WORKSPACE_ASSET_ERROR]', error instanceof Error ? error.message : 'unknown');
+    const access = accessErrorResponse(error);
+    if (access) return access;
+    console.error('[WORKSPACE_ASSET_ERROR]', error instanceof Error ? error.constructor.name : 'unknown');
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }
 });

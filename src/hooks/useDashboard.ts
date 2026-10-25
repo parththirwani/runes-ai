@@ -1,66 +1,74 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import type { LibraryDocument, LibraryScope } from '@/src/types/library';
 import type { DocumentFormatValue } from '@/src/types/compilation';
 
-export interface DashboardDocument {
-  id: string;
-  title: string;
-  slug: string;
-  content?: string | null;
-  format?: DocumentFormatValue;
-  isFavorite: boolean;
-  excerpt?: string;
-  createdAt: string;
-  updatedAt: string;
-}
+export type DashboardDocument = LibraryDocument;
 
-export function useDashboard() {
+/**
+ * The document half of the library, for one scope at a time. Capability flags arrive with each
+ * row, so the interface can show View or Edit without asking a second question; the server still
+ * re-checks every action.
+ */
+export function useDashboard(scope: LibraryScope) {
   const router = useRouter();
   const { status } = useSession();
   const [documents, setDocuments] = useState<DashboardDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
-  useEffect(() => {
-    if (status === 'authenticated') {
-      fetchDocuments();
-    }
-  }, [status]);
+  // Scope in primitives: the fetch callback then depends on one stable string instead of an
+  // object the caller rebuilds on every render.
+  const scopeKind = scope.kind;
+  const scopeWorkspaceId = scope.kind === 'workspace' ? scope.id : null;
+  const fetchUrl = useMemo(() => {
+    if (scopeKind === 'workspace' && scopeWorkspaceId) return "/api/workspaces/" + scopeWorkspaceId + "/documents";
+    return scopeKind === 'shared' ? '/api/document?scope=shared' : '/api/document';
+  }, [scopeKind, scopeWorkspaceId]);
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/document');
-      
+      // A workspace scope lists that collection; "shared with me" and "all" go to the library
+      // endpoint, which answers from the same capability query the document routes use.
+      const response = await fetch(fetchUrl);
+
       if (!response.ok) {
         throw new Error('Failed to fetch documents');
       }
 
       const data = await response.json();
       setDocuments(data.documents || []);
+      setError(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to fetch documents');
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchUrl]);
 
-  const handleCreateDocument = async (title: string, format: DocumentFormatValue) => {
+  useEffect(() => {
+    if (status === 'authenticated') {
+      void fetchDocuments();
+    }
+  }, [status, fetchDocuments]);
+
+  const handleCreateDocument = async (title: string, format: DocumentFormatValue, workspaceId?: string) => {
     setIsCreating(true);
     try {
-      // Format is explicit in the request; the server applies the matching
-      // tested starting template for the chosen format.
+      // Format is explicit in the request and the server applies the matching tested template.
+      // A named workspace is checked against the capability service there, not here.
       const response = await fetch('/api/document', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, format })
+        body: JSON.stringify({ title, format, workspaceId })
       });
 
       if (!response.ok) {
@@ -87,7 +95,8 @@ export function useDashboard() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to delete document');
+        const error = await response.json().catch(() => null);
+        throw new Error((error as { message?: string } | null)?.message || 'Failed to delete document');
       }
 
       setDocuments((current) => current.filter((item) => item.slug !== doc.slug));
@@ -126,6 +135,7 @@ export function useDashboard() {
     isCreating,
     setShowCreateModal,
     setShowErrorModal,
+    fetchDocuments,
     handleCreateDocument,
     handleDeleteClick,
     handleFavoriteToggle,

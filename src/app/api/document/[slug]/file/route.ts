@@ -11,12 +11,15 @@ import {
   readWorkspaceFile,
   writeTextFile,
 } from '@/src/lib/workspace-files';
+import { accessErrorResponse } from '@/src/lib/access';
 
 function errorResponse(error: unknown) {
   if (error instanceof WorkspaceError || error instanceof WorkspacePathError) {
     return NextResponse.json({ message: error.message }, { status: error.status });
   }
-  console.error('[WORKSPACE_FILE_ERROR]', error instanceof Error ? error.message : 'unknown');
+  const access = accessErrorResponse(error);
+  if (access) return access;
+  console.error('[WORKSPACE_FILE_ERROR]', error instanceof Error ? error.constructor.name : 'unknown');
   return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
 }
 

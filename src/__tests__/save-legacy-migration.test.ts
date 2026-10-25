@@ -37,6 +37,14 @@ vi.mock('@/src/lib/workspace-files', async (importOriginal) => {
   return { ...actual, writeTextFile: mocks.writeTextFile };
 });
 
+
+// Capability decisions live in src/__tests__/access-policy.test.ts. This suite is about files
+// and routes, so the access service is pinned to the author case it has always described.
+vi.mock('@/src/lib/access', async () => {
+  const actual = await vi.importActual<typeof import('@/src/lib/access')>('@/src/lib/access');
+  const { ownerOnlyAccessStub } = await import('@/src/__tests__/helpers/access-stub');
+  return { ...actual, ...ownerOnlyAccessStub() };
+});
 import { PATCH, PUT } from '@/src/app/api/document/[slug]/route';
 
 beforeEach(() => {
