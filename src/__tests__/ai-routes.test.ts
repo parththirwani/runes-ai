@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
   userId: 'owner',
+  doc: null as null | { id: string; userId: string; format: string },
   findFirst: vi.fn(),
   limit: vi.fn(),
   slot: vi.fn(),
@@ -12,7 +13,19 @@ vi.mock('@/src/lib/withAuth', () => ({
   withAuth: (handler: (req: NextRequest, session: { user: { id: string } }) => Promise<Response>) =>
     (req: NextRequest) => handler(req, { user: { id: mocks.userId } }),
 }));
-vi.mock('@/src/lib/db', () => ({ prisma: { document: { findFirst: mocks.findFirst } } }));
+vi.mock('@/src/lib/db', async () => {
+  const { authorAccessDelegates } = await import('@/src/__tests__/helpers/prisma-access-mock');
+  const access = authorAccessDelegates({
+    actorUserId: mocks.userId,
+    document: () => (mocks.doc ? { ...mocks.doc, workspaceId: 'workspace-1' } : null),
+  });
+  return {
+    prisma: {
+      ...access,
+      document: { findFirst: mocks.findFirst, findUnique: access.document.findUnique },
+    },
+  };
+});
 vi.mock('@/src/lib/ai-rate-limit', () => ({ checkAiRateLimit: mocks.limit, acquireAiSlot: mocks.slot }));
 
 import { POST as paraphrase } from '@/src/app/api/ai/paraphrase/route';
@@ -26,17 +39,20 @@ function request(path: string, body: unknown) {
   });
 }
 
+// AI routes address documents by id, matching how the editor calls them.
+const DOCUMENT_ID = '5c367a11-3827-43fc-93bd-9d4e59c4e9f3';
 const paraphraseBody = {
-  documentId: 'doc1', selectedText: 'A result \\cite{key} is useful.',
+  documentId: DOCUMENT_ID, selectedText: 'A result \\cite{key} is useful.',
   before: ' ', after: ' ', tone: 'Clearer',
 };
-const completionBody = { documentId: 'doc1', prefix: 'A result', suffix: ' follows.', requestId: '1' };
+const completionBody = { documentId: DOCUMENT_ID, prefix: 'A result', suffix: ' follows.', requestId: '1' };
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.userId = 'owner';
+  mocks.doc = { id: DOCUMENT_ID, userId: 'owner', format: 'LATEX' };
   mocks.findFirst.mockImplementation(({ where }: { where: { userId: string } }) =>
-    where.userId === 'owner' ? { id: 'doc1' } : null);
+    where.userId === 'owner' ? { ...mocks.doc } : null);
   mocks.limit.mockResolvedValue({ allowed: true, retryAfter: 1 });
   mocks.slot.mockResolvedValue(async () => {});
   process.env.OPENROUTER_API_KEY = 'test-key';
@@ -99,7 +115,8 @@ describe('AI routes', () => {
     const response = await complete(request('/api/ai/complete', completionBody) as never, {} as never);
     expect(response.status).toBe(200);
     expect((await response.json()).insertion).toBeNull();
-    expect(mocks.findFirst).toHaveBeenCalledWith({ where: { id: 'doc1', userId: 'owner' }, select: { id: true, format: true } });
+    // Authorization now goes through the capability service, which loads the row by id.
+    expect(mocks.findFirst).not.toHaveBeenCalled();
   });
 
   it('rejects another user for completion', async () => {

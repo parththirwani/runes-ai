@@ -13,25 +13,32 @@ vi.mock('@/src/lib/withAuth', () => ({
   withAuth: (handler: (req: NextRequest, session: { user: { id: string } }, context: unknown) => Promise<Response>) =>
     (req: NextRequest, context: unknown) => handler(req, { user: { id: 'owner' } }, context),
 }));
-vi.mock('@/src/lib/db', () => ({
-  prisma: {
-    document: {
-      findFirst: vi.fn(async () => ({ ...mocks.document })),
-      findUnique: vi.fn(async () => ({ ...mocks.document })),
-      update: vi.fn(async ({ data }: { data: Partial<typeof mocks.document> }) => {
-        Object.assign(mocks.document, data);
-        return { ...mocks.document };
+vi.mock('@/src/lib/db', async () => {
+  const { authorAccessDelegates, withAccess } = await import('@/src/__tests__/helpers/prisma-access-mock');
+  // Every read goes through the shared authorization service, so the fixture answers those
+  // queries too; the document spies below stay the ones the assertions look at.
+  const access = authorAccessDelegates({ actorUserId: 'owner', document: () => ({ ...mocks.document, workspaceId: 'workspace-1' }) });
+  const stored = () => ({ ...mocks.document, workspaceId: 'workspace-1' });
+  return {
+    prisma: {
+      ...withAccess(access, {
+        findFirst: vi.fn(async () => stored()),
+        findUnique: vi.fn(async () => stored()),
+        update: vi.fn(async ({ data }: { data: Partial<typeof mocks.document> }) => {
+          Object.assign(mocks.document, data);
+          return stored();
+        }),
       }),
+      workspaceFile: {
+        count: vi.fn(async () => mocks.files.length),
+        create: vi.fn(async ({ data }: { data: { path: string } }) => {
+          mocks.files.push(data.path);
+          return data;
+        }),
+      },
     },
-    workspaceFile: {
-      count: vi.fn(async () => mocks.files.length),
-      create: vi.fn(async ({ data }: { data: { path: string } }) => {
-        mocks.files.push(data.path);
-        return data;
-      }),
-    },
-  },
-}));
+  };
+});
 vi.mock('@/src/lib/workspace-files', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/src/lib/workspace-files')>();
   return { ...actual, writeTextFile: mocks.writeTextFile };
@@ -60,7 +67,7 @@ describe('PUT after lazy migration', () => {
     expect(response.status).toBe(200);
     expect(mocks.files).toEqual(['main.md']);
     expect(mocks.writeTextFile).toHaveBeenCalledWith({
-      userId: 'owner', slug: 'legacy-md', rawPath: 'main.md', content: '# New',
+      userId: 'owner', ref: 'legacy-md', rawPath: 'main.md', content: '# New',
     });
     expect((await response.json()).saved).toEqual([{ path: 'main.md', revision: 2, checksum: 'new' }]);
   });
@@ -74,7 +81,7 @@ describe('PUT after lazy migration', () => {
 
     expect(response.status).toBe(200);
     expect(mocks.writeTextFile).toHaveBeenCalledWith({
-      userId: 'owner', slug: 'legacy-md', rawPath: 'chapter.md', content: '# Chapter', baseRevision: 3,
+      userId: 'owner', ref: 'legacy-md', rawPath: 'chapter.md', content: '# Chapter', baseRevision: 3,
     });
     expect((await response.json()).saved).toEqual([{ path: 'main.md', revision: 2, checksum: 'new' }]);
   });
@@ -110,7 +117,7 @@ describe('PATCH after lazy migration', () => {
     expect(response.status).toBe(200);
     expect(mocks.files).toEqual(['main.md']);
     expect(mocks.writeTextFile).toHaveBeenCalledWith({
-      userId: 'owner', slug: 'legacy-md', rawPath: 'main.md', content: '# New',
+      userId: 'owner', ref: 'legacy-md', rawPath: 'main.md', content: '# New',
     });
     expect(mocks.document.title).toBe('Revised');
   });

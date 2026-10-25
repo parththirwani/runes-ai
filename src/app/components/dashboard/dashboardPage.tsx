@@ -12,6 +12,9 @@ import AlertModal from "../design/AlertModal";
 import Logo from "../brand/logo";
 import CreateDocumentModal from "./createDocumentModal";
 import DocumentActions from "./documentActions";
+import WorkspaceSwitcher from "./workspaceSwitcher";
+import ShareDialog from "../sharing/shareDialog";
+import MoveDialog from "../sharing/moveDialog";
 import styles from "./dashboard.module.css";
 
 type LibraryFilter = "ALL" | "FAVORITES" | "MARKDOWN" | "LATEX";
@@ -44,7 +47,10 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
   const {
     documents, loading, error, showCreateModal, showErrorModal, errorMessage, isCreating,
     setShowCreateModal, setShowErrorModal, handleCreateDocument, handleDeleteClick, handleFavoriteToggle,
+    workspaces, selectedWorkspaceId, selectWorkspace, createWorkspace, refresh,
   } = useDashboard();
+  const [shareTarget, setShareTarget] = useState<{ id: string; label: string } | null>(null);
+  const [moveTarget, setMoveTarget] = useState<{ id: string; label: string } | null>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/signin");
@@ -70,6 +76,10 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
   };
   const pageTitle = filter === "ALL" ? "All documents" : filter === "FAVORITES" ? "Favorites" : `${filter === "MARKDOWN" ? "Markdown" : "LaTeX"} documents`;
   const openCreate = () => setShowCreateModal(true);
+  const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
+  // Authors keep the readable URL; a recipient only ever has the document id, and slugs are
+  // resolved author-scoped on purpose, so the id is the only link that works for them.
+  const openHrefFor = (doc: DashboardDocument) => (doc.isAuthor === false ? `/document/${doc.id}` : `/document/${doc.slug}`);
   const closeCreate = () => {
     setShowCreateModal(false);
     if (initialCreateFormat) router.replace(DOCUMENTS_PATH);
@@ -193,7 +203,7 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
                     {doc.isFavorite && <Star className="size-3.5 shrink-0 fill-current text-action" aria-label="Favorite" />}
                   </div></td>
                   <td>You</td>
-                  <td><div className="flex items-center justify-between gap-3"><time className="whitespace-nowrap" dateTime={doc.updatedAt}>{modifiedAt(doc.updatedAt)}</time><div className={styles.rowActions}><DocumentActions document={doc} onDelete={() => handleDeleteClick(doc)} onFavoriteChange={() => handleFavoriteToggle(doc)} onDownload={() => downloadDocument(doc)} /></div></div></td>
+                  <td><div className="flex items-center justify-between gap-3"><time className="whitespace-nowrap" dateTime={doc.updatedAt}>{modifiedAt(doc.updatedAt)}</time><div className={styles.rowActions}><DocumentActions document={doc} canManage={doc.isAuthor !== false} openHref={openHrefFor(doc)} onDelete={() => handleDeleteClick(doc)} onFavoriteChange={() => handleFavoriteToggle(doc)} onDownload={() => downloadDocument(doc)} onShare={doc.isAuthor !== false ? () => setShareTarget({ id: doc.id, label: doc.title }) : undefined} onMove={doc.isAuthor !== false ? () => setMoveTarget({ id: doc.id, label: doc.title }) : undefined} /></div></div></td>
                 </tr>
               ))}
             </tbody>
@@ -204,6 +214,8 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
 
       <CreateDocumentModal isOpen={showCreateModal} onClose={closeCreate} onSubmit={handleCreateDocument} isLoading={isCreating} existingTitles={documents.map((doc) => doc.title)} initialFormat={initialCreateFormat ?? "MARKDOWN"} />
       <AlertModal isOpen={showErrorModal} onClose={() => setShowErrorModal(false)} title="Error" message={errorMessage} variant="error" />
+      {shareTarget && <ShareDialog isOpen onClose={() => setShareTarget(null)} target={{ kind: "DOCUMENT", id: shareTarget.id, label: shareTarget.label }} />}
+      {moveTarget && <MoveDialog isOpen onClose={() => setMoveTarget(null)} documentId={moveTarget.id} documentTitle={moveTarget.label} onMoved={refresh} workspaces={workspaces} currentWorkspaceId={selectedWorkspaceId} />}
     </div>
   );
 }

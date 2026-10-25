@@ -1,5 +1,6 @@
 // Single workspace file access: read, create, edit, delete.
-// Ownership is resolved from the slug plus the authenticated user on every call.
+// Access is resolved from the document reference plus the authenticated user on every call, with
+// read intent for GET and write intent for PUT and DELETE.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/src/lib/withAuth';
@@ -54,7 +55,7 @@ export const PUT = withAuth(async (req, session, context) => {
 
     const result = await writeTextFile({
       userId: session.user.id,
-      slug,
+      ref: slug,
       rawPath: parsed.data.path,
       content: parsed.data.content,
       baseRevision: parsed.data.baseRevision ?? null,

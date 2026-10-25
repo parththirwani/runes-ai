@@ -29,7 +29,7 @@ export const POST = withAuth(async (req, session, context) => {
     const bytes = Buffer.from(await fileField.arrayBuffer());
     const file = await uploadFile({
       userId: session.user.id,
-      slug,
+      ref: slug,
       rawPath: pathField,
       bytes,
       mimeType: fileField.type || null,

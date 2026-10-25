@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { withAuth } from '@/src/lib/withAuth';
+import { openWritableDocument } from '@/src/lib/document-lookup';
 import { prisma } from '@/src/lib/db';
 import { z } from 'zod';
 import { acquireAiSlot, checkAiRateLimit } from '@/src/lib/ai-rate-limit';
@@ -38,15 +39,13 @@ export const POST = withAuth(async (req, session) => {
       });
     }
 
-    // Ownership check — format is read from the owned row so a client cannot
-    // claim MARKDOWN for a LaTeX document (or vice versa).
-    const doc = await prisma.document.findFirst({
-      where: { id: documentId, userId },
-      select: { id: true, format: true },
-    });
-    if (!doc) {
+    // Author-only, and format is read from the row so a client cannot claim MARKDOWN for a
+    // LaTeX document (or vice versa). A shared reader gets the same 404 as an unrelated user.
+    const aiAccess = await openWritableDocument(userId, documentId);
+    if (!aiAccess) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
+    const doc = { id: aiAccess.document.id, format: aiAccess.document.format };
     const isMarkdown = doc.format === 'MARKDOWN';
 
     if (selectionCutsWord(before, selectedText, after)) {

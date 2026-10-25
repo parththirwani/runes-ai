@@ -8,6 +8,8 @@ import WorkspacePanel from './WorkspacePanel';
 import FileTabs from './FileTabs';
 import MonacoEditorWrapper from './MonacoEditorWrapper';
 import PDFPreview from './PDFPreview';
+import ShareDialog from '../sharing/shareDialog';
+import MoveDialog, { type MoveWorkspaceOption } from '../sharing/moveDialog';
 import MarkdownPreviewPane from './MarkdownPreviewPane';
 import DiffReview from './DiffReview';
 import AiWorkspacePanel from './AiWorkspacePanel';
@@ -98,6 +100,22 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     tree: [{ name: 'main.tex', path: 'main.tex', type: 'file' }],
   }, [initialDocument]);
   const workspace = useWorkspace(syntheticDocument);
+  // Readers get no write affordance at all; the server repeats every one of these checks.
+  const canEdit = initialDocument?.capabilities ? initialDocument.capabilities.canEdit : true;
+  const canShare = initialDocument?.capabilities?.canShare ?? false;
+  const [shareOpen, setShareOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveWorkspaces, setMoveWorkspaces] = useState<MoveWorkspaceOption[]>([]);
+  const openMoveDialog = async () => {
+    try {
+      const response = await fetch('/api/workspaces');
+      const data = await response.json();
+      setMoveWorkspaces(((data.workspaces ?? []) as MoveWorkspaceOption[]).filter((item) => item.canCreate));
+    } catch {
+      setMoveWorkspaces([]);
+    }
+    setMoveOpen(true);
+  };
 
   const [title, setTitle] = useState(initialDocument?.title || 'Untitled Document');
   const [slug, setSlug] = useState(initialDocument?.slug || '');
@@ -194,6 +212,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+      if (!canEdit) return;
         event.preventDefault();
         saveRef.current();
       }
@@ -204,7 +223,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   // --- Autosave ---
   useEffect(() => {
-    if (workspace.dirtyPaths.length > 0 && slug) {
+    if (canEdit && workspace.dirtyPaths.length > 0 && slug) {
       const timer = setTimeout(() => { saveRef.current(); }, 30000);
       return () => clearTimeout(timer);
     }
@@ -637,6 +656,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   // --- Save: writes every dirty file in one request, main file included ---
   const handleSave = useCallback(async (): Promise<boolean> => {
+    if (!canEdit) return false;
     if (savedNoticeTimerRef.current) clearTimeout(savedNoticeTimerRef.current);
     setIsSaving(true);
     setJustSaved(false);
@@ -686,6 +706,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   // --- Compile the selected main file ---
   const handleCompile = async () => {
+    if (!canEdit) return;
     if (!slug) {
       setCompileError('Please save the document first before compiling');
       return;
@@ -888,8 +909,19 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         format={syntheticDocument.format}
         fileName={`${slug || 'document'}.${isMarkdown ? 'md' : 'tex'}`}
         onDownloadSource={handleDownloadSource}
+        canEdit={canEdit}
+        canShare={canShare}
+        authorName={initialDocument?.author?.name ?? null}
+        onShare={canShare ? () => setShareOpen(true) : undefined}
+        onMove={canEdit ? openMoveDialog : undefined}
       />
 
+      {shareOpen && initialDocument && (
+        <ShareDialog isOpen onClose={() => setShareOpen(false)} target={{ kind: 'DOCUMENT', id: initialDocument.id, label: initialDocument.title }} />
+      )}
+      {moveOpen && initialDocument && (
+        <MoveDialog isOpen onClose={() => setMoveOpen(false)} documentId={initialDocument.id} documentTitle={initialDocument.title} currentWorkspaceId={initialDocument.workspaceId ?? null} workspaces={moveWorkspaces} />
+      )}
       <div className="flex-1 relative flex overflow-hidden">
         <WorkspacePanel
           isOpen={showFileTree}
@@ -898,6 +930,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           files={workspace.filesByPath}
           mainFilePath={workspace.mainFilePath}
           activePath={activePath}
+          readOnly={!canEdit}
           dirtyPaths={workspace.dirtyPaths}
           stalePaths={workspace.stalePaths}
           slug={slug}
@@ -1068,6 +1101,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                     language={activePath.toLowerCase().endsWith('.md') ? 'markdown' : 'latex'}
                     fileName={fileName}
                     onEditorReady={handleEditorReady}
+                    readOnly={!canEdit}
                   />
                 ) : (
                   <div className="h-full flex items-center justify-center text-sm text-muted-foreground px-6 text-center">

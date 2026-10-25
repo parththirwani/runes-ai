@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
   userId: 'owner',
-  doc: { id: 'doc1', format: 'MARKDOWN' } as { id: string; format: string },
+  doc: { id: 'doc1', userId: 'owner', format: 'MARKDOWN' } as { id: string; userId: string; format: string },
   findFirst: vi.fn(),
   limit: vi.fn(),
   slot: vi.fn(),
@@ -13,7 +13,14 @@ vi.mock('@/src/lib/withAuth', () => ({
   withAuth: (handler: (req: NextRequest, session: { user: { id: string } }) => Promise<Response>) =>
     (req: NextRequest) => handler(req, { user: { id: mocks.userId } }),
 }));
-vi.mock('@/src/lib/db', () => ({ prisma: { document: { findFirst: mocks.findFirst } } }));
+vi.mock('@/src/lib/db', async () => {
+  const { authorAccessDelegates } = await import('@/src/__tests__/helpers/prisma-access-mock');
+  const access = authorAccessDelegates({
+    actorUserId: mocks.userId,
+    document: () => (mocks.doc ? { ...mocks.doc, workspaceId: 'workspace-1' } : null),
+  });
+  return { prisma: { ...access, document: { findFirst: mocks.findFirst, findUnique: access.document.findUnique } } };
+});
 vi.mock('@/src/lib/ai-rate-limit', () => ({ checkAiRateLimit: mocks.limit, acquireAiSlot: mocks.slot }));
 
 import { POST as paraphrase } from '@/src/app/api/ai/paraphrase/route';
@@ -30,7 +37,7 @@ function request(body: unknown) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.userId = 'owner';
-  mocks.doc = { id: 'doc1', format: 'MARKDOWN' };
+  mocks.doc = { id: 'doc1', userId: 'owner', format: 'MARKDOWN' };
   mocks.findFirst.mockImplementation(({ where }: { where: { userId: string } }) =>
     where.userId === 'owner' ? Promise.resolve(mocks.doc) : Promise.resolve(null));
   mocks.limit.mockResolvedValue({ allowed: true, retryAfter: 1 });
@@ -108,7 +115,7 @@ describe('Markdown paraphrase route', () => {
   });
 
   it('still routes LaTeX documents through the LaTeX rules', async () => {
-    mocks.doc = { id: 'doc1', format: 'LATEX' };
+    mocks.doc = { id: 'doc1', userId: 'owner', format: 'LATEX' };
     const provider = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: 'A result @@PROTECTED_0__ stays.' } }],
     }), { status: 200 }));

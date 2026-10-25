@@ -1,4 +1,4 @@
-// Selects which .tex file the compiler treats as the entry point.
+// Selects which .tex file the compiler treats as the entry point. Author only.
 import { NextResponse } from 'next/server';
 import { withAuth } from '@/src/lib/withAuth';
 import { workspaceMainSchema } from '@/src/schema/documentSchema';

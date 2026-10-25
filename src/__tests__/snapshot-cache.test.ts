@@ -25,6 +25,7 @@ vi.mock('@/src/lib/redis', () => ({
   QUEUE_NAME: 'latex:compilation:queue',
   PROCESSING_SET: 'latex:compilation:processing',
   SNAPSHOT_JOB_PREFIX: 'latex:snapshot:job:',
+  DOCUMENT_JOB_PREFIX: 'latex:document:job:',
   RESULT_TTL: 86400,
 }));
 

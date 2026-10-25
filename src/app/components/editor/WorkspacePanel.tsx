@@ -45,6 +45,8 @@ type Props = {
   outline: React.ReactNode;
   error: string | null;
   onDismissError: () => void;
+  /** Readers get a browser: no create, upload, rename, delete or main-file controls. */
+  readOnly?: boolean;
 };
 
 type ModalState =
@@ -94,7 +96,7 @@ function DirectoryNode({
 export default function WorkspacePanel(props: Props) {
   const {
     isOpen, onClose, tree, files, mainFilePath, activePath, dirtyPaths, stalePaths, slug,
-    onOpenFile, onCreateFile, onUpload, onRename, onDelete, onChooseMain, outline, error, onDismissError,
+    onOpenFile, onCreateFile, onUpload, onRename, onDelete, onChooseMain, outline, error, onDismissError, readOnly = false,
   } = props;
 
   const [tab, setTab] = useState<'files' | 'outline'>('files');
@@ -154,6 +156,7 @@ export default function WorkspacePanel(props: Props) {
               <Star className="w-3 h-3 text-action fill-action shrink-0" />
             </span>
           )}
+          {!readOnly && (
           <div className="hidden group-hover:flex group-focus-within:flex items-center">
             {file?.kind === 'tex' && !isMain && (
               <IconButton
@@ -175,6 +178,7 @@ export default function WorkspacePanel(props: Props) {
               tooltip="Delete"
             />
           </div>
+          )}
         </div>
       );
     });
@@ -221,7 +225,7 @@ export default function WorkspacePanel(props: Props) {
         )}
       </div>
 
-      {tab === 'files' && (
+      {tab === 'files' && !readOnly && (
         <div className="p-2 border-t border-border space-y-2 shrink-0">
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-meta truncate" title={slug}>{Object.keys(files).length} files</span>

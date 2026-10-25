@@ -10,7 +10,7 @@ export const POST = withAuth(async (req, session, context) => {
     const parsed = workspaceMoveSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ message: 'Invalid input' }, { status: 400 });
 
-    const result = await moveFile({ userId: session.user.id, slug, from: parsed.data.from, to: parsed.data.to });
+    const result = await moveFile({ userId: session.user.id, ref: slug, from: parsed.data.from, to: parsed.data.to });
     if (!result) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
     if (result === 'notfound') return NextResponse.json({ message: 'File not found' }, { status: 404 });
     if (result === 'exists') return NextResponse.json({ message: 'A file already exists at that path' }, { status: 409 });

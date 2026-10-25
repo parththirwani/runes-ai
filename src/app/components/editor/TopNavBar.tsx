@@ -1,4 +1,4 @@
-import { Menu, FileText, Play, Sparkles, Edit2, Download, Eye, Columns3 } from 'lucide-react';
+import { Menu, FileText, Play, Sparkles, Edit2, Download, Eye, Columns3, Share2, ArrowRightLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Button from '../design/Button';
 import IconButton from '../design/IconButton';
@@ -24,6 +24,12 @@ interface TopNavBarProps {
   fileName?: string;
   /** Downloads the document's main source file. */
   onDownloadSource?: () => void;
+  /** False for a reader: every write control is then absent, not merely disabled. */
+  canEdit?: boolean;
+  canShare?: boolean;
+  authorName?: string | null;
+  onShare?: () => void;
+  onMove?: () => void;
 }
 
 export default function TopNavBar({
@@ -40,7 +46,12 @@ export default function TopNavBar({
   compilationStatus = '',
   format = 'LATEX',
   fileName,
-  onDownloadSource
+  onDownloadSource,
+  canEdit = true,
+  canShare = false,
+  authorName,
+  onShare,
+  onMove
 }: TopNavBarProps) {
   const router = useRouter();
   const isMarkdown = format === 'MARKDOWN';
@@ -69,18 +80,29 @@ export default function TopNavBar({
         
         <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground sm:flex-initial">
           <FileText className="w-4 h-4 shrink-0 text-meta" />
-          <button
-            onClick={onTitleEdit}
-            className="flex min-w-0 max-w-50 items-center gap-1 truncate text-foreground hover:text-action transition-colors group cursor-pointer"
-            title="Click to edit title"
-          >
-            <span className="truncate">{documentTitle}</span>
-            <Edit2 className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </button>
+          {canEdit ? (
+            <button
+              onClick={onTitleEdit}
+              className="flex min-w-0 max-w-50 items-center gap-1 truncate text-foreground hover:text-action transition-colors group cursor-pointer"
+              title="Click to edit title"
+            >
+              <span className="truncate">{documentTitle}</span>
+              <Edit2 className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
+          ) : (
+            <span className="flex min-w-0 max-w-50 items-center gap-1 truncate text-foreground">
+              <span className="truncate">{documentTitle}</span>
+            </span>
+          )}
           {hasUnsavedChanges && (
             <span className="w-2 h-2 bg-status-unsaved rounded-full" title="Unsaved changes" aria-hidden="true" />
           )}
-          {(isSaving || justSaved) && (
+          {!canEdit && (
+            <span className="shrink-0 text-xs font-medium text-muted-foreground" role="status">
+              View-only{authorName ? ` shared by ` : ''}
+            </span>
+          )}
+          {canEdit && (isSaving || justSaved) && (
             <span className="shrink-0 text-xs font-medium text-status-saved" role="status">
               {isSaving ? 'Saving…' : 'Saved'}
             </span>
@@ -122,6 +144,8 @@ export default function TopNavBar({
               icon: <Columns3 aria-hidden="true" />,
               onSelect: () => onViewModeChange('split'),
             },
+            ...(onShare ? [{ id: 'share', label: 'Share', icon: <Share2 aria-hidden="true" />, onSelect: onShare }] : []),
+            ...(onMove ? [{ id: 'move', label: 'Move', icon: <ArrowRightLeft aria-hidden="true" />, onSelect: onMove }] : []),
             {
               id: 'download-source',
               label: 'Download',
@@ -134,24 +158,28 @@ export default function TopNavBar({
         
         <div className="hidden h-6 w-px bg-border sm:block" />
 
-        <Button
-          variant="primary"
-          size="sm"
-          icon={<Play className="w-4 h-4" />}
-          onClick={onCompile}
-          loading={isCompiling}
-          disabled={isCompiling}
-        >
-          {isCompiling ? compilationStatus || 'Compiling...' : 'Compile'}
-        </Button>
+        {canEdit && (
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Play className="w-4 h-4" />}
+            onClick={onCompile}
+            loading={isCompiling}
+            disabled={isCompiling}
+          >
+            {isCompiling ? compilationStatus || 'Compiling...' : 'Compile'}
+          </Button>
+        )}
 
-        <IconButton
-          icon={<Sparkles className="w-5 h-5" />}
-          label="AI workspace"
-          tooltip="AI workspace"
-          onClick={onSettingsToggle}
-          className="cursor-pointer"
-        />
+        {canEdit && (
+          <IconButton
+            icon={<Sparkles className="w-5 h-5" />}
+            label="AI workspace"
+            tooltip="AI workspace"
+            onClick={onSettingsToggle}
+            className="cursor-pointer"
+          />
+        )}
       </div>
     </div>
   );

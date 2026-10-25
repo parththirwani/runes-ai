@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import type { DocumentFormatValue } from '@/src/types/compilation';
+import type { WorkspaceSummary } from '@/src/app/components/dashboard/workspaceSwitcher';
 
 export interface DashboardDocument {
   id: string;
@@ -13,7 +14,15 @@ export interface DashboardDocument {
   excerpt?: string;
   createdAt: string;
   updatedAt: string;
+  workspaceId?: string;
+  workspaceName?: string;
+  workspaceKind?: 'PERSONAL' | 'TEAM';
+  authorName?: string;
+  isAuthor?: boolean;
+  access?: 'Edit' | 'View';
 }
+
+export type { WorkspaceSummary } from '@/src/app/components/dashboard/workspaceSwitcher';
 
 export function useDashboard() {
   const router = useRouter();
@@ -28,29 +37,75 @@ export function useDashboard() {
   const [errorMessage, setErrorMessage] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
-  useEffect(() => {
-    if (status === 'authenticated') {
-      fetchDocuments();
-    }
-  }, [status]);
+  // Library scope. null means "every workspace the caller can read", which is what a visitor
+  // who has never touched the switcher expects.
+  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
 
-  const fetchDocuments = async () => {
+  const fetchWorkspaces = useCallback(async () => {
+    try {
+      const response = await fetch('/api/workspaces');
+      if (!response.ok) return;
+      const data = await response.json();
+      setWorkspaces(data.workspaces || []);
+    } catch {
+      // The switcher simply stays empty; the document list still tells the user what failed.
+    }
+  }, []);
+
+  const fetchDocuments = useCallback(async (workspaceId: string | null = null) => {
     try {
       setLoading(true);
-      const response = await fetch('/api/document');
-      
+      setError(null);
+      const query = workspaceId ? `?workspaceId=` : '';
+      const response = await fetch(`/api/document`);
+
       if (!response.ok) {
         throw new Error('Failed to fetch documents');
       }
 
       const data = await response.json();
       setDocuments(data.documents || []);
+      setWorkspaces(data.workspaces || []);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to fetch documents');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (status === 'authenticated') {
+      void fetchDocuments(selectedWorkspaceId);
+      void fetchWorkspaces();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
+  const selectWorkspace = useCallback((workspaceId: string | null) => {
+    setSelectedWorkspaceId(workspaceId);
+    void fetchDocuments(workspaceId);
+  }, [fetchDocuments]);
+
+  const refresh = useCallback(() => fetchDocuments(selectedWorkspaceId), [fetchDocuments, selectedWorkspaceId]);
+
+  const createWorkspace = useCallback(async (name: string): Promise<string | null> => {
+    try {
+      const response = await fetch('/api/workspaces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return data.error || data.message || 'Could not create the workspace';
+      setWorkspaces(await (await fetch('/api/workspaces')).json().then((list) => list.workspaces || []));
+      setSelectedWorkspaceId(data.workspace?.id ?? null);
+      void fetchDocuments(data.workspace?.id ?? null);
+      return null;
+    } catch (err: unknown) {
+      return err instanceof Error ? err.message : 'Could not create the workspace';
+    }
+  }, [fetchDocuments]);
 
   const handleCreateDocument = async (title: string, format: DocumentFormatValue) => {
     setIsCreating(true);
@@ -60,7 +115,7 @@ export function useDashboard() {
       const response = await fetch('/api/document', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, format })
+        body: JSON.stringify({ title, format, ...(selectedWorkspaceId ? { workspaceId: selectedWorkspaceId } : {}) })
       });
 
       if (!response.ok) {
@@ -129,5 +184,10 @@ export function useDashboard() {
     handleCreateDocument,
     handleDeleteClick,
     handleFavoriteToggle,
+    workspaces,
+    selectedWorkspaceId,
+    selectWorkspace,
+    createWorkspace,
+    refresh,
   };
 }
