@@ -172,9 +172,13 @@ model Workspace {
   name        String
   kind        WorkspaceKind
   ownerUserId String?
-  owner       User?         @relation("WorkspaceOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  // Lifetime follows the owner. `workspaces_exactly_one_owner` forbids a row with neither
+  // owner column set, so SET NULL would make the account deletion fail halfway through.
+  owner       User?         @relation("WorkspaceOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
   teamId      String?
-  team        Team?         @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  // A team workspace goes with the team. Documents inside it are protected by their own
+  // RESTRICT foreign key, so deleting a team that still holds documents fails instead.
+  team        Team?         @relation(fields: [teamId], references: [id], onDelete: Cascade)
   isDefault   Boolean       @default(false)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
