@@ -29,10 +29,16 @@ commands that reproduce every claim.
 | Migrations against a fresh database | `bash scripts/migration-proof.sh` then `bash scripts/workspace-access-migration-proof.sh` | both exit 0 |
 | Types | `npx tsc --noEmit` | no output, exit 0 |
 | Lint | `npx eslint .` | 0 errors (8 pre-existing warnings) |
-| Unit and component tests | `npx vitest run` | `4 failed / 326 passed / 24 skipped (354)` — the four failures are the pre-existing `useSession`-without-a-provider cases in `src/__tests__/workspace-ui.test.tsx`, present on `dev` before this branch |
+| Unit and component tests | `npx vitest run` | `4 failed / 334 passed / 24 skipped (362)` — the four failures are the pre-existing `useSession`-without-a-provider cases in `src/__tests__/workspace-ui.test.tsx`, present on `dev` before this branch |
 | Database integration tests | `bash scripts/workspace-integration-tests.sh` | `16 passed` |
 | Multi-account HTTP and page smoke | start `npm run dev`, then `node scripts/ui-surface-smoke.mjs` | `51/51 checks passed` |
-| Production build | `npm run build` | exit 0 |
+| Production build | `env -u NODE_ENV npm run build` | exit 0 |
+
+Two of those commands want opposite environments, so state them explicitly: the dev-login flow
+the smoke depends on needs `NODE_ENV=development`, which this repo pins in `.env`, and Next
+refuses that value while producing a production build (it fails while prerendering
+`/_global-error`). Sourcing `.env` with `set -a` in a shell that then runs the build reproduces
+the failure, so drop the variable for that one command.
 
 `scripts/workspace-integration-tests.sh` derives a throwaway database from `DATABASE_URL`
 (override with `WORKSPACE_IT_DB`), refuses a name that looks like an application database,
