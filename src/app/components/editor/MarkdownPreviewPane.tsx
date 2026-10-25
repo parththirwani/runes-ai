@@ -40,12 +40,10 @@ export default function MarkdownPreviewPane({
   return (
     <div className="h-full flex flex-col bg-canvas">
       {tab === 'reading' ? (
-        <div className="flex-1 overflow-auto" data-testid="markdown-reading-pane">
+        <div className="min-h-0 flex-1 overflow-auto bg-surface" data-testid="markdown-reading-pane">
           <p className="sr-only">Reading preview of the current source. The PDF view shows the latest successful compile.</p>
-          <div className="bg-surface px-6 py-8">
-            <div className="mx-auto max-w-2xl">
-              <MarkdownPreview source={previewSource} />
-            </div>
+          <div className="min-h-full w-full px-6 py-8">
+            <MarkdownPreview source={previewSource} />
           </div>
         </div>
       ) : (

@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { buttonClass } from './Button';
 import StartWritingLink from '../landing/startWritingLink';
 import Logo from '../brand/logo';
+import { FrostBlurred } from '../ui/frost-blurred';
+import { LiquidGlassSocial, RunesSocialLinks } from '../ui/liquid-glass-social';
 import { SIGN_IN_PATH } from '@/src/lib/paths';
 
 const footerLinks = [
@@ -66,6 +68,7 @@ export default function FinalCta() {
                 Start writing
               </StartWritingLink>
             </nav>
+            <LiquidGlassSocial links={RunesSocialLinks} />
           </div>
           <div className="mt-8 pt-6 border-t border-line flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <p className="text-xs text-ink-muted">
@@ -76,10 +79,18 @@ export default function FinalCta() {
             </p>
           </div>
         </div>
-        <div aria-hidden="true" className="select-none pt-12">
-          <p className="whitespace-nowrap text-center font-serif text-[clamp(4rem,15vw,13rem)] font-semibold leading-[0.85] tracking-[-0.075em] text-ink/8">
-            Runes AI
-          </p>
+        <div className="pt-12">
+          <FrostBlurred
+            layers={7}
+            strength={0.9}
+            height="62%"
+            tint={0.16}
+            className="w-full"
+          >
+            <span className="block select-none text-center font-sans text-[clamp(4rem,15vw,13rem)] font-semibold leading-[0.85] tracking-[-0.075em] text-ink/10">
+              Runes AI
+            </span>
+          </FrostBlurred>
         </div>
       </footer>
     </>

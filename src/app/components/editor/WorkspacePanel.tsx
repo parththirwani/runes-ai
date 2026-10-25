@@ -4,6 +4,7 @@
 // The section outline is kept as a separate tab so navigation stays available.
 
 import React, { useMemo, useState } from 'react';
+import { signOut, useSession } from 'next-auth/react';
 import {
   FileCode2,
   FileImage,
@@ -21,6 +22,7 @@ import {
 import Button from '../design/Button';
 import IconButton from '../design/IconButton';
 import InputModal from '../design/InputModal';
+import UserMenu from '@/components/arc/user-menu/user-menu';
 import type { TreeNode } from '@/src/lib/workspace-paths';
 import type { ManagedFile } from '@/src/hooks/useWorkspace';
 
@@ -100,6 +102,7 @@ export default function WorkspacePanel(props: Props) {
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
   const [actionError, setActionError] = useState<string | null>(null);
   const [uploadFolder, setUploadFolder] = useState('figures');
+  const { data: session } = useSession();
 
   const dirty = useMemo(() => new Set(dirtyPaths), [dirtyPaths]);
   const stale = useMemo(() => new Set(stalePaths), [stalePaths]);
@@ -178,7 +181,7 @@ export default function WorkspacePanel(props: Props) {
 
   return (
     <div
-      className={`absolute top-0 left-0 bottom-0 w-72 max-[520px]:w-[86vw] bg-surface border-r border-border transform transition-transform duration-300 z-20 flex flex-col ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
+      className={`relative h-full shrink-0 bg-surface border-r border-border overflow-hidden transform transition-[width,transform] duration-300 z-20 flex flex-col ${isOpen ? 'w-64 max-[520px]:w-[78vw] translate-x-0' : 'w-0 -translate-x-full'}`}
     >
       <div className="h-14 border-b border-border flex items-center justify-between px-3 gap-2 shrink-0">
         <div className="flex items-center gap-1 bg-surface-raised border border-border rounded p-0.5">
@@ -253,6 +256,25 @@ export default function WorkspacePanel(props: Props) {
               </span>
             </label>
           </div>
+        </div>
+      )}
+
+      {session?.user?.email && (
+        <div className="relative border-t border-border p-2 shrink-0">
+          <UserMenu
+            user={{
+              name: session.user.name || session.user.email.split('@')[0] || 'Account',
+              email: session.user.email,
+              avatarSrc: session.user.image || undefined,
+            }}
+            showName
+            showTheme={false}
+            portal={false}
+            placement="stacked"
+            align="start"
+            className="w-full justify-start rounded-lg px-1.5 text-xs"
+            onSignOut={() => signOut({ redirectTo: '/' })}
+          />
         </div>
       )}
 

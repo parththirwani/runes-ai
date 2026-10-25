@@ -13,6 +13,7 @@ export const updateDocumentSchema = z.object({
   content: z.string().min(1, "Content is required").max(MAX_DOCUMENT_CONTENT_CHARS, "Content is too large").optional(),
 }).strict();
 export const documentSchema = createDocumentSchema;
+export const favoriteDocumentSchema = z.object({ isFavorite: z.boolean() }).strict();
 
 // Multi file save. baseRevision gives the client optimistic conflict detection.
 export const workspaceSaveSchema = z.object({

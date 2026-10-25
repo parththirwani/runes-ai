@@ -106,6 +106,11 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const [showFileTree, setShowFileTree] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const savedNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (savedNoticeTimerRef.current) clearTimeout(savedNoticeTimerRef.current);
+  }, []);
   const [isCompiling, setIsCompiling] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string>();
   const pdfUrlRef = useRef<string | undefined>(undefined);
@@ -632,7 +637,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   // --- Save: writes every dirty file in one request, main file included ---
   const handleSave = useCallback(async (): Promise<boolean> => {
+    if (savedNoticeTimerRef.current) clearTimeout(savedNoticeTimerRef.current);
     setIsSaving(true);
+    setJustSaved(false);
     try {
       if (!slug) {
         const contentToSave = code || initialCode;
@@ -650,6 +657,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         workspace.setSlug(data.slug);
         savedTitleRef.current = title;
         router.push('/document/' + data.slug);
+        setJustSaved(true);
         return true;
       }
 
@@ -660,6 +668,8 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         savedTitleRef.current = title;
       }
       setCompileError(null);
+      setJustSaved(true);
+      savedNoticeTimerRef.current = setTimeout(() => setJustSaved(false), 1800);
       return true;
     } catch (error: unknown) {
       console.error('Save error:', error);
@@ -752,10 +762,12 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     const source = main?.loaded
       ? main.content
       : (await workspaceClient.loadFile(slug, workspace.mainFilePath)).content;
-    const url = URL.createObjectURL(new Blob([source], { type: 'text/markdown;charset=utf-8' }));
+    const extension = isMarkdown ? 'md' : 'tex';
+    const mimeType = isMarkdown ? 'text/markdown' : 'text/x-tex';
+    const url = URL.createObjectURL(new Blob([source], { type: `${mimeType};charset=utf-8` }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${slug || 'document'}.md`;
+    link.download = `${slug || 'document'}.${extension}`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -860,26 +872,25 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     <main id="main" className="document-editor flex h-screen flex-col overflow-hidden bg-canvas">
       <TopNavBar
         documentTitle={title}
-        viewMode={viewMode}
         onViewModeChange={(mode) => {
           if (mode === 'preview' && isMarkdown) setPreviewTab('reading');
           setViewMode(mode);
         }}
         onMenuToggle={() => setShowFileTree(!showFileTree)}
-        onSave={handleSave}
         onCompile={handleCompile}
         onSettingsToggle={() => setShowSettings(!showSettings)}
         onTitleEdit={() => setShowTitleModal(true)}
         isSaving={isSaving}
+        justSaved={justSaved}
         isCompiling={isCompiling}
         hasUnsavedChanges={hasUnsavedChanges}
         compilationStatus={statusLine}
         format={syntheticDocument.format}
-        fileName={isMarkdown ? `${slug || 'document'}.md` : undefined}
-        onDownloadSource={isMarkdown ? handleDownloadSource : undefined}
+        fileName={`${slug || 'document'}.${isMarkdown ? 'md' : 'tex'}`}
+        onDownloadSource={handleDownloadSource}
       />
 
-      <div className="flex-1 relative overflow-hidden">
+      <div className="flex-1 relative flex overflow-hidden">
         <WorkspacePanel
           isOpen={showFileTree}
           onClose={() => setShowFileTree(false)}
@@ -940,7 +951,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           isMarkdown={isMarkdown}
         />
 
-        <div className={`h-full flex flex-col md:flex-row transition-[padding] duration-300 ${showSettings ? 'pr-80 max-[500px]:pr-[90vw]' : ''}`}>
+        <div className={`min-w-0 flex-1 h-full flex flex-col md:flex-row transition-[padding] duration-300 ${showSettings ? 'pr-80 max-[500px]:pr-[90vw]' : ''}`}>
           {(viewMode === 'editor' || viewMode === 'split') && (
             <div className={`${viewMode === 'split' ? 'h-1/2 w-full border-b border-border md:h-full md:w-1/2 md:border-b-0 md:border-r' : 'h-full w-full'} min-h-0 min-w-0 flex flex-col`}>
               <FileTabs

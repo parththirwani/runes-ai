@@ -10,6 +10,8 @@ interface DashboardToolbarProps {
   onViewModeChange: (mode: DocumentViewMode) => void;
   resultCount: number;
   totalCount: number;
+  sortOrder: 'updated-desc' | 'updated-asc';
+  onSortOrderChange: (value: 'updated-desc' | 'updated-asc') => void;
   labelledBy?: string;
 }
 
@@ -20,6 +22,8 @@ export default function DashboardToolbar({
   onViewModeChange,
   resultCount,
   totalCount,
+  sortOrder,
+  onSortOrderChange,
   labelledBy = "document-search-label",
 }: DashboardToolbarProps) {
   const modeButton = (mode: DocumentViewMode, label: string, icon: React.ReactNode) => (
@@ -70,9 +74,21 @@ export default function DashboardToolbar({
       </div>
 
       <div className="flex items-center justify-between gap-3">
-        <p id={`${labelledBy}-count`} role="status" className="font-mono text-xs text-meta">
-          {resultCount} of {totalCount} {totalCount === 1 ? "document" : "documents"}
-        </p>
+        <div className="flex items-center gap-3">
+          <p id={`${labelledBy}-count`} role="status" className="font-mono text-xs text-meta">
+            {resultCount} of {totalCount} {totalCount === 1 ? "document" : "documents"}
+          </p>
+          <label className="sr-only" htmlFor="document-sort">Sort documents</label>
+          <select
+            id="document-sort"
+            value={sortOrder}
+            onChange={(event) => onSortOrderChange(event.target.value as 'updated-desc' | 'updated-asc')}
+            className="min-h-11 rounded-md border border-border bg-surface px-2.5 text-xs text-foreground focus:border-primary focus:outline-none"
+          >
+            <option value="updated-desc">Newest updated</option>
+            <option value="updated-asc">Oldest updated</option>
+          </select>
+        </div>
         <div className="flex items-center gap-1 rounded-md border border-border p-1">
           {modeButton("grid", "Grid", <Grid2x2 className="h-4 w-4" aria-hidden="true" />)}
           {modeButton("list", "List", <List className="h-4 w-4" aria-hidden="true" />)}

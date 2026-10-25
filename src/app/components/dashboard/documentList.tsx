@@ -2,6 +2,7 @@ import { FileText, Clock } from 'lucide-react';
 import type { DocumentFormatValue } from '@/src/types/compilation';
 import DocumentActions from './documentActions';
 import FormatBadge from './formatBadge';
+import DocumentStatusBadge from './documentStatusBadge';
 
 interface Document {
   id: string;
@@ -9,6 +10,7 @@ interface Document {
   slug: string;
   content?: string | null;
   format?: DocumentFormatValue;
+  isFavorite: boolean;
   excerpt?: string;
   createdAt: string;
   updatedAt: string;
@@ -17,25 +19,18 @@ interface Document {
 interface DocumentListProps {
   documents: Document[];
   onDocumentClick: (slug: string) => void;
-  onDocumentDelete: (doc: Document) => void;
+  onDocumentDelete: (doc: Document) => Promise<void>;
+  onFavoriteChange: (doc: Document) => void;
 }
 
 export default function DocumentList({
   documents,
   onDocumentClick,
-  onDocumentDelete
+  onDocumentDelete,
+  onFavoriteChange,
 }: DocumentListProps) {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    if (days < 7) return `${days}d ago`;
-    if (days < 30) return `${Math.floor(days / 7)}w ago`;
-    if (days < 365) return `${Math.floor(days / 30)}mo ago`;
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
@@ -66,6 +61,7 @@ export default function DocumentList({
               <h3 className="font-medium text-foreground truncate">
                 {doc.title}
               </h3>
+              <DocumentStatusBadge />
               <FormatBadge format={doc.format} />
             </div>
             {doc.excerpt && doc.excerpt.length > 0 && (
@@ -73,14 +69,14 @@ export default function DocumentList({
             )}
             <div className="flex items-center gap-2 text-xs text-meta">
               <Clock className="w-3.5 h-3.5" />
-              <span>{formatDate(doc.updatedAt)}</span>
+              <span>Updated {formatDate(doc.updatedAt)}</span>
               <span className="font-mono text-[10px] text-meta">
                 .{doc.format === 'MARKDOWN' ? 'md' : 'tex'}
               </span>
             </div>
           </div>
 
-          <DocumentActions document={doc} onDelete={() => onDocumentDelete(doc)} />
+          <DocumentActions document={doc} onDelete={() => onDocumentDelete(doc)} onFavoriteChange={() => onFavoriteChange(doc)} />
         </div>
       ))}
     </div>

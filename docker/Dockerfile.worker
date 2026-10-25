@@ -13,7 +13,7 @@ RUN bun build worker/index.ts --outfile /tmp/worker.js --target bun
 FROM oven/bun:1
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl fontconfig \
+  && apt-get install -y --no-install-recommends ca-certificates curl fontconfig lmodern \
   && rm -rf /var/lib/apt/lists/*
 
 # Pinned Markdown/LaTeX toolchain.

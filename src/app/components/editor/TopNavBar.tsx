@@ -1,42 +1,40 @@
-import { Menu, FileText, Save, Play, Sparkles, Edit2, Download } from 'lucide-react';
+import { Menu, FileText, Play, Sparkles, Edit2, Download, Eye, Columns3 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Button from '../design/Button';
 import IconButton from '../design/IconButton';
 import Logo from '../brand/logo';
-import SignOutButton from '../auth/SignOutButton';
-import ViewModeToggle, { type ViewMode } from './ViewModeToggle';
+import ButtonGroup from '@/components/arc/button-group/button-group';
+import type { ViewMode } from './ViewModeToggle';
 import type { DocumentFormatValue } from '@/src/types/compilation';
 
 interface TopNavBarProps {
   documentTitle: string;
-  viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
   onMenuToggle: () => void;
-  onSave: () => void;
   onCompile: () => void;
   onSettingsToggle?: () => void;
   onTitleEdit?: () => void;
   isSaving?: boolean;
+  justSaved?: boolean;
   isCompiling?: boolean;
   hasUnsavedChanges?: boolean;
   compilationStatus?: string;
   format?: DocumentFormatValue;
   /** File extension cue, e.g. "notes.md". */
   fileName?: string;
-  /** When set, a source download button is shown (Markdown ".md" file). */
+  /** Downloads the document's main source file. */
   onDownloadSource?: () => void;
 }
 
 export default function TopNavBar({
   documentTitle,
-  viewMode,
   onViewModeChange,
   onMenuToggle,
-  onSave,
   onCompile,
   onSettingsToggle,
   onTitleEdit,
   isSaving = false,
+  justSaved = false,
   isCompiling = false,
   hasUnsavedChanges = false,
   compilationStatus = '',
@@ -46,9 +44,6 @@ export default function TopNavBar({
 }: TopNavBarProps) {
   const router = useRouter();
   const isMarkdown = format === 'MARKDOWN';
-  const viewLabels = isMarkdown
-    ? { editor: 'Source', split: 'Split', preview: 'Reading' }
-    : { editor: 'Code', split: 'Split', preview: 'PDF' };
 
   return (
     <div className="min-h-12 bg-surface border-b border-border flex flex-wrap items-center justify-between gap-2 px-4 py-1.5 relative z-30 shrink-0">
@@ -85,6 +80,11 @@ export default function TopNavBar({
           {hasUnsavedChanges && (
             <span className="w-2 h-2 bg-status-unsaved rounded-full" title="Unsaved changes" aria-hidden="true" />
           )}
+          {(isSaving || justSaved) && (
+            <span className="shrink-0 text-xs font-medium text-status-saved" role="status">
+              {isSaving ? 'Saving…' : 'Saved'}
+            </span>
+          )}
           <span
             className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium whitespace-nowrap ${
               isMarkdown
@@ -100,29 +100,39 @@ export default function TopNavBar({
 
       {/* Right Section */}
       <div className="flex max-w-full flex-wrap items-center gap-1 sm:gap-2">
-        <SignOutButton className="min-h-9 px-2 text-xs sm:px-3 sm:text-sm" />
-        <ViewModeToggle value={viewMode} onChange={onViewModeChange} labels={viewLabels} />
-        {onDownloadSource && (
-          <IconButton
-            icon={<Download className="w-4 h-4" />}
-            label={`Download ${fileName || 'source'} file`}
-            tooltip={`Download ${fileName || 'source'} file`}
-            onClick={onDownloadSource}
-            className="cursor-pointer"
-          />
-        )}
+        <ButtonGroup
+          label="Document actions"
+          size="sm"
+          items={[
+            {
+              id: 'edit',
+              label: 'Edit',
+              icon: <Edit2 aria-hidden="true" />,
+              onSelect: () => onViewModeChange('editor'),
+            },
+            {
+              id: 'preview',
+              label: 'Preview',
+              icon: <Eye aria-hidden="true" />,
+              onSelect: () => onViewModeChange('preview'),
+            },
+            {
+              id: 'split',
+              label: 'Split',
+              icon: <Columns3 aria-hidden="true" />,
+              onSelect: () => onViewModeChange('split'),
+            },
+            {
+              id: 'download-source',
+              label: 'Download',
+              icon: <Download aria-hidden="true" />,
+              onSelect: onDownloadSource,
+              disabled: !onDownloadSource,
+            },
+          ]}
+        />
         
         <div className="hidden h-6 w-px bg-border sm:block" />
-
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={<Save className="w-4 h-4" />}
-          onClick={onSave}
-          loading={isSaving}
-        >
-          {isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save' : 'Saved'}
-        </Button>
 
         <Button
           variant="primary"

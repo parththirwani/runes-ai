@@ -1,6 +1,6 @@
 import type { DocumentFormatValue } from '@/src/types/compilation';
 
-export type FormatFilterValue = 'ALL' | DocumentFormatValue;
+export type FormatFilterValue = 'ALL' | 'FAVORITES' | DocumentFormatValue;
 
 interface FormatFilterProps {
   value: FormatFilterValue;
@@ -10,6 +10,7 @@ interface FormatFilterProps {
 
 const OPTIONS: { id: FormatFilterValue; label: string }[] = [
   { id: 'ALL', label: 'All' },
+  { id: 'FAVORITES', label: 'Favorites' },
   { id: 'MARKDOWN', label: 'Markdown' },
   { id: 'LATEX', label: 'LaTeX' },
 ];

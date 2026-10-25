@@ -9,6 +9,7 @@ export interface DashboardDocument {
   slug: string;
   content?: string | null;
   format?: DocumentFormatValue;
+  isFavorite: boolean;
   excerpt?: string;
   createdAt: string;
   updatedAt: string;
@@ -23,12 +24,9 @@ export function useDashboard() {
   
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
-  const [documentToDelete, setDocumentToDelete] = useState<DashboardDocument | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [isCreating, setIsCreating] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -82,17 +80,9 @@ export function useDashboard() {
     }
   };
 
-  const handleDeleteClick = (doc: DashboardDocument) => {
-    setDocumentToDelete(doc);
-    setShowDeleteModal(true);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!documentToDelete) return;
-
-    setIsDeleting(true);
+  const handleDeleteClick = async (doc: DashboardDocument) => {
     try {
-      const response = await fetch(`/api/document/${documentToDelete.slug}`, {
+      const response = await fetch(`/api/document/${doc.slug}`, {
         method: 'DELETE'
       });
 
@@ -100,15 +90,29 @@ export function useDashboard() {
         throw new Error('Failed to delete document');
       }
 
-      setDocuments(documents.filter(doc => doc.slug !== documentToDelete.slug));
-      setShowDeleteModal(false);
-      setDocumentToDelete(null);
+      setDocuments((current) => current.filter((item) => item.slug !== doc.slug));
     } catch (err: unknown) {
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to delete document');
-      setShowDeleteModal(false);
+      const error = err instanceof Error ? err : new Error('Failed to delete document');
+      setErrorMessage(error.message);
       setShowErrorModal(true);
-    } finally {
-      setIsDeleting(false);
+      throw error;
+    }
+  };
+
+  const handleFavoriteToggle = async (doc: DashboardDocument) => {
+    const isFavorite = !doc.isFavorite;
+    setDocuments((current) => current.map((item) => item.id === doc.id ? { ...item, isFavorite } : item));
+    try {
+      const response = await fetch(`/api/document/${doc.slug}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isFavorite }),
+      });
+      if (!response.ok) throw new Error('Failed to update favorite');
+    } catch (err: unknown) {
+      setDocuments((current) => current.map((item) => item.id === doc.id ? { ...item, isFavorite: doc.isFavorite } : item));
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to update favorite');
+      setShowErrorModal(true);
     }
   };
 
@@ -117,17 +121,13 @@ export function useDashboard() {
     loading,
     error,
     showCreateModal,
-    showDeleteModal,
     showErrorModal,
-    documentToDelete,
     errorMessage,
     isCreating,
-    isDeleting,
     setShowCreateModal,
-    setShowDeleteModal,
     setShowErrorModal,
     handleCreateDocument,
     handleDeleteClick,
-    handleDeleteConfirm
+    handleFavoriteToggle,
   };
 }

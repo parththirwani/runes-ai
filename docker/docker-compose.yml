@@ -29,8 +29,8 @@ services:
 
   worker:
     build:
-      context: .
-      dockerfile: Dockerfile.worker
+      context: ..
+      dockerfile: docker/Dockerfile.worker
     restart: unless-stopped
     mem_limit: 1g
     depends_on:
@@ -57,7 +57,7 @@ services:
       - "3001:3001"
     volumes:
       - latex-temp:/workspace/temp
-      - ./.data/assets:/app/.data/assets
+      - ../.data/assets:/app/.data/assets
     healthcheck:
       test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3001/health').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s

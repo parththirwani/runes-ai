@@ -1,6 +1,6 @@
 import { prisma } from '@/src/lib/db';
 import { withAuth } from '@/src/lib/withAuth';
-import { documentSchema, updateDocumentSchema, workspaceUpdateSchema } from '@/src/schema/documentSchema';
+import { documentSchema, favoriteDocumentSchema, updateDocumentSchema, workspaceUpdateSchema } from '@/src/schema/documentSchema';
 import { compilationProducer } from '@/producer/queue';
 import { checkRateLimit } from '@/src/lib/rateLimit';
 import { NextResponse } from 'next/server';
@@ -160,6 +160,13 @@ export const PATCH = withAuth(async (req, session, context) => {
     const { slug } = await context.params;
     const userId = session.user.id;
     const body = await req.json();
+    const favoriteData = favoriteDocumentSchema.safeParse(body);
+    if (favoriteData.success) {
+      const document = await prisma.document.findFirst({ where: { slug, userId } });
+      if (!document) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
+      const updated = await prisma.document.update({ where: { id: document.id }, data: favoriteData.data });
+      return NextResponse.json({ message: 'Favorite status updated', document: updated }, { status: 200 });
+    }
     const parsedData = documentSchema.safeParse(body);
 
     if (!parsedData.success) {

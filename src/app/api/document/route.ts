@@ -85,6 +85,7 @@ export const GET = withAuth(async (_req, session) => {
         slug: true,
         content: true,
         format: true,
+        isFavorite: true,
         createdAt: true,
         updatedAt: true,
       }, // avoid sending full content unnecessarily

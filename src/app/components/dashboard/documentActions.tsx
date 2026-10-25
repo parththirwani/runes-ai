@@ -2,12 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { MoreHorizontal, PencilLine, Trash2 } from "lucide-react";
+import { Copy, Download, MoreHorizontal, PencilLine, Star, StarOff, Trash2 } from "lucide-react";
+import { MorphIcon } from "../ui/morph-icon";
+import HoldToConfirm from "@/components/arc/hold-to-confirm/hold-to-confirm";
+import holdStyles from "@/components/arc/hold-to-confirm/hold-to-confirm.module.css";
 import { DOCUMENT_PATH } from "@/src/lib/paths";
 
 interface DocumentActionsProps {
-  document: { title: string; slug: string };
-  onDelete: () => void;
+  document: { title: string; slug: string; isFavorite: boolean };
+  onDelete: () => Promise<void>;
+  onFavoriteChange: () => void;
+  onDownload?: () => void;
 }
 
 /**
@@ -15,8 +20,10 @@ interface DocumentActionsProps {
  * neither touch nor keyboard users could reach. This is a real menu button;
  * the confirmation step itself is handled by the caller.
  */
-export default function DocumentActions({ document: doc, onDelete }: DocumentActionsProps) {
+export default function DocumentActions({ document: doc, onDelete, onFavoriteChange, onDownload }: DocumentActionsProps) {
   const [open, setOpen] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const [copied, setCopied] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -24,7 +31,9 @@ export default function DocumentActions({ document: doc, onDelete }: DocumentAct
     if (!open) return undefined;
 
     const onPointerDown = (event: PointerEvent) => {
-      if (!wrapperRef.current?.contains(event.target as Node)) setOpen(false);
+      if (!wrapperRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -43,12 +52,25 @@ export default function DocumentActions({ document: doc, onDelete }: DocumentAct
 
   const stop = (event: React.MouseEvent) => event.stopPropagation();
 
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}${DOCUMENT_PATH(doc.slug)}`);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+    window.setTimeout(() => setCopied(false), 1600);
+    setOpen(false);
+  };
+
   return (
     <div ref={wrapperRef} className="relative shrink-0" onClick={stop}>
       <button
         ref={buttonRef}
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          setOpen((value) => !value);
+        }}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Actions for ${doc.title}`}
@@ -61,7 +83,7 @@ export default function DocumentActions({ document: doc, onDelete }: DocumentAct
         <div
           role="menu"
           aria-label={`Actions for ${doc.title}`}
-          className="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded-md border border-border bg-surface-overlay shadow-overlay"
+          className="absolute right-0 z-30 mt-1 w-44 max-w-[calc(100vw-24px)] rounded-md border border-border bg-surface-overlay p-1 shadow-overlay"
         >
           <Link
             href={DOCUMENT_PATH(doc.slug)}
@@ -75,16 +97,60 @@ export default function DocumentActions({ document: doc, onDelete }: DocumentAct
           <button
             type="button"
             role="menuitem"
+            onClick={() => void copyLink()}
+            className="flex w-full items-center gap-2 border-t border-border-subtle px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-surface-raised"
+          >
+            <MorphIcon activeKey={copied ? "copied" : "copy"} variant="blur-scale" className="text-meta">
+              {copied ? <span className="text-[11px] font-semibold">✓</span> : <Copy className="h-4 w-4" aria-hidden="true" />}
+            </MorphIcon>
+            {copied ? "Link copied" : "Copy link"}
+          </button>
+          {onDownload && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onDownload();
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 border-t border-border-subtle px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-surface-raised"
+            >
+              <Download className="h-4 w-4 text-meta" aria-hidden="true" />
+              Download
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
             onClick={() => {
               setOpen(false);
-              buttonRef.current?.focus();
-              onDelete();
+              onFavoriteChange();
             }}
-            className="flex w-full items-center gap-2 border-t border-border-subtle px-3 py-2.5 text-left text-sm text-destructive transition-colors hover:bg-destructive-subtle"
+            className="flex w-full items-center gap-2 border-t border-border-subtle px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-surface-raised"
           >
-            <Trash2 className="h-4 w-4" aria-hidden="true" />
-            Delete document
+            <MorphIcon activeKey={doc.isFavorite ? "favorite" : "not-favorite"} variant="spring" className={doc.isFavorite ? "text-status-unsaved" : "text-meta"}>
+              {doc.isFavorite ? <Star className="h-4 w-4 fill-current" aria-hidden="true" /> : <StarOff className="h-4 w-4" aria-hidden="true" />}
+            </MorphIcon>
+            {doc.isFavorite ? "Remove favorite" : "Add favorite"}
           </button>
+          <div className="border-t border-border-subtle pt-1" onClick={(event) => event.stopPropagation()}>
+            <HoldToConfirm
+              label="Hold to delete"
+              icon={<Trash2 className="h-4 w-4" aria-hidden="true" />}
+              confirmedLabel="Deleting…"
+              tone="danger"
+              confirmed={deletePending}
+              disabled={deletePending}
+              onConfirm={() => {
+                setDeletePending(true);
+                void onDelete().then(() => {
+                  setOpen(false);
+                  buttonRef.current?.focus();
+                }).catch(() => setDeletePending(false));
+              }}
+              className={holdStyles.menuItem}
+            />
+          </div>
         </div>
       )}
     </div>

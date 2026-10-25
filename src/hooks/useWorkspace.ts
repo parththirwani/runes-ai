@@ -64,6 +64,8 @@ export function useWorkspace(initialDocument: WorkspaceDocumentPayload | null) {
   const [lastError, setLastError] = useState<string | null>(null);
   const filesRef = useRef(filesByPath);
   filesRef.current = filesByPath;
+  const latestSavedRef = useRef(new Map<string, { content: string; revision: number; checksum: string }>());
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const slugRef = useRef(initialDocument?.slug || '');
 
   /** A brand new document only gets its slug after the first save. */
@@ -114,31 +116,47 @@ export function useWorkspace(initialDocument: WorkspaceDocumentPayload | null) {
     [filesByPath],
   );
 
-  const saveAll = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
-    const dirty = Object.values(filesRef.current).filter((file) => !file.binary && file.loaded && file.content !== file.savedContent);
-    if (dirty.length === 0) return { ok: true };
+  const saveAll = useCallback((): Promise<{ ok: boolean; error?: string }> => {
+    const run = async (): Promise<{ ok: boolean; error?: string }> => {
+      const dirty = Object.values(filesRef.current).filter((file) => {
+        const saved = latestSavedRef.current.get(file.path);
+        return !file.binary && file.loaded && file.content !== (saved?.content ?? file.savedContent);
+      });
+      if (dirty.length === 0) return { ok: true };
 
-    try {
-      const response = await workspaceClient.saveFiles(
-        slugRef.current,
-        dirty.map((file) => ({ path: file.path, content: file.content, baseRevision: file.revision > 0 ? file.revision : null })),
-      );
-      const savedMap = new Map(response.saved.map((item) => [item.path, item]));
-      setFilesByPath((current) => {
-        const next = { ...current };
+      try {
+        const response = await workspaceClient.saveFiles(
+          slugRef.current,
+          dirty.map((file) => {
+            const revision = latestSavedRef.current.get(file.path)?.revision ?? file.revision;
+            return { path: file.path, content: file.content, baseRevision: revision > 0 ? revision : null };
+          }),
+        );
+        const savedMap = new Map(response.saved.map((item) => [item.path, item]));
         for (const file of dirty) {
           const saved = savedMap.get(file.path);
-          if (saved) {
-            next[file.path] = { ...next[file.path], savedContent: file.content, revision: saved.revision, checksum: saved.checksum };
-          }
+          if (saved) latestSavedRef.current.set(file.path, { content: file.content, revision: saved.revision, checksum: saved.checksum });
         }
-        return next;
-      });
-      setLastError(null);
-      return { ok: true };
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : 'Save failed' };
-    }
+        setFilesByPath((current) => {
+          const next = { ...current };
+          for (const file of dirty) {
+            const saved = savedMap.get(file.path);
+            if (saved && next[file.path]) {
+              next[file.path] = { ...next[file.path], savedContent: file.content, revision: saved.revision, checksum: saved.checksum };
+            }
+          }
+          return next;
+        });
+        setLastError(null);
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : 'Save failed' };
+      }
+    };
+
+    const result = saveQueueRef.current.then(run, run);
+    saveQueueRef.current = result.then(() => undefined, () => undefined);
+    return result;
   }, []);
 
   const createFile = useCallback(async (path: string, content = '') => {
@@ -186,6 +204,7 @@ export function useWorkspace(initialDocument: WorkspaceDocumentPayload | null) {
 
   const removeFile = useCallback(async (path: string) => {
     await workspaceClient.deleteFile(slugRef.current, path);
+    latestSavedRef.current.delete(path);
     setFilesByPath((current) => {
       const next = { ...current };
       delete next[path];
@@ -196,6 +215,11 @@ export function useWorkspace(initialDocument: WorkspaceDocumentPayload | null) {
 
   const renameFile = useCallback(async (from: string, to: string) => {
     const result = await workspaceClient.moveFile(slugRef.current, from, to);
+    const saved = latestSavedRef.current.get(from);
+    if (saved) {
+      latestSavedRef.current.delete(from);
+      latestSavedRef.current.set(to, { ...saved, revision: result.file.revision });
+    }
     setFilesByPath((current) => {
       const next = { ...current };
       const moved = next[from];

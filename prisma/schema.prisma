@@ -29,6 +29,7 @@ model Document {
   content      String? @db.Text
   format       DocumentFormat @default(LATEX)
   mainFilePath String  @default("main.tex")
+  isFavorite   Boolean @default(false)
   slug         String
   userId       String
   user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -42,6 +43,7 @@ model Document {
   @@unique([userId, title])
   @@unique([userId, slug])
   @@index([userId])
+  @@index([userId, isFavorite])
   @@map("documents")
 }
 
