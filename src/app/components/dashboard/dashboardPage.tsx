@@ -7,6 +7,7 @@ import { signOut, useSession } from "next-auth/react";
 import { ArrowDown, ArrowUp, Folder, Menu, Plus, Search, Star, TriangleAlert, X } from "lucide-react";
 import { useDashboard, type DashboardDocument } from "@/src/hooks/useDashboard";
 import { DOCUMENTS_PATH, type CreateFormat } from "@/src/lib/paths";
+import { documentOpenPath, selectLibraryDocuments, type LibraryFilter } from "@/src/lib/dashboard-library";
 import UserMenu from "@/components/arc/user-menu/user-menu";
 import AlertModal from "../design/AlertModal";
 import Logo from "../brand/logo";
@@ -16,8 +17,6 @@ import WorkspaceSwitcher from "./workspaceSwitcher";
 import ShareDialog from "../sharing/shareDialog";
 import MoveDialog from "../sharing/moveDialog";
 import styles from "./dashboard.module.css";
-
-type LibraryFilter = "ALL" | "FAVORITES" | "MARKDOWN" | "LATEX";
 
 const filters: { value: LibraryFilter; label: string }[] = [
   { value: "ALL", label: "All documents" },
@@ -60,11 +59,14 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
     if (status === "authenticated" && initialCreateFormat) setShowCreateModal(true);
   }, [status, initialCreateFormat, setShowCreateModal]);
 
-  const visibleDocuments = useMemo(() => documents
-    .filter((doc) => doc.title.toLowerCase().includes(searchQuery.trim().toLowerCase()))
-    .filter((doc) => filter === "ALL" || (filter === "FAVORITES" ? doc.isFavorite : (doc.format ?? "LATEX") === filter))
-    .sort((a, b) => (new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()) * (newestFirst ? 1 : -1)),
-  [documents, searchQuery, filter, newestFirst]);
+  // The selected workspace gates the list first: the server already scopes the response, and this
+  // keeps rows from the previous selection from lingering while the next fetch is in flight.
+  const visibleDocuments = useMemo(() => selectLibraryDocuments(documents, {
+    workspaceId: selectedWorkspaceId,
+    search: searchQuery,
+    filter,
+    newestFirst,
+  }), [documents, selectedWorkspaceId, searchQuery, filter, newestFirst]);
 
   const selectedDocuments = visibleDocuments.filter((doc) => selectedIds.has(doc.id));
   const allVisibleSelected = visibleDocuments.length > 0 && selectedDocuments.length === visibleDocuments.length;
@@ -76,10 +78,10 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
   };
   const pageTitle = filter === "ALL" ? "All documents" : filter === "FAVORITES" ? "Favorites" : `${filter === "MARKDOWN" ? "Markdown" : "LaTeX"} documents`;
   const openCreate = () => setShowCreateModal(true);
-  const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
-  // Authors keep the readable URL; a recipient only ever has the document id, and slugs are
-  // resolved author-scoped on purpose, so the id is the only link that works for them.
-  const openHrefFor = (doc: DashboardDocument) => (doc.isAuthor === false ? `/document/${doc.id}` : `/document/${doc.slug}`);
+  // Every new link is keyed on the document id. Slugs are only unique per workspace, so a slug
+  // can open an older twin, and they resolve author-scoped, so a shared recipient cannot use one
+  // at all. Slug lookup stays alive server-side purely so links written before this change open.
+  const openHrefFor = (doc: DashboardDocument) => documentOpenPath(doc);
   const closeCreate = () => {
     setShowCreateModal(false);
     if (initialCreateFormat) router.replace(DOCUMENTS_PATH);
@@ -136,6 +138,9 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
         <div className="mx-4 mt-3 border-t border-border" />
         <div className="px-4 pt-6">
           <p className="mb-3 pl-3 text-xs font-semibold uppercase tracking-wide text-meta">Workspace</p>
+          <div className="mb-3 pl-3">
+            <WorkspaceSwitcher workspaces={workspaces} selectedId={selectedWorkspaceId} onSelect={selectWorkspace} onCreate={createWorkspace} />
+          </div>
           <button type="button" onClick={openCreate} className={`${styles.navItem} gap-2`}><Plus size={17} aria-hidden="true" /> New document</button>
         </div>
         <div className="mt-auto px-2 pb-4">
@@ -199,7 +204,7 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
                 <tr key={doc.id}>
                   <td><input type="checkbox" aria-label={`Select ${doc.title}`} checked={selectedIds.has(doc.id)} onChange={() => toggleSelection(doc.id)} /></td>
                   <td><div className="flex min-w-0 items-center gap-1">
-                    <button type="button" onClick={() => router.push(`/document/${doc.slug}`)} className="min-w-0 truncate text-left hover:text-action hover:underline" title={doc.title}>{doc.title}</button>
+                    <button type="button" onClick={() => router.push(documentOpenPath(doc))} className="min-w-0 truncate text-left hover:text-action hover:underline" title={doc.title}>{doc.title}</button>
                     {doc.isFavorite && <Star className="size-3.5 shrink-0 fill-current text-action" aria-label="Favorite" />}
                   </div></td>
                   <td>You</td>

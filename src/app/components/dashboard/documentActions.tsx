@@ -9,7 +9,7 @@ import holdStyles from "@/components/arc/hold-to-confirm/hold-to-confirm.module.
 import { DOCUMENT_PATH } from "@/src/lib/paths";
 
 interface DocumentActionsProps {
-  document: { title: string; slug: string; isFavorite: boolean };
+  document: { id?: string; title: string; slug: string; isFavorite: boolean };
   onDelete: () => Promise<void>;
   onFavoriteChange: () => void;
   onDownload?: () => void;
@@ -58,7 +58,8 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
 
   const stop = (event: React.MouseEvent) => event.stopPropagation();
 
-  const href = openHref ?? DOCUMENT_PATH(doc.slug);
+  // Prefer the id everywhere: the slug fallback only serves rows from before id-keyed links.
+  const href = openHref ?? DOCUMENT_PATH(doc.id ?? doc.slug);
 
   const copyLink = async () => {
     try {

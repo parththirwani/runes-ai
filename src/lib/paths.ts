@@ -6,7 +6,9 @@ export const LANDING_PATH = "/";
 export const SIGN_IN_PATH = "/signin";
 export const START_PATH = "/start";
 export const DOCUMENTS_PATH = "/document";
-export const DOCUMENT_PATH = (slug: string) => `${DOCUMENTS_PATH}/${slug}`;
+// `ref` is a document id for every new link. A bare slug is only accepted for links written
+// before ids were adopted; the server resolves it author-scoped for exactly that legacy traffic.
+export const DOCUMENT_PATH = (ref: string) => `${DOCUMENTS_PATH}/${ref}`;
 export const FEATURES_ANCHOR = "/#features";
 export const HOW_IT_WORKS_ANCHOR = "/#how-it-works";
 

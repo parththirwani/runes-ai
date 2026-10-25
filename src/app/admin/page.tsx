@@ -2,8 +2,11 @@
 
 // App-admin console: found teams, read their rosters and documents, invite or remove members and
 // read the audit trail. Every panel is fed by an admin-only endpoint, so a non-admin sees the same
-// empty state as an admin with no data rather than a partial view. Document inspection is metadata
-// only and is recorded by the server.
+// empty state as an admin with no data rather than a partial view. The lists are metadata only.
+// Opening one document is the deliberate, audited content inspection the access plan defines
+// (docs/workspaces-teams-access-plan.md, "separate, audited permission"): it returns the source as
+// a read-only projection and writes an `document.inspect` audit row naming the actor. The UI says
+// so on the button and on the panel, because the returned payload does contain document content.
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -252,15 +255,20 @@ export default function AdminPage() {
                       <li key={document.id} className="flex flex-wrap items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-surface-raised">
                         <span className="min-w-0 flex-1 truncate text-foreground">{document.title}</span>
                         <span className="shrink-0 text-xs text-meta">{document.author.email}</span>
-                        <button type="button" onClick={() => void inspect(document.id)} className="shrink-0 text-xs font-medium text-action hover:underline">Inspect</button>
+                        <button type="button" onClick={() => void inspect(document.id)} aria-label={`View the source of ${document.title}. This action is recorded in the audit trail.`} className="shrink-0 text-xs font-medium text-action hover:underline">View source</button>
                       </li>
                     ))}
                     {documents.length === 0 && <li className="px-2 py-3 text-sm text-muted-foreground">No documents in this team.</li>}
                   </ul>
                   {inspected && (
-                    <pre className="mt-3 max-h-64 overflow-auto rounded-md bg-surface-raised px-3 py-2 text-xs text-muted-foreground" aria-label="Document metadata">
-                      {JSON.stringify(inspected, null, 2)}
-                    </pre>
+                    <div className="mt-3">
+                      <p className="mb-1 text-xs text-meta">
+                        Audited content inspection: this view includes the document source and was recorded in the trail below.
+                      </p>
+                      <pre className="max-h-64 overflow-auto rounded-md bg-surface-raised px-3 py-2 text-xs text-muted-foreground" aria-label="Audited document content, including source text">
+                        {JSON.stringify(inspected.document ?? inspected, null, 2)}
+                      </pre>
+                    </div>
                   )}
                 </div>
 

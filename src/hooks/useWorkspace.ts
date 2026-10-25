@@ -66,11 +66,17 @@ export function useWorkspace(initialDocument: WorkspaceDocumentPayload | null) {
   filesRef.current = filesByPath;
   const latestSavedRef = useRef(new Map<string, { content: string; revision: number; checksum: string }>());
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const slugRef = useRef(initialDocument?.slug || '');
+  // The reference every workspace API call goes out with. It prefers the document id: slugs are
+  // only unique per workspace and resolve author-scoped, so an id-based caller (any shared
+  // recipient, and every new link) would lose access on the second request if we keyed on slug.
+  // A brand new document has neither yet; its first save supplies the id.
+  const refRef = useRef(
+    initialDocument && initialDocument.id !== 'new' ? initialDocument.id : (initialDocument?.slug || ''),
+  );
 
-  /** A brand new document only gets its slug after the first save. */
-  const setSlug = useCallback((slug: string) => {
-    slugRef.current = slug;
+  /** Sets the API reference once the document exists — the id from the create response. */
+  const setRef = useCallback((ref: string) => {
+    refRef.current = ref;
   }, []);
 
   const update = useCallback((path: string, patch: Partial<ManagedFile>) => {
@@ -90,7 +96,7 @@ export function useWorkspace(initialDocument: WorkspaceDocumentPayload | null) {
 
     setBusyPath(path);
     try {
-      const loaded = await workspaceClient.loadFile(slugRef.current, path);
+      const loaded = await workspaceClient.loadFile(refRef.current, path);
       update(path, { content: loaded.content, savedContent: loaded.content, revision: loaded.revision, checksum: loaded.checksum, loaded: true });
     } catch (error) {
       setLastError(error instanceof Error ? error.message : 'Could not open that file');
@@ -126,7 +132,7 @@ export function useWorkspace(initialDocument: WorkspaceDocumentPayload | null) {
 
       try {
         const response = await workspaceClient.saveFiles(
-          slugRef.current,
+          refRef.current,
           dirty.map((file) => {
             const revision = latestSavedRef.current.get(file.path)?.revision ?? file.revision;
             return { path: file.path, content: file.content, baseRevision: revision > 0 ? revision : null };
@@ -160,7 +166,7 @@ export function useWorkspace(initialDocument: WorkspaceDocumentPayload | null) {
   }, []);
 
   const createFile = useCallback(async (path: string, content = '') => {
-    const result = await workspaceClient.writeFile(slugRef.current, { path, content, revision: 0, checksum: '' });
+    const result = await workspaceClient.writeFile(refRef.current, { path, content, revision: 0, checksum: '' });
     const meta = result.file;
     setFilesByPath((current) => ({
       ...current,
@@ -183,7 +189,7 @@ export function useWorkspace(initialDocument: WorkspaceDocumentPayload | null) {
   }, []);
 
   const uploadFile = useCallback(async (path: string, blob: Blob) => {
-    const { file } = await workspaceClient.upload(slugRef.current, path, blob);
+    const { file } = await workspaceClient.upload(refRef.current, path, blob);
     setFilesByPath((current) => ({
       ...current,
       [file.path]: {
@@ -203,7 +209,7 @@ export function useWorkspace(initialDocument: WorkspaceDocumentPayload | null) {
   }, []);
 
   const removeFile = useCallback(async (path: string) => {
-    await workspaceClient.deleteFile(slugRef.current, path);
+    await workspaceClient.deleteFile(refRef.current, path);
     latestSavedRef.current.delete(path);
     setFilesByPath((current) => {
       const next = { ...current };
@@ -214,7 +220,7 @@ export function useWorkspace(initialDocument: WorkspaceDocumentPayload | null) {
   }, [closeFile]);
 
   const renameFile = useCallback(async (from: string, to: string) => {
-    const result = await workspaceClient.moveFile(slugRef.current, from, to);
+    const result = await workspaceClient.moveFile(refRef.current, from, to);
     const saved = latestSavedRef.current.get(from);
     if (saved) {
       latestSavedRef.current.delete(from);
@@ -236,7 +242,7 @@ export function useWorkspace(initialDocument: WorkspaceDocumentPayload | null) {
   }, []);
 
   const chooseMainFile = useCallback(async (path: string) => {
-    const result = await workspaceClient.setMainFile(slugRef.current, path);
+    const result = await workspaceClient.setMainFile(refRef.current, path);
     setMainFilePath(result.mainFilePath);
     return result;
   }, []);
@@ -276,8 +282,8 @@ export function useWorkspace(initialDocument: WorkspaceDocumentPayload | null) {
     setLastError,
     compiledSnapshot,
     setCompiledSnapshot,
-    setSlug,
-    slug: slugRef.current,
+    setRef,
+    ref: refRef.current,
     openFile,
     closeFile,
     setActivePath,

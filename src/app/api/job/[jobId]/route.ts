@@ -1,26 +1,7 @@
 import { withAuth } from "@/src/lib/withAuth";
 import { compilationProducer } from "@/producer/queue";
 import { NextResponse } from "next/server";
-
-// Helper: verify job belongs to user.
-// Job data stores userId at creation time (field: job.userId).
-// We read the raw job to check ownership before returning status/PDF.
-async function verifyJobOwnership(jobId: string, userId: string): Promise<{ ok: true } | { ok: false; response: NextResponse }> {
-  // Get the job data stored at creation
-  const jobDataStr = await compilationProducer.getRawJobData(jobId);
-  if (!jobDataStr) {
-    return { ok: false, response: NextResponse.json({ message: "Job not found" }, { status: 404 }) };
-  }
-  try {
-    const jobData = JSON.parse(jobDataStr);
-    if (jobData.userId !== userId) {
-      return { ok: false, response: NextResponse.json({ message: "Job not found" }, { status: 404 }) };
-    }
-    return { ok: true };
-  } catch {
-    return { ok: false, response: NextResponse.json({ message: "Job not found" }, { status: 404 }) };
-  }
-}
+import { authorizeJob } from "@/src/lib/job-access";
 
 export const GET = withAuth(async (req, session, context) => {
   try {
@@ -29,9 +10,9 @@ export const GET = withAuth(async (req, session, context) => {
       return NextResponse.json({ message: "Job ID is required" }, { status: 400 });
     }
 
-    const userId = session.user.id;
-    const ownership = await verifyJobOwnership(jobId, userId);
-    if (!ownership.ok) return ownership.response;
+    // Status is a read of the document's compile output, so it honours current read access.
+    const authorization = await authorizeJob(jobId, session.user.id, 'read');
+    if (!authorization.ok) return authorization.response;
 
     const status = await compilationProducer.getJobStatus(jobId);
     if (!status) {
@@ -45,7 +26,7 @@ export const GET = withAuth(async (req, session, context) => {
   }
 });
 
-// Cancel (DELETE) — also ownership-checked
+// Cancel (DELETE) — a write on the document's compile pipeline, so it takes the edit intent.
 export const DELETE = withAuth(async (req, session, context) => {
   try {
     const { jobId } = await context.params;
@@ -53,9 +34,10 @@ export const DELETE = withAuth(async (req, session, context) => {
       return NextResponse.json({ message: "Job ID is required" }, { status: 400 });
     }
 
-    const userId = session.user.id;
-    const ownership = await verifyJobOwnership(jobId, userId);
-    if (!ownership.ok) return ownership.response;
+    // Cancelling affects everyone who can read the document, so it stays author-only and is
+    // re-derived from current access instead of the userId stored in the job payload.
+    const authorization = await authorizeJob(jobId, session.user.id, 'write');
+    if (!authorization.ok) return authorization.response;
 
     const cancelled = await compilationProducer.cancelJob(jobId);
     if (!cancelled) {

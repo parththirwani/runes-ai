@@ -10,10 +10,11 @@ type Ctx = { params: Promise<{ id: string }> };
 /**
  * Document-scoped PDF read.
  *
- * /api/pdf/[jobId] stays tied to whoever submitted the job, so an old job id can never outlive a
- * revocation. This route is the supported way for a viewer to see a finished PDF: it resolves the
- * most recent compile for the document and re-checks *current* read access to that document on
- * every request. No preview is offered when no author compile exists yet.
+ * Both PDF paths authorise against the document, not the job id: /api/pdf/[jobId] resolves the
+ * job's documentId and re-derives access through the same service (see src/lib/job-access.ts).
+ * This route is the document-scoped view of the same rule for viewers: it resolves the most
+ * recent compile for the document and re-checks *current* read access on every request. No
+ * preview is offered when no author compile exists yet.
  */
 export const GET = withAuth(async (_req, session, context: Ctx) => {
   try {

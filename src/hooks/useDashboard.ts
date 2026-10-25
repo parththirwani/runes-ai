@@ -3,6 +3,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import type { DocumentFormatValue } from '@/src/types/compilation';
 import type { WorkspaceSummary } from '@/src/app/components/dashboard/workspaceSwitcher';
+import { documentApiUrl, documentsListUrl } from '@/src/lib/dashboard-library';
 
 export interface DashboardDocument {
   id: string;
@@ -57,8 +58,9 @@ export function useDashboard() {
     try {
       setLoading(true);
       setError(null);
-      const query = workspaceId ? `?workspaceId=` : '';
-      const response = await fetch(`/api/document`);
+      // The selected workspace travels to the server: without it the switcher would only relabel
+      // the library while every scope stayed visible.
+      const response = await fetch(documentsListUrl(workspaceId));
 
       if (!response.ok) {
         throw new Error('Failed to fetch documents');
@@ -125,7 +127,9 @@ export function useDashboard() {
 
       const newDoc = await response.json();
       setShowCreateModal(false);
-      router.push(`/document/${newDoc.slug}`);
+      // New links open by document id: slugs are only unique per workspace, so a slug link can
+      // land on an older twin, and recipients cannot resolve slugs at all.
+      router.push(`/document/${newDoc.id ?? newDoc.slug}`);
     } catch (err: unknown) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to create document');
       setShowCreateModal(false);
@@ -137,7 +141,9 @@ export function useDashboard() {
 
   const handleDeleteClick = async (doc: DashboardDocument) => {
     try {
-      const response = await fetch(`/api/document/${doc.slug}`, {
+      // Delete by id: a slug could match a same-slug document in another workspace, and the
+      // slug-scoped author lookup would happily resolve and delete the wrong one.
+      const response = await fetch(documentApiUrl(doc), {
         method: 'DELETE'
       });
 
@@ -145,7 +151,7 @@ export function useDashboard() {
         throw new Error('Failed to delete document');
       }
 
-      setDocuments((current) => current.filter((item) => item.slug !== doc.slug));
+      setDocuments((current) => current.filter((item) => item.id !== doc.id));
     } catch (err: unknown) {
       const error = err instanceof Error ? err : new Error('Failed to delete document');
       setErrorMessage(error.message);
