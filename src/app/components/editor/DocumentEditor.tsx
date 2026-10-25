@@ -116,6 +116,11 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const pdfUrlRef = useRef<string | undefined>(undefined);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const savedTitleRef = useRef(initialDocument?.title ?? 'Untitled Document');
+
+  // Capability flags come from the server. A viewer sees the same source, tree, assets and last
+  // completed preview, with every write path closed here and re-checked on every request.
+  const access = initialDocument?.access ?? null;
+  const readOnly = access ? access.canEdit === false : false;
   const [compileError, setCompileError] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<CompileDiagnostic[]>([]);
   const [missingRefs, setMissingRefs] = useState<MissingReference[]>([]);
@@ -635,8 +640,30 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const downloadPdfRef = useRef<(jobId: string) => Promise<void>>(async () => {});
   downloadPdfRef.current = downloadPDF;
 
+  // Readers have no job of their own: the document-scoped route decides access on every request
+  // and answers with the newest completed preview, or nothing.
+  const loadSharedPdf = useCallback(async (documentId: string) => {
+    try {
+      const response = await fetch('/api/documents/' + encodeURIComponent(documentId) + '/pdf');
+      if (!response.ok) return;
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
+      pdfUrlRef.current = url;
+      setPdfUrl(url);
+    } catch {
+      // No preview is a normal state for a shared document, not an error to report.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (readOnly && initialDocument?.id) void loadSharedPdf(initialDocument.id);
+  }, [readOnly, initialDocument?.id, loadSharedPdf]);
+
   // --- Save: writes every dirty file in one request, main file included ---
   const handleSave = useCallback(async (): Promise<boolean> => {
+    // The autosave timer and Cmd+S both funnel through here, so one guard covers both.
+    if (readOnly) return false;
     if (savedNoticeTimerRef.current) clearTimeout(savedNoticeTimerRef.current);
     setIsSaving(true);
     setJustSaved(false);
@@ -680,12 +707,13 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     } finally {
       setIsSaving(false);
     }
-  }, [slug, router, title, code, workspace]);
+  }, [slug, router, title, code, workspace, readOnly]);
   const saveRef = useRef<() => Promise<boolean>>(async () => false);
   saveRef.current = handleSave;
 
   // --- Compile the selected main file ---
   const handleCompile = async () => {
+    if (readOnly) return;
     if (!slug) {
       setCompileError('Please save the document first before compiling');
       return;
@@ -745,7 +773,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   const handleDownload = async () => {
     if (!pdfUrl) {
-      setErrorModalMessage('Please compile the document first');
+      setErrorModalMessage(readOnly ? 'No saved preview is available for this document yet' : 'Please compile the document first');
       setShowErrorModal(true);
       return;
     }
@@ -888,6 +916,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         format={syntheticDocument.format}
         fileName={`${slug || 'document'}.${isMarkdown ? 'md' : 'tex'}`}
         onDownloadSource={handleDownloadSource}
+        access={access}
+        authorName={initialDocument?.author?.name ?? null}
+        readOnly={readOnly}
       />
 
       <div className="flex-1 relative flex overflow-hidden">
@@ -907,6 +938,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           onRename={(from, to) => workspace.renameFile(from, to)}
           onDelete={(path) => workspace.removeFile(path)}
           onChooseMain={(path) => workspace.chooseMainFile(path)}
+          readOnly={readOnly}
           error={workspace.lastError}
           onDismissError={() => workspace.setLastError(null)}
           outline={
@@ -964,7 +996,8 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                 onClose={workspace.closeFile}
               />
 
-              {/* AI Toolbar */}
+              {/* AI and insert controls belong to the author; a viewer gets the read-only notice. */}
+              {!readOnly ? (
               <div className="min-h-10 bg-surface border-b border-border flex flex-wrap items-center px-3 py-1 gap-2 shrink-0">
                 {isMarkdown && (
                   <>
@@ -1043,6 +1076,13 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                   </label>
                 </div>
               </div>
+              ) : (
+                <div className="min-h-10 bg-surface border-b border-border flex items-center px-3 py-1 text-xs text-meta">
+                  {initialDocument?.author?.name
+                    ? 'View only. ' + initialDocument.author.name + ' can edit and compile this document.'
+                    : 'View only. Only the document author can edit and compile it.'}
+                </div>
+              )}
 
               {/* Editor, binary preview, or empty state */}
               <div className="flex-1 overflow-hidden">
@@ -1068,6 +1108,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                     language={activePath.toLowerCase().endsWith('.md') ? 'markdown' : 'latex'}
                     fileName={fileName}
                     onEditorReady={handleEditorReady}
+                    readOnly={readOnly}
                   />
                 ) : (
                   <div className="h-full flex items-center justify-center text-sm text-muted-foreground px-6 text-center">

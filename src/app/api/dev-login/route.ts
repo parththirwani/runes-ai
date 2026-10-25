@@ -68,6 +68,7 @@ async function handleDevLogin(req: NextRequest) {
     name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
     picture: user.image,
     issuedAt: Date.now(),
+     isAdmin: Boolean(user.isAdmin),
   };
 
   const signed = await signDevSession(tokenPayload);

@@ -24,6 +24,12 @@ interface TopNavBarProps {
   fileName?: string;
   /** Downloads the document's main source file. */
   onDownloadSource?: () => void;
+  /** Server-decided access flags, kept for tooltips and future affordances. */
+  access?: { canEdit: boolean; canShare: boolean; level: 'Edit' | 'View' } | null;
+  /** Who wrote the document, shown when the signed-in user is only allowed to read it. */
+  authorName?: string | null;
+  /** True when the capability service said this user may not write. */
+  readOnly?: boolean;
 }
 
 export default function TopNavBar({
@@ -40,7 +46,9 @@ export default function TopNavBar({
   compilationStatus = '',
   format = 'LATEX',
   fileName,
-  onDownloadSource
+  onDownloadSource,
+  authorName,
+  readOnly = false
 }: TopNavBarProps) {
   const router = useRouter();
   const isMarkdown = format === 'MARKDOWN';
@@ -69,14 +77,25 @@ export default function TopNavBar({
         
         <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground sm:flex-initial">
           <FileText className="w-4 h-4 shrink-0 text-meta" />
-          <button
-            onClick={onTitleEdit}
-            className="flex min-w-0 max-w-50 items-center gap-1 truncate text-foreground hover:text-action transition-colors group cursor-pointer"
-            title="Click to edit title"
-          >
-            <span className="truncate">{documentTitle}</span>
-            <Edit2 className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </button>
+          {readOnly ? (
+            <span className="flex min-w-0 max-w-50 items-center gap-1 truncate text-foreground" title={authorName ? 'Written by ' + authorName : 'Shared with you'}>
+              <span className="truncate">{documentTitle}</span>
+            </span>
+          ) : (
+            <button
+              onClick={onTitleEdit}
+              className="flex min-w-0 max-w-50 items-center gap-1 truncate text-foreground hover:text-action transition-colors group cursor-pointer"
+              title="Click to edit title"
+            >
+              <span className="truncate">{documentTitle}</span>
+              <Edit2 className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
+          )}
+          {readOnly && (
+            <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] font-medium whitespace-nowrap text-muted-foreground" role="status">
+              View only{authorName ? ' · ' + authorName : ''}
+            </span>
+          )}
           {hasUnsavedChanges && (
             <span className="w-2 h-2 bg-status-unsaved rounded-full" title="Unsaved changes" aria-hidden="true" />
           )}
@@ -134,24 +153,28 @@ export default function TopNavBar({
         
         <div className="hidden h-6 w-px bg-border sm:block" />
 
-        <Button
-          variant="primary"
-          size="sm"
-          icon={<Play className="w-4 h-4" />}
-          onClick={onCompile}
-          loading={isCompiling}
-          disabled={isCompiling}
-        >
-          {isCompiling ? compilationStatus || 'Compiling...' : 'Compile'}
-        </Button>
+        {!readOnly && (
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Play className="w-4 h-4" />}
+            onClick={onCompile}
+            loading={isCompiling}
+            disabled={isCompiling}
+          >
+            {isCompiling ? compilationStatus || 'Compiling...' : 'Compile'}
+          </Button>
+        )}
 
-        <IconButton
-          icon={<Sparkles className="w-5 h-5" />}
-          label="AI workspace"
-          tooltip="AI workspace"
-          onClick={onSettingsToggle}
-          className="cursor-pointer"
-        />
+        {!readOnly && (
+          <IconButton
+            icon={<Sparkles className="w-5 h-5" />}
+            label="AI workspace"
+            tooltip="AI workspace"
+            onClick={onSettingsToggle}
+            className="cursor-pointer"
+          />
+        )}
       </div>
     </div>
   );

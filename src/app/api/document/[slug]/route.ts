@@ -34,6 +34,13 @@ export const GET = withAuth(async (req, session, context) => {
       return NextResponse.json({ message: 'Document not found' }, { status: 404 });
     }
 
+    // Readers are shown who wrote the document; the name comes from the author row, not the
+    // client, and a viewer is allowed to see it by design.
+    const authorRow = await prisma.user.findUnique({
+      where: { id: workspace.document.authorId },
+      select: { id: true, email: true, firstName: true, lastName: true },
+    });
+
     const main = workspace.files.find((file) => file.path === workspace.document.mainFilePath);
     const mainRecord = main
       ? await prisma.workspaceFile.findUnique({
@@ -59,7 +66,13 @@ export const GET = withAuth(async (req, session, context) => {
           tree: workspace.tree,
           // The editor renders a viewer from these. Server checks stay authoritative: a
           // client that hides a button is a courtesy, not a control.
-          author: { id: workspace.document.authorId },
+          author: {
+            id: workspace.document.authorId,
+            name: authorRow
+              ? [authorRow.firstName, authorRow.lastName].filter(Boolean).join(' ').trim() || authorRow.email
+              : null,
+            email: authorRow?.email ?? null,
+          },
           access: {
             canEdit: workspace.capabilities.canEdit,
             canShare: workspace.capabilities.canShare,

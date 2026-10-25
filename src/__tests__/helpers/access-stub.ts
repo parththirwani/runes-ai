@@ -10,7 +10,7 @@
 // admin inspection — is covered by src/__tests__/access-policy.test.ts against the real policy,
 // and must not be re-verified through this stub.
 
-import type { DocumentAccess } from "@/src/lib/access";
+import type { DocumentAccess, WorkspaceAccess } from "@/src/lib/access";
 import type { DocumentCapabilities } from "@/src/lib/access-policy";
 
 type StubRow = {
@@ -25,6 +25,13 @@ type StubRow = {
 type StubClient = {
   document: {
     findFirst: (args: { where: Record<string, unknown> }) => Promise<StubRow | null>;
+  };
+};
+
+type StubWorkspaceClient = {
+  workspace: {
+    findFirst: (args: { where: Record<string, unknown> }) => Promise<{ id: string; name?: string } | null>;
+    findMany?: (args: { where: Record<string, unknown> }) => Promise<{ id: string; name?: string }[]>;
   };
 };
 
@@ -65,6 +72,27 @@ async function byId(client: StubClient, userId: string, id: string): Promise<Doc
   return row ? toAccess(row) : null;
 }
 
+function workspaceAccess(row: { id: string; name?: string }, userId: string): WorkspaceAccess {
+  return {
+    workspace: { id: row.id, name: row.name ?? "My documents", kind: "PERSONAL", ownerUserId: userId, teamId: null, isDefault: true },
+    capabilities: {
+      canRead: true,
+      canCreate: true,
+      canRename: true,
+      canShare: true,
+      canManageTeam: false,
+      isAdmin: false,
+      authorOnlyWrites: true,
+      access: "author",
+    },
+  };
+}
+
+async function ownedWorkspace(client: StubWorkspaceClient, userId: string, workspaceId: string): Promise<WorkspaceAccess | null> {
+  const row = await client.workspace.findFirst({ where: { id: workspaceId, ownerUserId: userId } });
+  return row ? workspaceAccess(row, userId) : null;
+}
+
 /**
  * Spread over the real module inside `vi.mock("@/src/lib/access", ...)`. `AccessError`,
  * `accessErrorResponse`, `readableWhere` and `findAuthorOnlyDocument` come from the real module
@@ -82,7 +110,26 @@ export function ownerOnlyAccessStub() {
     requireAppAdmin: async () => undefined,
     capabilitiesForMany: async (_client: StubClient, _userId: string, documentIds: string[]) =>
       new Map(documentIds.map((id) => [id, authorCapabilities("author-1")])),
+    getWorkspaceAccess: async (client: StubWorkspaceClient, userId: string, workspaceId: string) =>
+      ownedWorkspace(client, userId, workspaceId),
+    requireWorkspaceRead: (client: StubWorkspaceClient, userId: string, workspaceId: string) =>
+      requireWorkspace(ownedWorkspace(client, userId, workspaceId)),
+    requireWorkspaceCreate: (client: StubWorkspaceClient, userId: string, workspaceId: string) =>
+      requireWorkspace(ownedWorkspace(client, userId, workspaceId)),
+    listAccessibleWorkspaces: async (client: StubWorkspaceClient, userId: string) => {
+      const rows = (await client.workspace.findMany?.({ where: { ownerUserId: userId } })) ?? [];
+      return rows.map((row) => workspaceAccess(row, userId));
+    },
   };
+}
+
+async function requireWorkspace(pending: Promise<WorkspaceAccess | null>): Promise<WorkspaceAccess> {
+  const access = await pending;
+  if (!access) {
+    const { AccessError } = await import("@/src/lib/access");
+    throw new AccessError("Workspace not found", 404, "not-found");
+  }
+  return access;
 }
 
 async function requireAccess(pending: Promise<DocumentAccess | null>): Promise<DocumentAccess> {

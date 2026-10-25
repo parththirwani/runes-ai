@@ -311,11 +311,19 @@ export async function listDocumentsInWorkspace(client: DbClient, userId: string,
 // accepted document grants, accepted personal-workspace grants, team membership) and drops any
 // row the capability service refuses, so the list can never advertise a document that the
 // document routes would then deny. Content itself is never returned; a derived excerpt is.
-export async function listLibraryDocuments(client: DbClient, userId: string, search?: string) {
+export async function listLibraryDocuments(
+  client: DbClient,
+  userId: string,
+  options: { search?: string; scope?: "all" | "mine" | "shared" } = {},
+) {
+  const { search, scope = "all" } = options;
   const rows = await client.document.findMany({
     where: {
       AND: [
         readableWhere(userId),
+        // "Shared with me" is the same capability query minus the actor's own rows, so a
+        // recipient gains no extra visibility from the filter.
+        ...(scope === "shared" ? [{ NOT: { userId } }] : scope === "mine" ? [{ userId }] : []),
         ...(search && search.length > 0
           ? [
               {

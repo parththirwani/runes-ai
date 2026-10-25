@@ -1,10 +1,8 @@
 import { prisma } from "@/src/lib/db";
-import { generateSlug } from "@/src/lib/slug";
 import { withAuth } from "@/src/lib/withAuth";
 import { createDocumentSchema } from "@/src/schema/documentSchema";
-import { latexTemplate, markdownTemplate } from "@/src/lib/templates";
-import { listLibraryDocuments } from "@/src/lib/workspaces";
-import { ensureDefaultPersonalWorkspace } from "@/src/lib/workspace-ownership";
+import { accessErrorResponse } from "@/src/lib/access";
+import { createDocumentInWorkspace, listLibraryDocuments } from "@/src/lib/workspaces";
 import { NextResponse } from "next/server";
 import type { ZodError } from 'zod';
 
@@ -31,36 +29,25 @@ export const POST = withAuth(async (req, session) => {
       );
     }
 
-    const { title, content } = parsed.data;
+    const { title, content, workspaceId } = parsed.data;
     // Explicit format is required for new clients; a missing format keeps the
     // documented legacy default of LATEX during the transition.
     const format = parsed.data.format ?? "LATEX";
     const userId = session.user.id;
 
-    // Every document belongs to exactly one collection workspace. Legacy clients that do
-    // not name one land in the author's default personal workspace, which is created on
-    // demand so a brand new account can create its first document.
-    const { workspaceId } = await ensureDefaultPersonalWorkspace(prisma, userId);
-
-    // Use transaction-safe unique constraint instead of manual check
-    const slug = generateSlug(title);
-    const source = content ?? (format === "MARKDOWN" ? markdownTemplate(title.trim()) : latexTemplate(title.trim()));
-
-    const document = await prisma.document.create({
-      data: {
-        title: title.trim(),
-        content: source,
-        format,
-        mainFilePath: format === "MARKDOWN" ? "main.md" : "main.tex",
-        slug,
-        userId,
-        workspaceId,
-      },
-    });
+    // Every document belongs to exactly one collection workspace. A client that names one is
+    // checked against the capability service; a client that names none lands in the author's
+    // default personal workspace, created on demand for a brand new account.
+    const document = await createDocumentInWorkspace(prisma, userId, workspaceId, { title, format, content });
 
     return NextResponse.json(document, { status: 201 });
 
   } catch (error: unknown) {
+    // A duplicate name inside the workspace, or a workspace the actor may not create in,
+    // both arrive as capability errors with the status already decided.
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
+
     // Handle unique constraint properly (Prisma error code)
     if (error instanceof Error && 'code' in error && error.code === "P2002") {
       return NextResponse.json(
@@ -85,9 +72,14 @@ export const POST = withAuth(async (req, session) => {
 export const GET = withAuth(async (req, session) => {
   try {
     const userId = session.user.id;
-    const search = new URL(req.url).searchParams.get("search") ?? undefined;
+    const params = new URL(req.url).searchParams;
+    const scopeParam = params.get("scope");
+    const scope = scopeParam === "shared" || scopeParam === "mine" ? scopeParam : "all";
 
-    const { documents } = await listLibraryDocuments(prisma, userId, search);
+    const { documents } = await listLibraryDocuments(prisma, userId, {
+      search: params.get("search") ?? undefined,
+      scope,
+    });
 
     return NextResponse.json(
       { documents },

@@ -45,6 +45,8 @@ type Props = {
   outline: React.ReactNode;
   error: string | null;
   onDismissError: () => void;
+  /** A reader gets the same tree with the mutation affordances hidden; the API is the control. */
+  readOnly?: boolean;
 };
 
 type ModalState =
@@ -95,6 +97,7 @@ export default function WorkspacePanel(props: Props) {
   const {
     isOpen, onClose, tree, files, mainFilePath, activePath, dirtyPaths, stalePaths, slug,
     onOpenFile, onCreateFile, onUpload, onRename, onDelete, onChooseMain, outline, error, onDismissError,
+    readOnly = false,
   } = props;
 
   const [tab, setTab] = useState<'files' | 'outline'>('files');
@@ -154,7 +157,7 @@ export default function WorkspacePanel(props: Props) {
               <Star className="w-3 h-3 text-action fill-action shrink-0" />
             </span>
           )}
-          <div className="hidden group-hover:flex group-focus-within:flex items-center">
+          <div className={readOnly ? 'hidden' : 'hidden group-hover:flex group-focus-within:flex items-center'}>
             {file?.kind === 'tex' && !isMain && (
               <IconButton
                 icon={<Star className="w-3 h-3" />}
@@ -226,6 +229,10 @@ export default function WorkspacePanel(props: Props) {
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-meta truncate" title={slug}>{Object.keys(files).length} files</span>
           </div>
+          {readOnly ? (
+            <p className="text-[11px] leading-4 text-meta">You can open and read these files. Only the document author can change them.</p>
+          ) : (
+            <>
           <Button variant="secondary" size="sm" icon={<Plus className="w-4 h-4" />} className="w-full" onClick={() => setModal({ kind: 'create' })}>
             New file
           </Button>
@@ -256,6 +263,8 @@ export default function WorkspacePanel(props: Props) {
               </span>
             </label>
           </div>
+            </>
+          )}
         </div>
       )}
 

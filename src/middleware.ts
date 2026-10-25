@@ -24,6 +24,7 @@ export async function middleware(req: NextRequest) {
               email: payload.email,
               name: payload.name,
               image: payload.picture || null,
+              isAdmin: payload.isAdmin ?? false,
             },
             expires: new Date(Date.now() + 86400000).toISOString(),
           });

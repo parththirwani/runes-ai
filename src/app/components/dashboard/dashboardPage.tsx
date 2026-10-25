@@ -4,20 +4,27 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
-import { ArrowDown, ArrowUp, Folder, Menu, Plus, Search, Star, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Folder, Menu, Plus, Search, ShieldCheck, Star, TriangleAlert, X } from "lucide-react";
 import { useDashboard, type DashboardDocument } from "@/src/hooks/useDashboard";
+import { useLibrary } from "@/src/hooks/useLibrary";
 import { DOCUMENTS_PATH, type CreateFormat } from "@/src/lib/paths";
+import { scopeLabel, type LibraryScope, type LibraryWorkspace } from "@/src/types/library";
+import type { ShareTarget } from "@/src/hooks/useShares";
 import UserMenu from "@/components/arc/user-menu/user-menu";
 import AlertModal from "../design/AlertModal";
+import InputModal from "../design/InputModal";
 import Logo from "../brand/logo";
 import CreateDocumentModal from "./createDocumentModal";
 import DocumentActions from "./documentActions";
+import MoveDocumentModal from "./moveDocumentModal";
+import ShareModal from "./shareModal";
+import WorkspaceNav from "./workspaceNav";
 import styles from "./dashboard.module.css";
 
 type LibraryFilter = "ALL" | "FAVORITES" | "MARKDOWN" | "LATEX";
 
 const filters: { value: LibraryFilter; label: string }[] = [
-  { value: "ALL", label: "All documents" },
+  { value: "ALL", label: "All formats" },
   { value: "FAVORITES", label: "Favorites" },
   { value: "MARKDOWN", label: "Markdown" },
   { value: "LATEX", label: "LaTeX" },
@@ -33,6 +40,12 @@ function modifiedAt(value: string) {
   }).format(new Date(value));
 }
 
+function authorLabel(doc: DashboardDocument, currentEmail: string | null): string {
+  if (!doc.author) return "You";
+  if (currentEmail && doc.author.email?.toLowerCase() === currentEmail.toLowerCase()) return "You";
+  return doc.author.name || doc.author.email;
+}
+
 export default function DashboardPage({ initialCreateFormat = null }: { initialCreateFormat?: CreateFormat | null }) {
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -41,10 +54,16 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
   const [newestFirst, setNewestFirst] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [scope, setScope] = useState<LibraryScope>({ kind: "all" });
+  const [shareTarget, setShareTarget] = useState<{ target: ShareTarget; title: string; description: string } | null>(null);
+  const [moveTarget, setMoveTarget] = useState<DashboardDocument | null>(null);
+  const [renameTarget, setRenameTarget] = useState<LibraryWorkspace | null>(null);
+  const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
+  const library = useLibrary();
   const {
     documents, loading, error, showCreateModal, showErrorModal, errorMessage, isCreating,
     setShowCreateModal, setShowErrorModal, handleCreateDocument, handleDeleteClick, handleFavoriteToggle,
-  } = useDashboard();
+  } = useDashboard(scope);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/signin");
@@ -68,7 +87,10 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
     MARKDOWN: documents.filter((doc) => (doc.format ?? "LATEX") === "MARKDOWN").length,
     LATEX: documents.filter((doc) => (doc.format ?? "LATEX") === "LATEX").length,
   };
-  const pageTitle = filter === "ALL" ? "All documents" : filter === "FAVORITES" ? "Favorites" : `${filter === "MARKDOWN" ? "Markdown" : "LaTeX"} documents`;
+  const currentEmail = session?.user?.email ?? null;
+  const isAdmin = Boolean(session?.user?.isAdmin);
+  const selectedWorkspace = scope.kind === "workspace" ? library.workspaces.find((workspace) => workspace.id === scope.id) ?? null : null;
+  const pageTitle = filter === "ALL" ? scopeLabel(scope) : `${scopeLabel(scope)} · ${filters.find((item) => item.value === filter)?.label ?? ""}`;
   const openCreate = () => setShowCreateModal(true);
   const closeCreate = () => {
     setShowCreateModal(false);
@@ -86,7 +108,8 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
   });
   const toggleAll = () => setSelectedIds(allVisibleSelected ? new Set() : new Set(visibleDocuments.map((doc) => doc.id)));
   const changeFavorites = (favorite: boolean) => {
-    for (const doc of selectedDocuments) if (doc.isFavorite !== favorite) void handleFavoriteToggle(doc);
+    // Starring writes to the document row, so it stays an author action.
+    for (const doc of selectedDocuments) if (doc.canEdit !== false && doc.isFavorite !== favorite) void handleFavoriteToggle(doc);
     setSelectedIds(new Set());
   };
   const downloadDocument = (doc: DashboardDocument) => {
@@ -99,6 +122,27 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+  };
+  const shareDocument = (doc: DashboardDocument) => setShareTarget({
+    target: { kind: "document", id: doc.id },
+    title: `Share “${doc.title}”`,
+    description: "People you invite can open this document in view mode. They cannot edit, move, or delete it.",
+  });
+  const shareWorkspace = (workspace: LibraryWorkspace) => setShareTarget({
+    target: { kind: "workspace", id: workspace.id },
+    title: `Share “${workspace.name}”`,
+    description: "Everyone you invite can open every document in this workspace, including ones you create later.",
+  });
+  const createWorkspace = async (name: string) => {
+    const workspace = await library.createWorkspace(name);
+    setNewWorkspaceOpen(false);
+    if (workspace) setScope({ kind: "workspace", id: workspace.id, name: workspace.name });
+  };
+  const renameWorkspace = async (name: string) => {
+    if (!renameTarget) return;
+    await library.renameWorkspace(renameTarget.id, name);
+    setRenameTarget(null);
+    if (scope.kind === "workspace" && scope.id === renameTarget.id) setScope({ kind: "workspace", id: renameTarget.id, name });
   };
 
   return (
@@ -123,10 +167,22 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
             ))}
           </div>
         </nav>
+        <WorkspaceNav
+          scope={scope}
+          onScopeChange={(next) => { setScope(next); setSelectedIds(new Set()); setSidebarOpen(false); }}
+          workspaces={library.workspaces}
+          pendingInvitations={library.pendingInvitations}
+          onNewWorkspace={() => setNewWorkspaceOpen(true)}
+          onRenameWorkspace={(workspace) => setRenameTarget(workspace)}
+          onShareWorkspace={(workspace) => shareWorkspace(workspace)}
+        />
         <div className="mx-4 mt-3 border-t border-border" />
         <div className="px-4 pt-6">
           <p className="mb-3 pl-3 text-xs font-semibold uppercase tracking-wide text-meta">Workspace</p>
           <button type="button" onClick={openCreate} className={`${styles.navItem} gap-2`}><Plus size={17} aria-hidden="true" /> New document</button>
+          {isAdmin && (
+            <Link href="/admin" className={`${styles.navItem} gap-2`}><ShieldCheck size={17} aria-hidden="true" /> Admin</Link>
+          )}
         </div>
         <div className="mt-auto px-2 pb-4">
           <div className="mx-2 mb-3 border-t border-border" />
@@ -154,14 +210,20 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
         <div className="mb-4">
           <div className="relative w-full max-w-[782px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-meta" aria-hidden="true" />
-            <label className="sr-only" htmlFor="document-search">Search in all documents</label>
+            <label className="sr-only" htmlFor="document-search">{`Search in ${scopeLabel(scope)}`}</label>
             <input id="document-search" type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search in all documents..."
+              placeholder={`Search in ${scopeLabel(scope).toLowerCase()}...`}
               className="h-10 w-full rounded border border-input bg-surface pl-9 pr-3 text-sm text-foreground placeholder:text-meta focus:border-action focus:outline-none focus-visible:ring-2 focus-visible:ring-action/25" />
           </div>
+          <p className="mt-1 text-xs text-meta">
+            {scope.kind === "workspace" && selectedWorkspace?.kind === "TEAM"
+              ? "Team workspace: every member can open these documents; only the person who wrote one can change it."
+              : "Search and filters apply to the selected collection only."}
+          </p>
         </div>
 
         {error && <div role="alert" className="mb-4 flex items-center gap-2 rounded border border-destructive/30 bg-destructive-subtle px-4 py-3 text-sm text-destructive"><TriangleAlert size={16} aria-hidden="true" />{error}</div>}
+        {library.error && <div role="alert" className="mb-4 flex items-center gap-2 rounded border border-destructive/30 bg-destructive-subtle px-4 py-3 text-sm text-destructive"><TriangleAlert size={16} aria-hidden="true" />{library.error}</div>}
 
         {selectedDocuments.length > 0 && (
           <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
@@ -184,16 +246,36 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
               {status === "loading" || loading ? Array.from({ length: 5 }, (_, index) => (
                 <tr key={index}><td /><td><span className="skeleton block h-4 w-44" /></td><td><span className="skeleton block h-4 w-14" /></td><td><span className="skeleton block h-4 w-36" /></td></tr>
               )) : visibleDocuments.length === 0 ? (
-                <tr><td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">{documents.length === 0 ? "No documents yet. Create one to get started." : "No documents match your search or filter."}</td></tr>
+                <tr><td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">
+                  {scope.kind === "shared" && documents.length === 0
+                    ? "Nobody has shared a document with you yet."
+                    : documents.length === 0
+                      ? "No documents yet in this collection. Create one to get started."
+                      : "No documents match your search or filter."}
+                </td></tr>
               ) : visibleDocuments.map((doc: DashboardDocument) => (
                 <tr key={doc.id}>
                   <td><input type="checkbox" aria-label={`Select ${doc.title}`} checked={selectedIds.has(doc.id)} onChange={() => toggleSelection(doc.id)} /></td>
                   <td><div className="flex min-w-0 items-center gap-1">
                     <button type="button" onClick={() => router.push(`/document/${doc.slug}`)} className="min-w-0 truncate text-left hover:text-action hover:underline" title={doc.title}>{doc.title}</button>
                     {doc.isFavorite && <Star className="size-3.5 shrink-0 fill-current text-action" aria-label="Favorite" />}
+                    {doc.canEdit === false && (
+                      <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-meta" title={doc.author ? `Shared by ${doc.author.name}` : "Shared with you"}>View</span>
+                    )}
+                    {scope.kind !== "workspace" && doc.workspace && (
+                      <span className="hidden shrink-0 truncate text-[11px] text-meta sm:inline" title={doc.workspace.kind === "TEAM" ? "Team workspace" : "Personal workspace"}>{doc.workspace.name}</span>
+                    )}
                   </div></td>
-                  <td>You</td>
-                  <td><div className="flex items-center justify-between gap-3"><time className="whitespace-nowrap" dateTime={doc.updatedAt}>{modifiedAt(doc.updatedAt)}</time><div className={styles.rowActions}><DocumentActions document={doc} onDelete={() => handleDeleteClick(doc)} onFavoriteChange={() => handleFavoriteToggle(doc)} onDownload={() => downloadDocument(doc)} /></div></div></td>
+                  <td>{authorLabel(doc, currentEmail)}</td>
+                  <td><div className="flex items-center justify-between gap-3"><time className="whitespace-nowrap" dateTime={doc.updatedAt}>{modifiedAt(doc.updatedAt)}</time><div className={styles.rowActions}><DocumentActions
+                    document={doc}
+                    capabilities={{ canEdit: doc.canEdit !== false, canShare: doc.canShare !== false }}
+                    onDelete={() => handleDeleteClick(doc)}
+                    onFavoriteChange={() => handleFavoriteToggle(doc)}
+                    onDownload={() => downloadDocument(doc)}
+                    onShare={doc.canShare !== false ? () => shareDocument(doc) : undefined}
+                    onMove={doc.canEdit !== false ? () => setMoveTarget(doc) : undefined}
+                  /></div></div></td>
                 </tr>
               ))}
             </tbody>
@@ -202,8 +284,50 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
         <p className="mt-[18px] text-center text-sm text-muted-foreground" role="status">Showing {visibleDocuments.length} out of {documents.length} {documents.length === 1 ? "document" : "documents"}.</p>
       </main>
 
-      <CreateDocumentModal isOpen={showCreateModal} onClose={closeCreate} onSubmit={handleCreateDocument} isLoading={isCreating} existingTitles={documents.map((doc) => doc.title)} initialFormat={initialCreateFormat ?? "MARKDOWN"} />
+      <CreateDocumentModal isOpen={showCreateModal} onClose={closeCreate} onSubmit={(title, format) => handleCreateDocument(title, format, scope.kind === "workspace" ? scope.id : undefined)} isLoading={isCreating} existingTitles={documents.map((doc) => doc.title)} initialFormat={initialCreateFormat ?? "MARKDOWN"} />
       <AlertModal isOpen={showErrorModal} onClose={() => setShowErrorModal(false)} title="Error" message={errorMessage} variant="error" />
+      <ShareModal
+        isOpen={shareTarget !== null}
+        onClose={() => setShareTarget(null)}
+        target={shareTarget?.target ?? null}
+        title={shareTarget?.title ?? "Share"}
+        description={shareTarget?.description ?? ""}
+      />
+      <MoveDocumentModal
+        isOpen={moveTarget !== null}
+        onClose={() => setMoveTarget(null)}
+        document={moveTarget ? { id: moveTarget.id, title: moveTarget.title, workspaceId: moveTarget.workspaceId } : null}
+        workspaces={library.workspaces}
+        onPreview={(workspaceId) => library.moveDocument(moveTarget?.id ?? "", workspaceId, true)}
+        onMove={async (workspaceId) => { await library.moveDocument(moveTarget?.id ?? "", workspaceId); await library.refresh(); }}
+      />
+      <InputModal
+        isOpen={newWorkspaceOpen}
+        onClose={() => setNewWorkspaceOpen(false)}
+        onSubmit={(name) => void createWorkspace(name).catch((err: unknown) => {
+          setNewWorkspaceOpen(false);
+          library.setError(err instanceof Error ? err.message : "Could not create the workspace");
+        })}
+        title="New workspace"
+        label="Workspace name"
+        description="A workspace is a collection of documents you can share as a whole."
+        submitText="Create workspace"
+        maxLength={40}
+        isLoading={false}
+      />
+      <InputModal
+        isOpen={renameTarget !== null}
+        onClose={() => setRenameTarget(null)}
+        onSubmit={(name) => void renameWorkspace(name).catch((err: unknown) => {
+          setRenameTarget(null);
+          library.setError(err instanceof Error ? err.message : "Could not rename the workspace");
+        })}
+        title="Rename workspace"
+        label="Workspace name"
+        defaultValue={renameTarget?.name ?? ""}
+        submitText="Save"
+        maxLength={40}
+      />
     </div>
   );
 }
