@@ -44,7 +44,7 @@ run_script() {
 apply_migrations_before() {
   for dir in prisma/migrations/2026*; do
     case "$dir" in
-      *workspaces_teams_access*|*workspace_backfill*) continue ;;
+      *workspaces_teams_access*|*workspace_backfill*|*workspace_owner_lifetime*) continue ;;
     esac
     psql "$PROOF_DB" -q -v ON_ERROR_STOP=1 --single-transaction -f "$dir/migration.sql"
   done
@@ -128,6 +128,10 @@ run_script verify
 echo "== applying required-column migration (guard, uniqueness, foreign key)"
 psql "$PROOF_DB" -q -v ON_ERROR_STOP=1 --single-transaction \
   -f prisma/migrations/20261025190100_workspace_backfill/migration.sql
+
+echo "== applying workspace lifetime migration (owner foreign keys cascade)"
+psql "$PROOF_DB" -q -v ON_ERROR_STOP=1 --single-transaction \
+  -f prisma/migrations/20261025200000_workspace_owner_lifetime/migration.sql
 
 AFTER="$(snapshot)"
 echo "   after:  $AFTER"
