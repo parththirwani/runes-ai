@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { withAuth } from '@/src/lib/withAuth';
+import { openWritableDocument } from '@/src/lib/document-lookup';
 import { prisma } from '@/src/lib/db';
 import { z } from 'zod';
 import { acquireAiSlot, checkAiRateLimit } from '@/src/lib/ai-rate-limit';
@@ -36,15 +37,13 @@ export const POST = withAuth(async (req, session) => {
       });
     }
 
-    // Ownership check. Format comes from the owned row — a client cannot
-    // claim MARKDOWN for a LaTeX document.
-    const doc = await prisma.document.findFirst({
-      where: { id: documentId, userId },
-      select: { id: true, format: true },
-    });
-    if (!doc) {
+    // Author-only. AI consumes quota and may expose document content to a provider, so a shared
+    // reader gets the same 404 as an unrelated user. Format comes from the row, never the client.
+    const aiAccess = await openWritableDocument(userId, documentId);
+    if (!aiAccess) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
+    const doc = { id: aiAccess.document.id, format: aiAccess.document.format };
     const isMarkdown = doc.format === 'MARKDOWN';
 
     // Don't suggest for empty prefix

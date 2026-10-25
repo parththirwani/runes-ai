@@ -8,6 +8,8 @@ import WorkspacePanel from './WorkspacePanel';
 import FileTabs from './FileTabs';
 import MonacoEditorWrapper from './MonacoEditorWrapper';
 import PDFPreview from './PDFPreview';
+import ShareDialog from '../sharing/shareDialog';
+import MoveDialog, { type MoveWorkspaceOption } from '../sharing/moveDialog';
 import MarkdownPreviewPane from './MarkdownPreviewPane';
 import DiffReview from './DiffReview';
 import AiWorkspacePanel from './AiWorkspacePanel';
@@ -98,9 +100,29 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     tree: [{ name: 'main.tex', path: 'main.tex', type: 'file' }],
   }, [initialDocument]);
   const workspace = useWorkspace(syntheticDocument);
+  // Readers get no write affordance at all; the server repeats every one of these checks.
+  const canEdit = initialDocument?.capabilities ? initialDocument.capabilities.canEdit : true;
+  const canShare = initialDocument?.capabilities?.canShare ?? false;
+  const [shareOpen, setShareOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveWorkspaces, setMoveWorkspaces] = useState<MoveWorkspaceOption[]>([]);
+  const openMoveDialog = async () => {
+    try {
+      const response = await fetch('/api/workspaces');
+      const data = await response.json();
+      setMoveWorkspaces(((data.workspaces ?? []) as MoveWorkspaceOption[]).filter((item) => item.canCreate));
+    } catch {
+      setMoveWorkspaces([]);
+    }
+    setMoveOpen(true);
+  };
 
   const [title, setTitle] = useState(initialDocument?.title || 'Untitled Document');
+  // Display name only: filenames and the panel title. API calls use docRef, never this.
   const [slug, setSlug] = useState(initialDocument?.slug || '');
+  // Reference for every document API call. Slugs collide across workspaces and resolve
+  // author-scoped, so the id is the only key that stays correct for every caller and every twin.
+  const [docRef, setDocRef] = useState(initialDocument ? initialDocument.id : '');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [previewTab, setPreviewTab] = useState<'reading' | 'pdf'>('reading');
   const [showFileTree, setShowFileTree] = useState(false);
@@ -194,6 +216,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+      if (!canEdit) return;
         event.preventDefault();
         saveRef.current();
       }
@@ -204,11 +227,11 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   // --- Autosave ---
   useEffect(() => {
-    if (workspace.dirtyPaths.length > 0 && slug) {
+    if (canEdit && workspace.dirtyPaths.length > 0 && docRef) {
       const timer = setTimeout(() => { saveRef.current(); }, 30000);
       return () => clearTimeout(timer);
     }
-  }, [workspace.dirtyPaths.length, slug, code]);
+  }, [workspace.dirtyPaths.length, docRef, code]);
 
   // --- Job polling: immediate first check, no overlapping requests ---
   useEffect(() => {
@@ -637,11 +660,12 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   // --- Save: writes every dirty file in one request, main file included ---
   const handleSave = useCallback(async (): Promise<boolean> => {
+    if (!canEdit) return false;
     if (savedNoticeTimerRef.current) clearTimeout(savedNoticeTimerRef.current);
     setIsSaving(true);
     setJustSaved(false);
     try {
-      if (!slug) {
+      if (!docRef) {
         const contentToSave = code || initialCode;
         const response = await fetch('/api/document', {
           method: 'POST',
@@ -653,10 +677,14 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           throw new Error(error.message || 'Failed to create document');
         }
         const data = await response.json();
-        setSlug(data.slug);
-        workspace.setSlug(data.slug);
+        // Slug stays display-only; the id becomes the reference for every later request and for
+        // the URL, so the freshly created document cannot be shadowed by a same-slug twin.
+        setSlug(data.slug ?? '');
+        const createdRef = data.id ?? data.slug;
+        setDocRef(createdRef);
+        workspace.setRef(createdRef);
         savedTitleRef.current = title;
-        router.push('/document/' + data.slug);
+        router.push('/document/' + createdRef);
         setJustSaved(true);
         return true;
       }
@@ -664,7 +692,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       const result = await workspace.saveAll();
       if (!result.ok) throw new Error(result.error || 'Failed to save');
       if (title !== savedTitleRef.current) {
-        await workspaceClient.saveFiles(slug, [], title.trim() || 'Untitled Document');
+        await workspaceClient.saveFiles(docRef, [], title.trim() || 'Untitled Document');
         savedTitleRef.current = title;
       }
       setCompileError(null);
@@ -680,13 +708,14 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     } finally {
       setIsSaving(false);
     }
-  }, [slug, router, title, code, workspace]);
+  }, [docRef, router, title, code, workspace]);
   const saveRef = useRef<() => Promise<boolean>>(async () => false);
   saveRef.current = handleSave;
 
   // --- Compile the selected main file ---
   const handleCompile = async () => {
-    if (!slug) {
+    if (!canEdit) return;
+    if (!docRef) {
       setCompileError('Please save the document first before compiling');
       return;
     }
@@ -714,7 +743,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     setCompilationStatus('Queueing compilation...');
 
     try {
-      const response = await workspaceClient.compile(slug);
+      const response = await workspaceClient.compile(docRef);
       if (response.snapshot) workspace.setCompiledSnapshot(response.snapshot);
       setCompilationStatus(response.reused === 'new' ? 'Queued...' : 'Reusing compile for identical source');
       setCurrentJobId(response.jobId);
@@ -761,7 +790,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     const main = workspace.filesByPath[workspace.mainFilePath];
     const source = main?.loaded
       ? main.content
-      : (await workspaceClient.loadFile(slug, workspace.mainFilePath)).content;
+      : (await workspaceClient.loadFile(docRef, workspace.mainFilePath)).content;
     const extension = isMarkdown ? 'md' : 'tex';
     const mimeType = isMarkdown ? 'text/markdown' : 'text/x-tex';
     const url = URL.createObjectURL(new Blob([source], { type: `${mimeType};charset=utf-8` }));
@@ -821,13 +850,13 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const handleImageUpload = useCallback(async (file: File) => {
     const editor = editorRef.current;
     const selection = editor?.getSelection();
-    if (!slug || !editor || !selection || !activePath?.toLowerCase().endsWith('.md')) return;
+    if (!docRef || !editor || !selection || !activePath?.toLowerCase().endsWith('.md')) return;
     setIsUploadingImage(true);
     setImageUploadStatus(null);
     try {
       const form = new FormData();
       form.append('file', file);
-      const response = await fetch(`/api/document/${encodeURIComponent(slug)}/assets`, { method: 'POST', body: form });
+      const response = await fetch(`/api/document/${encodeURIComponent(docRef)}/assets`, { method: 'POST', body: form });
       const result = await response.json();
       if (!response.ok || !result.asset?.url) throw new Error(result.message || 'Image upload failed');
       const alt = result.asset.path.split('/').pop().replace(/\.[^.]+$/, '').replace(/[\[\]\\]/g, '');
@@ -841,7 +870,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     } finally {
       setIsUploadingImage(false);
     }
-  }, [activePath, slug]);
+  }, [activePath, docRef]);
 
   // --- Cleanup ---
   useEffect(() => {
@@ -888,8 +917,19 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         format={syntheticDocument.format}
         fileName={`${slug || 'document'}.${isMarkdown ? 'md' : 'tex'}`}
         onDownloadSource={handleDownloadSource}
+        canEdit={canEdit}
+        canShare={canShare}
+        authorName={initialDocument?.author?.name ?? null}
+        onShare={canShare ? () => setShareOpen(true) : undefined}
+        onMove={canEdit ? openMoveDialog : undefined}
       />
 
+      {shareOpen && initialDocument && (
+        <ShareDialog isOpen onClose={() => setShareOpen(false)} target={{ kind: 'DOCUMENT', id: initialDocument.id, label: initialDocument.title }} />
+      )}
+      {moveOpen && initialDocument && (
+        <MoveDialog isOpen onClose={() => setMoveOpen(false)} documentId={initialDocument.id} documentTitle={initialDocument.title} currentWorkspaceId={initialDocument.workspaceId ?? null} workspaces={moveWorkspaces} />
+      )}
       <div className="flex-1 relative flex overflow-hidden">
         <WorkspacePanel
           isOpen={showFileTree}
@@ -898,6 +938,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           files={workspace.filesByPath}
           mainFilePath={workspace.mainFilePath}
           activePath={activePath}
+          readOnly={!canEdit}
           dirtyPaths={workspace.dirtyPaths}
           stalePaths={workspace.stalePaths}
           slug={slug}
@@ -972,7 +1013,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                       variant="secondary"
                       size="sm"
                       onClick={() => imageInputRef.current?.click()}
-                      disabled={isUploadingImage || isBinaryActive || !slug || !activePath?.toLowerCase().endsWith('.md')}
+                      disabled={isUploadingImage || isBinaryActive || !docRef || !activePath?.toLowerCase().endsWith('.md')}
                       icon={<ImagePlus className="w-3.5 h-3.5" />}
                     >
                       Insert image
@@ -1051,7 +1092,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                     {/* The preview is the user's own uploaded file, served raw by the asset route. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={workspaceClient.assetUrl(slug, activeFile.path)}
+                      src={workspaceClient.assetUrl(docRef, activeFile.path)}
                       alt={activeFile.path}
                       className="max-w-full border border-border rounded bg-white"
                     />
@@ -1068,6 +1109,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                     language={activePath.toLowerCase().endsWith('.md') ? 'markdown' : 'latex'}
                     fileName={fileName}
                     onEditorReady={handleEditorReady}
+                    readOnly={!canEdit}
                   />
                 ) : (
                   <div className="h-full flex items-center justify-center text-sm text-muted-foreground px-6 text-center">

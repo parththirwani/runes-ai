@@ -7,18 +7,27 @@ const mocks = vi.hoisted(() => ({
   findMany: vi.fn(),
   upsert: vi.fn(),
   transaction: vi.fn(),
+  doc: { id: 'd1', userId: 'owner', format: 'MARKDOWN' } as { id: string; userId: string; format: string },
 }));
 
 vi.mock('@/src/lib/withAuth', () => ({
   withAuth: (handler: (req: NextRequest, session: { user: { id: string } }, context: unknown) => Promise<Response>) =>
     (req: NextRequest, context: unknown) => handler(req, { user: { id: 'owner' } }, context),
 }));
-vi.mock('@/src/lib/db', () => ({
-  prisma: {
-    document: { findFirst: mocks.findFirst },
-    $transaction: mocks.transaction,
-  },
-}));
+vi.mock('@/src/lib/db', async () => {
+  const { authorAccessDelegates } = await import('@/src/__tests__/helpers/prisma-access-mock');
+  const access = authorAccessDelegates({
+    actorUserId: 'owner',
+    document: () => (mocks.doc ? { ...mocks.doc, workspaceId: 'workspace-1' } : null),
+  });
+  return {
+    prisma: {
+      ...access,
+      document: { findFirst: mocks.findFirst, findUnique: access.document.findUnique },
+      $transaction: mocks.transaction,
+    },
+  };
+});
 
 import { POST } from '@/src/app/api/document/[slug]/assets/route';
 
@@ -33,7 +42,8 @@ function upload(name = 'image.png') {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.findFirst.mockResolvedValue({ id: 'd1', format: 'MARKDOWN' });
+  mocks.doc = { id: 'd1', userId: 'owner', format: 'MARKDOWN' };
+  mocks.findFirst.mockResolvedValue({ ...mocks.doc });
   mocks.findMany.mockResolvedValue([]);
   mocks.upsert.mockResolvedValue({ id: 'a1', path: 'image.png', mediaType: 'image/png', size: png.length });
   mocks.transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>

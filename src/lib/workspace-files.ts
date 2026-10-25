@@ -1,10 +1,14 @@
-// Workspace file service: ownership, limits, revisions and legacy-document migration.
+// Workspace file service: access, limits, revisions and legacy-document migration.
 //
-// Every entry point takes the authenticated user id and re-checks ownership, so a route
-// cannot accidentally read another user's workspace by guessing an id or a path.
+// Every entry point takes the authenticated user id plus a document reference and re-derives
+// capabilities through src/lib/access.ts, so a route cannot accidentally read or write another
+// user's workspace by guessing an id, a slug or a path. Read helpers use read intent and write
+// helpers use write intent: a viewer never reaches a mutation from here.
 
 import { prisma } from './db';
 import { checksum, assetKey, putBytes, getBytes } from './storage';
+import { openReadableDocument, openWritableDocument } from './document-lookup';
+import type { DocumentAccess } from './access';
 import {
   MAX_FILES_PER_WORKSPACE,
   MAX_FILE_BYTES,
@@ -94,25 +98,75 @@ export async function ensureDocumentMigrated(client: typeof prisma, documentId: 
   await client.document.update({ where: { id: documentId }, data: { mainFilePath: mainFile } });
 }
 
+export type ResolvedDocument = DocumentAccess['document'];
+
+/**
+ * Author-scoped lookup kept for the pre-workspaces call sites. New code should go through
+ * `openReadableDocument` / `openWritableDocument`, which also honour shares and team membership.
+ */
 export async function getOwnedDocument(userId: string, slug: string) {
   const document = await prisma.document.findFirst({ where: { slug, userId } });
   if (!document) return null;
   return document;
 }
 
-export async function readWorkspaceTree(userId: string, slug: string): Promise<WorkspaceTree | null> {
-  const document = await getOwnedDocument(userId, slug);
-  if (!document) return null;
-  await ensureDocumentMigrated(prisma, document.id);
+/** Read-intent resolution: author, accepted recipient, or active member of the owning team. */
+async function readableDocument(userId: string, ref: string): Promise<DocumentAccess | null> {
+  return openReadableDocument(userId, ref);
+}
+
+/** Write-intent resolution: the author, while they may still author in that workspace. */
+async function writableDocument(userId: string, ref: string): Promise<DocumentAccess | null> {
+  return openWritableDocument(userId, ref);
+}
+
+/**
+ * A viewer opening a document that predates workspace files sees the legacy single-source
+ * column as its main file. Synthesising it here is what lets a read-only open work without the
+ * read path writing rows on someone else's behalf.
+ */
+function virtualMainFile(document: ResolvedDocument): WorkspaceFileRecord {
+  const content = document.content ?? '';
+  const bytes = Buffer.from(content, 'utf-8');
+  return {
+    id: 'legacy:' + document.id,
+    path: document.mainFilePath,
+    kind: document.format === 'MARKDOWN' ? 'other' : 'tex',
+    mimeType: document.format === 'MARKDOWN' ? 'text/markdown' : 'text/x-tex',
+    sizeBytes: bytes.byteLength,
+    checksum: checksum(bytes),
+    revision: 0,
+    updatedAt: document.updatedAt,
+  };
+}
+
+export async function readWorkspaceTree(
+  userId: string,
+  ref: string,
+): Promise<(WorkspaceTree & {
+  access: DocumentAccess['capabilities'];
+  author: DocumentAccess['author'];
+  workspaceId: string;
+  workspaceName: string;
+  workspaceKind: 'PERSONAL' | 'TEAM';
+}) | null> {
+  const access = await readableDocument(userId, ref);
+  if (!access) return null;
+  // Only someone who can edit may materialise the legacy source into a file row.
+  if (access.capabilities.canEdit) await ensureDocumentMigrated(prisma, access.document.id);
+
   // Migration can replace the legacy main.tex pointer with main.md. Prisma returns
   // distinct row objects, so the document fetched before migration is stale.
-  const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
+  const currentDocument = await prisma.document.findUnique({ where: { id: access.document.id } });
   if (!currentDocument) return null;
 
-  const files = await prisma.workspaceFile.findMany({
-    where: { documentId: document.id },
+  const rows = await prisma.workspaceFile.findMany({
+    where: { documentId: access.document.id },
     orderBy: { path: 'asc' },
   });
+  const files = rows.length > 0 || access.capabilities.canEdit
+    ? rows.map(publicFile)
+    : [virtualMainFile(currentDocument as unknown as ResolvedDocument)];
 
   return {
     document: {
@@ -123,31 +177,41 @@ export async function readWorkspaceTree(userId: string, slug: string): Promise<W
       mainFilePath: currentDocument.mainFilePath,
       updatedAt: currentDocument.updatedAt,
     },
-    files: files.map(publicFile),
+    files,
     tree: buildTree(files.map((file) => file.path)),
+    access: access.capabilities,
+    author: access.author,
+    workspaceId: access.workspace.id,
+    workspaceName: access.workspace.name,
+    workspaceKind: access.workspace.kind,
   };
 }
 
-export async function readWorkspaceFile(userId: string, slug: string, rawPath: string): Promise<WorkspaceFileContent | null> {
-  const document = await getOwnedDocument(userId, slug);
-  if (!document) return null;
-  await ensureDocumentMigrated(prisma, document.id);
+export async function readWorkspaceFile(userId: string, ref: string, rawPath: string): Promise<WorkspaceFileContent | null> {
+  const access = await readableDocument(userId, ref);
+  if (!access) return null;
+  if (access.capabilities.canEdit) await ensureDocumentMigrated(prisma, access.document.id);
 
   const path = assertSafeWorkspacePath(rawPath);
   const file = await prisma.workspaceFile.findUnique({
-    where: { documentId_path: { documentId: document.id, path } },
+    where: { documentId_path: { documentId: access.document.id, path } },
   });
-  if (!file) return null;
+  if (file) return { ...publicFile(file), content: file.content, binary: !TEXT_KINDS.has(file.kind) };
 
-  return { ...publicFile(file), content: file.content, binary: !TEXT_KINDS.has(file.kind) };
+  // Same fallback as the tree read, so a viewer can open the main file of a legacy document.
+  if (access.document.mainFilePath === path) {
+    const virtual = virtualMainFile(access.document);
+    return { ...virtual, content: access.document.content ?? '', binary: false };
+  }
+  return null;
 }
 
-export async function readWorkspaceAsset(userId: string, slug: string, rawPath: string) {
-  const document = await getOwnedDocument(userId, slug);
-  if (!document) return null;
+export async function readWorkspaceAsset(userId: string, ref: string, rawPath: string) {
+  const access = await readableDocument(userId, ref);
+  if (!access) return null;
   const path = assertSafeWorkspacePath(rawPath);
   const file = await prisma.workspaceFile.findUnique({
-    where: { documentId_path: { documentId: document.id, path } },
+    where: { documentId_path: { documentId: access.document.id, path } },
   });
   if (!file || !file.storageKey) return null;
   const bytes = await getBytes(file.storageKey);
@@ -208,13 +272,15 @@ export type WriteResult = { file: WorkspaceFileRecord; created: boolean; unchang
 /** Creates or updates a text file. baseRevision gives optimistic conflict detection. */
 export async function writeTextFile(input: {
   userId: string;
-  slug: string;
+  /** Document id, or a legacy slug resolved through the author-scoped lookup. */
+  ref: string;
   rawPath: string;
   content: string;
   baseRevision?: number | null;
 }): Promise<WriteResult | { conflict: WorkspaceFileRecord } | null> {
-  const document = await getOwnedDocument(input.userId, input.slug);
-  if (!document) return null;
+  const access = await writableDocument(input.userId, input.ref);
+  if (!access) return null;
+  const document = access.document;
   await ensureDocumentMigrated(prisma, document.id);
   const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
   if (!currentDocument) return null;
@@ -273,13 +339,14 @@ export async function writeTextFile(input: {
 
 export async function uploadFile(input: {
   userId: string;
-  slug: string;
+  ref: string;
   rawPath: string;
   bytes: Buffer;
   mimeType?: string | null;
 }): Promise<WorkspaceFileRecord | null> {
-  const document = await getOwnedDocument(input.userId, input.slug);
-  if (!document) return null;
+  const access = await writableDocument(input.userId, input.ref);
+  if (!access) return null;
+  const document = access.document;
   await ensureDocumentMigrated(prisma, document.id);
 
   const path = assertSafeWorkspacePath(input.rawPath);
@@ -327,9 +394,10 @@ export async function uploadFile(input: {
   return publicFile(file);
 }
 
-export async function deleteFile(userId: string, slug: string, rawPath: string): Promise<'deleted' | 'notfound' | 'mainfile' | null> {
-  const document = await getOwnedDocument(userId, slug);
-  if (!document) return null;
+export async function deleteFile(userId: string, ref: string, rawPath: string): Promise<'deleted' | 'notfound' | 'mainfile' | null> {
+  const access = await writableDocument(userId, ref);
+  if (!access) return null;
+  const document = access.document;
   await ensureDocumentMigrated(prisma, document.id);
   const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
   if (!currentDocument) return null;
@@ -345,12 +413,13 @@ export async function deleteFile(userId: string, slug: string, rawPath: string):
 /** Moves or renames a file, keeping the main-file pointer in sync. */
 export async function moveFile(input: {
   userId: string;
-  slug: string;
+  ref: string;
   from: string;
   to: string;
 }): Promise<{ file: WorkspaceFileRecord; mainFilePath: string } | 'notfound' | 'exists' | null> {
-  const document = await getOwnedDocument(input.userId, input.slug);
-  if (!document) return null;
+  const access = await writableDocument(input.userId, input.ref);
+  if (!access) return null;
+  const document = access.document;
   await ensureDocumentMigrated(prisma, document.id);
   const currentDocument = await prisma.document.findUnique({ where: { id: document.id } });
   if (!currentDocument) return null;
@@ -383,9 +452,10 @@ export async function moveFile(input: {
   return { file: publicFile(file), mainFilePath };
 }
 
-export async function setMainFile(userId: string, slug: string, rawPath: string) {
-  const document = await getOwnedDocument(userId, slug);
-  if (!document) return null;
+export async function setMainFile(userId: string, ref: string, rawPath: string) {
+  const access = await writableDocument(userId, ref);
+  if (!access) return null;
+  const document = access.document;
   await ensureDocumentMigrated(prisma, document.id);
 
   const path = assertSafeWorkspacePath(rawPath);

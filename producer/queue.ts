@@ -4,6 +4,7 @@ import redis, {
   QUEUE_NAME,
   RESULT_PREFIX,
   PDF_PREFIX,
+  DOCUMENT_JOB_PREFIX,
 } from '@/src/lib/redis';
 import { snapshotJobKey } from '@/src/lib/snapshot-job-key';
 import { CompilationJob, JobStatus, JobStatusResponse, SnapshotFileRef, StageTimings } from '@/src/types/compilation';
@@ -68,6 +69,7 @@ export class CompilationProducer {
     const pipeline = redis.pipeline();
     pipeline.setex(`${JOB_PREFIX}${jobId}`, RESULT_TTL, JSON.stringify(job));
     pipeline.rpush(QUEUE_NAME, jobId);
+    pipeline.setex(`${DOCUMENT_JOB_PREFIX}${input.documentId}`, RESULT_TTL, jobId);
     pipeline.setex(
       `${RESULT_PREFIX}${jobId}`,
       RESULT_TTL,
@@ -86,6 +88,7 @@ export class CompilationProducer {
     const pipeline = redis.pipeline();
     pipeline.setex(`${JOB_PREFIX}${jobId}`, RESULT_TTL, JSON.stringify(compilationJob));
     pipeline.rpush(QUEUE_NAME, jobId);
+    pipeline.setex(`${DOCUMENT_JOB_PREFIX}${job.documentId}`, RESULT_TTL, jobId);
     pipeline.setex(
       `${RESULT_PREFIX}${jobId}`,
       RESULT_TTL,
@@ -108,6 +111,14 @@ export class CompilationProducer {
 
   async getPDF(jobId: string): Promise<Buffer | null> {
     return await redis.getBuffer(`${PDF_PREFIX}${jobId}`);
+  }
+
+  /**
+   * Most recent compile recorded for a document. Read by the document-scoped PDF endpoint, which
+   * authorises against the document instead of the job id so revocation reaches the PDF as well.
+   */
+  async getLatestJobIdForDocument(documentId: string): Promise<string | null> {
+    return await redis.get(`${DOCUMENT_JOB_PREFIX}${documentId}`);
   }
 
   async getQueueLength(): Promise<number> {

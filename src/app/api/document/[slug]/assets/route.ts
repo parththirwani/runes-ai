@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { prisma } from "@/src/lib/db";
 import { withAuth } from "@/src/lib/withAuth";
+import { openReadableDocument, openWritableDocument } from "@/src/lib/document-lookup";
 import {
   MAX_ASSET_BYTES,
   MAX_ASSETS_PER_DOCUMENT,
@@ -45,23 +46,24 @@ async function readBoundedForm(req: Request): Promise<FormData | 'too-large' | n
   }).formData().catch(() => null);
 }
 
-async function findOwnedMarkdownDocument(slug: string, userId: string): Promise<OwnedResult> {
-  const document = await prisma.document.findFirst({
-    where: { slug, userId },
-    select: { id: true, format: true },
-  });
-  if (!document) return { kind: 'missing' };
-  if (document.format !== "MARKDOWN") {
+// Read routes accept anyone the capability service says may read the document; mutation routes
+// require write intent, which is the author alone.
+async function findMarkdownDocument(slug: string, userId: string, intent: 'read' | 'write'): Promise<OwnedResult> {
+  const access = intent === 'write'
+    ? await openWritableDocument(userId, slug)
+    : await openReadableDocument(userId, slug);
+  if (!access) return { kind: 'missing' };
+  if (access.document.format !== "MARKDOWN") {
     return { kind: 'error', response: NextResponse.json({ message: "Assets are only supported for Markdown documents" }, { status: 400 }) };
   }
-  return { kind: 'ok', document };
+  return { kind: 'ok', document: { id: access.document.id, format: access.document.format } };
 }
 
 /* LIST assets for a Markdown document */
 export const GET = withAuth(async (req, session, context) => {
   try {
     const { slug } = await context.params;
-    const owned = await findOwnedMarkdownDocument(slug, session.user.id);
+    const owned = await findMarkdownDocument(slug, session.user.id, 'read');
     if (owned.kind === "error") return owned.response;
     if (owned.kind === "missing") return NextResponse.json({ message: "Document not found" }, { status: 404 });
 
@@ -83,9 +85,9 @@ export const GET = withAuth(async (req, session, context) => {
 export const POST = withAuth(async (req, session, context) => {
   try {
     const { slug } = await context.params;
-    const owned = await findOwnedMarkdownDocument(slug, session.user.id);
+    const owned = await findMarkdownDocument(slug, session.user.id, 'write');
     if (owned.kind === "error") return owned.response;
-    if (owned.kind === "missing") return NextResponse.json({ message: "Document not found" }, { status: 404 });
+    if (owned.kind === "missing") return NextResponse.json({ message: "Upload requires document edit access" }, { status: 404 });
 
     const form = await readBoundedForm(req);
     if (form === 'too-large') {

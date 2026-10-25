@@ -5,29 +5,38 @@ const mocks = vi.hoisted(() => ({
   userId: 'owner',
   create: vi.fn(),
   findMany: vi.fn(),
-  findFirst: vi.fn(),
   update: vi.fn(),
   delete: vi.fn(),
   addJob: vi.fn(),
   rateLimit: vi.fn(),
+  // The document the slug/id in the request is expected to resolve to.
+  current: null as null | { id: string; userId: string; slug?: string; title?: string; format?: string; content?: string | null },
 }));
 
 vi.mock('@/src/lib/withAuth', () => ({
   withAuth: (handler: (req: NextRequest, session: { user: { id: string } }, context: unknown) => Promise<Response>) =>
     (req: NextRequest, context: unknown) => handler(req, { user: { id: mocks.userId } }, context),
 }));
-vi.mock('@/src/lib/db', () => ({
-  prisma: {
-    document: {
-      create: mocks.create,
-      findMany: mocks.findMany,
-      findFirst: mocks.findFirst,
-      update: mocks.update,
-      delete: mocks.delete,
+vi.mock('@/src/lib/db', async () => {
+  const { authorAccessDelegates } = await import('@/src/__tests__/helpers/prisma-access-mock');
+  const access = authorAccessDelegates({
+    actorUserId: mocks.userId,
+    document: () => (mocks.current ? { ...mocks.current, workspaceId: 'workspace-1' } : null),
+  });
+  return {
+    prisma: {
+      ...access,
+      document: {
+        ...access.document,
+        create: mocks.create,
+        findMany: mocks.findMany,
+        update: mocks.update,
+        delete: mocks.delete,
+      },
+      documentAsset: { findMany: vi.fn().mockResolvedValue([]) },
     },
-    documentAsset: { findMany: vi.fn().mockResolvedValue([]) },
-  },
-}));
+  };
+});
 vi.mock('@/producer/queue', () => ({ compilationProducer: { addJob: mocks.addJob } }));
 vi.mock('@/src/lib/rateLimit', () => ({ checkRateLimit: mocks.rateLimit }));
 
@@ -47,6 +56,7 @@ function jsonRequest(path: string, body: unknown) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.userId = 'owner';
+  mocks.current = { id: 'd1', userId: 'owner', slug: 'my-doc', format: 'MARKDOWN', content: 'x' };
   mocks.rateLimit.mockResolvedValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 });
 });
 
@@ -59,6 +69,9 @@ describe('POST /api/document (creation)', () => {
     expect(body.format).toBe('MARKDOWN');
     expect(body.content.startsWith('# Notes')).toBe(true);
     expect(body.content).not.toContain('\\documentclass');
+    // Every new document is placed in a collection workspace, never in limbo.
+    expect(body.workspaceId).toBe('workspace-1');
+    expect(body.userId).toBe('owner');
   });
 
   it('creates a LaTeX document with the TeX template', async () => {
@@ -70,6 +83,7 @@ describe('POST /api/document (creation)', () => {
   });
 
   it('defaults a missing format to LATEX for legacy clients and rejects invalid formats', async () => {
+    mocks.current = { id: 'd3', userId: 'owner', slug: 'my-doc', format: 'MARKDOWN', content: 'x' };
     mocks.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => Promise.resolve({ id: 'd3', ...data }));
     await createDocument(jsonRequest('/api/document', { title: 'Legacy' }), {} as never);
     expect(mocks.create.mock.calls[0][0].data.format).toBe('LATEX');
@@ -105,7 +119,7 @@ describe('GET /api/document (dashboard list)', () => {
 
 describe('PUT /api/document/[slug] (updates)', () => {
   it('accepts title/content updates', async () => {
-    mocks.findFirst.mockResolvedValue({ id: 'd1', slug: 'my-doc', format: 'MARKDOWN', content: 'x' });
+    mocks.current = { id: 'd1', userId: 'owner', slug: 'my-doc', format: 'MARKDOWN', content: 'x' };
     mocks.update.mockResolvedValue({ id: 'd1' });
     const req = new NextRequest('http://localhost/api/document/my-doc', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Renamed' }),
@@ -116,7 +130,7 @@ describe('PUT /api/document/[slug] (updates)', () => {
   });
 
   it('rejects any attempt to change format through updates', async () => {
-    mocks.findFirst.mockResolvedValue({ id: 'd1', slug: 'my-doc', format: 'LATEX', content: 'x' });
+    mocks.current = { id: 'd1', userId: 'owner', slug: 'my-doc', format: 'LATEX', content: 'x' };
     const req = new NextRequest('http://localhost/api/document/my-doc', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ format: 'MARKDOWN' }),
     });
@@ -128,7 +142,7 @@ describe('PUT /api/document/[slug] (updates)', () => {
 
 describe('POST /api/document/[slug] (compile dispatch)', () => {
   it('derives LATEX from the owned row and enqueues without assets', async () => {
-    mocks.findFirst.mockResolvedValue({ id: 'd1', slug: 'my-doc', title: 'Tex', content: '\\begin{document}', format: 'LATEX', userId: 'owner' });
+    mocks.current = { id: 'd1', userId: 'owner', slug: 'my-doc', title: 'Tex', content: '\\begin{document}', format: 'LATEX' };
     mocks.addJob.mockResolvedValue('job-1');
     const res = await compileDocument(new NextRequest('http://localhost/api/document/my-doc', { method: 'POST' }), context);
     expect(res.status).toBe(202);
@@ -139,7 +153,7 @@ describe('POST /api/document/[slug] (compile dispatch)', () => {
 
   it('derives MARKDOWN from the owned row and embeds asset snapshots', async () => {
     const { prisma } = await import('@/src/lib/db');
-    mocks.findFirst.mockResolvedValue({ id: 'd2', slug: 'my-doc', title: 'Md', content: '# Hi', format: 'MARKDOWN', userId: 'owner' });
+    mocks.current = { id: 'd2', userId: 'owner', slug: 'my-doc', title: 'Md', content: '# Hi', format: 'MARKDOWN' };
     (prisma.documentAsset as unknown as { findMany: ReturnType<typeof vi.fn> }).findMany = vi.fn().mockResolvedValue([
       { path: 'images/a.png', mediaType: 'image/png', bytes: new Uint8Array([1, 2, 3]) },
     ]);
@@ -152,7 +166,7 @@ describe('POST /api/document/[slug] (compile dispatch)', () => {
   });
 
   it('never leaks internal errors or source into the response body on queue failure', async () => {
-    mocks.findFirst.mockResolvedValue({ id: 'd3', slug: 'my-doc', title: 'Md', content: 'secret source', format: 'MARKDOWN', userId: 'owner' });
+    mocks.current = { id: 'd3', userId: 'owner', slug: 'my-doc', title: 'Md', content: 'secret source', format: 'MARKDOWN' };
     const { prisma } = await import('@/src/lib/db');
     (prisma.documentAsset as unknown as { findMany: ReturnType<typeof vi.fn> }).findMany = vi.fn().mockRejectedValue(new Error('db connection string secret'));
     mocks.addJob.mockResolvedValue('unused');

@@ -18,11 +18,16 @@ vi.mock('@/src/lib/withAuth', () => ({
   withAuth: (handler: (req: NextRequest, session: { user: { id: string } }, context: unknown) => Promise<Response>) =>
     (req: NextRequest, context: unknown) => handler(req, { user: { id: 'owner' } }, context),
 }));
-vi.mock('@/src/lib/db', () => ({
+vi.mock('@/src/lib/db', async () => {
+  const { authorAccessDelegates, withAccess } = await import('@/src/__tests__/helpers/prisma-access-mock');
+  // Compiling re-derives authorship through the shared authorization service before queueing.
+  const access = authorAccessDelegates({ actorUserId: 'owner', document: () => ({ ...mocks.document, workspaceId: 'workspace-1' }) });
+  return {
   prisma: {
+    ...withAccess(access, {}),
     document: {
-      findFirst: vi.fn(async () => ({ ...mocks.document })),
-      findUnique: vi.fn(async () => ({ ...mocks.document })),
+      findFirst: vi.fn(async () => ({ ...mocks.document, workspaceId: 'workspace-1' })),
+      findUnique: vi.fn(async () => ({ ...mocks.document, workspaceId: 'workspace-1' })),
       update: vi.fn(async ({ data }: { data: { mainFilePath: string } }) => {
         mocks.document.mainFilePath = data.mainFilePath;
         return { ...mocks.document };
@@ -40,7 +45,8 @@ vi.mock('@/src/lib/db', () => ({
     },
     documentAsset: { findMany: vi.fn(async () => []) },
   },
-}));
+  };
+});
 vi.mock('@/producer/queue', () => ({ compilationProducer: { addJob: mocks.addJob } }));
 vi.mock('@/src/lib/rateLimit', () => ({ checkRateLimit: mocks.rateLimit }));
 

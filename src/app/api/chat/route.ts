@@ -4,6 +4,7 @@ import { prisma } from "@/src/lib/db";
 import { ChatCompletion, DiffResponse } from "@/src/lib/openrouter";
 import { resolveMainSource } from "@/src/lib/workspace-files";
 import { withAuth } from "@/src/lib/withAuth";
+import { openWritableDocument } from "@/src/lib/document-lookup";
 import type { ZodError } from 'zod';
 
 function formatZodError(error: ZodError) {
@@ -28,15 +29,18 @@ export const POST = withAuth(async (req: NextRequest, session) => {
 
     const { message, documentId } = parsed.data;
 
-    // Fetch document WITH ownership check
-    const document = await prisma.document.findFirst({
-      where: { id: documentId, userId },
-      select: { id: true, title: true, content: true, mainFilePath: true },
-    });
-
-    if (!document) {
+    // Chat is author-only in v1: it consumes quota and sends document content to a provider.
+    // A shared recipient, including a teammate, gets the same 404 as an unrelated user.
+    const chatAccess = await openWritableDocument(userId, documentId);
+    if (!chatAccess) {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
+    const document = {
+      id: chatAccess.document.id,
+      title: chatAccess.document.title,
+      content: chatAccess.document.content,
+      mainFilePath: chatAccess.document.mainFilePath,
+    };
 
     if (!process.env.OPENROUTER_API_KEY) {
       return NextResponse.json({ error: "AI provider not configured" }, { status: 503 });

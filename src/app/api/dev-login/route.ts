@@ -1,27 +1,44 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from 'next/server';
 import { signDevSession } from '@/src/lib/dev-session';
 
-// Dev-only auth bypass: create a session cookie for a seeded test user.
-// Only active when NODE_ENV=development.
+// Dev-only auth bypass: create a session cookie for a local test user.
+// Only active when NODE_ENV=development, the bypass flag is on, and the request arrived on
+// loopback. Passing an email creates the account if it does not exist yet, which is what lets the
+// multi-user browser and API checks run without a real identity provider.
 async function handleDevLogin(req: NextRequest) {
   if (process.env.NODE_ENV !== "development" || process.env.DEV_AUTH_BYPASS !== '1' || !['localhost', '127.0.0.1'].includes(req.nextUrl.hostname)) {
     return NextResponse.json({ error: "Only available in development" }, { status: 403 });
   }
 
   const { prisma } = await import("@/src/lib/db");
+  const { ensureDefaultPersonalWorkspace } = await import("@/src/lib/workspaces");
 
-  // Find or create the dev test user
-  const email = "dev@runes-ai.test";
-  let user = await prisma.user.findUnique({ where: { email } });
+  let requestedEmail = 'dev@runes-ai.test';
+  if (req.method === 'POST') {
+    try {
+      const body: unknown = await req.json();
+      const email = typeof body === 'object' && body !== null && 'email' in body ? (body as { email: unknown }).email : undefined;
+      if (typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        requestedEmail = email.trim().toLowerCase();
+      }
+    } catch {
+      // An empty body keeps the default dev account.
+    }
+  }
+
+  let user = await prisma.user.findUnique({ where: { email: requestedEmail } });
   if (!user) {
     user = await prisma.user.create({
       data: {
-        email,
-        firstName: "Dev",
-        lastName: "User",
+        email: requestedEmail,
+        firstName: requestedEmail.split('@')[0],
+        lastName: null,
       },
     });
   }
+
+  // Same first-login provisioning the Google sign-in path performs.
+  await ensureDefaultPersonalWorkspace(user.id);
 
   // The local test session is signed so callers cannot impersonate a user.
   const tokenPayload = {

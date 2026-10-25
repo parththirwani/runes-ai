@@ -16,7 +16,19 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  documents Document[]
+  // App-wide admin flag. It is only ever set by the controlled provisioning script
+  // (scripts/provision-admin.ts); nothing infers it from an email domain or a client claim.
+  isAdmin Boolean @default(false)
+
+  documents Document[] @relation("DocumentAuthor")
+  ownedWorkspaces Workspace[] @relation("WorkspaceOwner")
+  createdTeams Team[] @relation("TeamCreator")
+  teamMemberships TeamMember[]
+  sentInvitations Invitation[] @relation("InvitationInviter")
+  acceptedInvitations Invitation[] @relation("InvitationRecipient")
+  receivedWorkspaceGrants WorkspaceGrant[] @relation("WorkspaceGrantRecipient")
+  receivedDocumentGrants DocumentGrant[] @relation("DocumentGrantRecipient")
+  auditEvents AdminAuditEvent[] @relation("AuditActor")
 
   @@map("users")
 }
@@ -31,18 +43,27 @@ model Document {
   mainFilePath String  @default("main.tex")
   isFavorite   Boolean @default(false)
   slug         String
+  // `userId` is the immutable author. Editing rights always follow the author, never the
+  // containing workspace, so sharing a workspace never grants a write path.
   userId       String
-  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User    @relation("DocumentAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  // The collection workspace that holds this document. A document lives in exactly one.
+  // Deleting a workspace is refused while documents still point at it.
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   chatSessions ChatSession[]
   files        WorkspaceFile[]
   assets       DocumentAsset[]
+  grants       DocumentGrant[]
+  invitations  Invitation[]
 
-  @@unique([userId, title])
-  @@unique([userId, slug])
+  @@unique([workspaceId, title])
+  @@unique([workspaceId, slug])
   @@index([userId])
+  @@index([workspaceId])
   @@index([userId, isFavorite])
   @@map("documents")
 }
@@ -128,4 +149,186 @@ model Message {
 enum MessageRole {
   user
   assistant
+}
+
+// ---------------------------------------------------------------------------
+// Workspaces, teams, sharing and administration.
+//
+// "Workspace" here means a collection of documents. It is a different concept from
+// WorkspaceFile below, which is a file inside one document.
+// ---------------------------------------------------------------------------
+
+enum WorkspaceKind {
+  PERSONAL
+  TEAM
+}
+
+model Workspace {
+  id          String   @id @default(uuid())
+  name        String
+  kind        WorkspaceKind
+  // Exactly one of ownerUserId / teamId is set; the SQL CHECK in the migration enforces it.
+  ownerUserId String?
+  teamId      String?
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner       User?    @relation("WorkspaceOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  documents   Document[]
+  grants      WorkspaceGrant[]
+  invitations Invitation[]
+
+  @@unique([ownerUserId, name])
+  @@unique([teamId, name])
+  @@index([ownerUserId])
+  @@index([teamId])
+  @@map("workspaces")
+}
+
+enum TeamMemberRole {
+  ADMIN
+  MEMBER
+}
+
+model Team {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  createdById String?
+  createdBy   User?    @relation("TeamCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  archivedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members    TeamMember[]
+  workspaces Workspace[]
+  invitations Invitation[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String         @id @default(uuid())
+  teamId    String
+  team      Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      TeamMemberRole @default(MEMBER)
+  active    Boolean        @default(true)
+  joinedAt  DateTime       @default(now())
+  removedAt DateTime?
+
+  @@unique([teamId, userId])
+  @@index([userId])
+  @@map("team_members")
+}
+
+enum GrantPermission {
+  VIEW
+  // Reserved for a later release. No v1 route issues or honours EDIT.
+  EDIT
+}
+
+// A personal workspace shared with another user. Covers current and future documents
+// while active. Accepted grants only; a pending invitation is an Invitation row.
+model WorkspaceGrant {
+  id              String          @id @default(uuid())
+  workspaceId     String
+  workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  recipientUserId String
+  recipient       User            @relation("WorkspaceGrantRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  permission      GrantPermission @default(VIEW)
+  acceptedAt      DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([workspaceId, recipientUserId])
+  @@index([recipientUserId])
+  @@map("workspace_grants")
+}
+
+// A single document shared with another user, independent of the containing workspace.
+// It stays attached to the document when the document moves workspaces.
+model DocumentGrant {
+  id              String          @id @default(uuid())
+  documentId      String
+  document        Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  recipientUserId String
+  recipient       User            @relation("DocumentGrantRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  permission      GrantPermission @default(VIEW)
+  acceptedAt      DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([documentId, recipientUserId])
+  @@index([recipientUserId])
+  @@map("document_grants")
+}
+
+enum InvitationTarget {
+  TEAM
+  WORKSPACE
+  DOCUMENT
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+model Invitation {
+  id            String           @id @default(uuid())
+  target        InvitationTarget
+  // Normalized (trimmed, lowercased) address the invitation was issued to.
+  targetEmail   String
+  inviterUserId String
+  inviter       User             @relation("InvitationInviter", fields: [inviterUserId], references: [id], onDelete: Cascade)
+  // Exactly one of teamId / workspaceId / documentId is set (SQL CHECK).
+  teamId        String?
+  team          Team?            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  workspaceId   String?
+  workspace     Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  documentId    String?
+  document      Document?        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  status        InvitationStatus @default(PENDING)
+  // Only the SHA-256 of the one-use token is stored, so a database leak cannot be replayed.
+  tokenHash     String           @unique
+  expiresAt     DateTime
+  acceptedById  String?
+  acceptedBy    User?            @relation("InvitationRecipient", fields: [acceptedById], references: [id], onDelete: SetNull)
+  acceptedAt    DateTime?
+  revokedAt     DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([targetEmail, status])
+  @@index([teamId])
+  @@index([workspaceId])
+  @@index([documentId])
+  @@map("invitations")
+}
+
+// Append-only audit trail for administrative actions. Never stores document content
+// or invitation tokens.
+model AdminAuditEvent {
+  id          String   @id @default(uuid())
+  actorUserId String?
+  actor       User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  action      String
+  teamId      String?
+  workspaceId String?
+  documentId  String?
+  targetUserId String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([teamId])
+  @@index([actorUserId])
+  @@map("admin_audit_events")
 }

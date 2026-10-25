@@ -27,6 +27,19 @@ export type WorkspaceDocumentPayload = {
   mainFile: { path: string; revision: number; checksum: string } | null;
   files: WorkspaceFileMeta[];
   tree: TreeNode[];
+  /** Server-derived capabilities. Absent only for a brand new local document. */
+  capabilities?: {
+    canRead: boolean;
+    canCreate: boolean;
+    canEdit: boolean;
+    canShare: boolean;
+    canManageTeam: boolean;
+    source: string;
+  };
+  author?: { id: string; email: string; name: string } | null;
+  workspaceId?: string;
+  workspaceName?: string;
+  workspaceKind?: 'PERSONAL' | 'TEAM';
 };
 
 export type CompileResponse = {

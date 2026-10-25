@@ -6,6 +6,13 @@ import FileTabs from '@/src/app/components/editor/FileTabs';
 import { buildTree, type WorkspaceFileKind } from '@/src/lib/workspace-paths';
 import type { ManagedFile } from '@/src/hooks/useWorkspace';
 
+// WorkspacePanel renders the account menu, which reads the session; these tests are about the
+// file tree, so the session is stubbed instead of mounting a provider.
+vi.mock('next-auth/react', () => ({
+  useSession: () => ({ data: null, status: 'unauthenticated' }),
+  signOut: () => undefined,
+}));
+
 const noop = async () => undefined;
 
 function managed(path: string, kind: WorkspaceFileKind, overrides: Partial<ManagedFile> = {}): ManagedFile {

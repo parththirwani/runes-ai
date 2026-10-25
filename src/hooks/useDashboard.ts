@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import type { DocumentFormatValue } from '@/src/types/compilation';
+import type { WorkspaceSummary } from '@/src/app/components/dashboard/workspaceSwitcher';
+import { createDocumentsRuntime } from '@/src/lib/dashboard-runtime';
 
 export interface DashboardDocument {
   id: string;
@@ -13,7 +15,15 @@ export interface DashboardDocument {
   excerpt?: string;
   createdAt: string;
   updatedAt: string;
+  workspaceId?: string;
+  workspaceName?: string;
+  workspaceKind?: 'PERSONAL' | 'TEAM';
+  authorName?: string;
+  isAuthor?: boolean;
+  access?: 'Edit' | 'View';
 }
+
+export type { WorkspaceSummary } from '@/src/app/components/dashboard/workspaceSwitcher';
 
 export function useDashboard() {
   const router = useRouter();
@@ -28,29 +38,69 @@ export function useDashboard() {
   const [errorMessage, setErrorMessage] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
+  // Library scope. null means "every workspace the caller can read", which is what a visitor
+  // who has never touched the switcher expects.
+  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+
+  // The hook keeps React state; the runtime owns the URLs and the in-flight ordering. Its setters
+  // are stable, so a single instance survives re-renders and the stale-response token is shared
+  // across every load.
+  const runtime = useMemo(() => createDocumentsRuntime<DashboardDocument>({
+    setDocuments,
+    setWorkspaces: (list) => setWorkspaces(list as WorkspaceSummary[]),
+    setLoading,
+    setError,
+  }), []);
+
+  const fetchWorkspaces = useCallback(async () => {
+    try {
+      const response = await fetch('/api/workspaces');
+      if (!response.ok) return;
+      const data = await response.json();
+      setWorkspaces(data.workspaces || []);
+    } catch {
+      // The switcher simply stays empty; the document list still tells the user what failed.
+    }
+  }, []);
+
+  // The selected workspace travels to the server, and the runtime drops any response that a newer
+  // request has already superseded, so switching workspaces fast can never let an earlier scope's
+  // rows overwrite the current list.
+  const fetchDocuments = useCallback((workspaceId: string | null = null) => runtime.load(workspaceId), [runtime]);
+
   useEffect(() => {
     if (status === 'authenticated') {
-      fetchDocuments();
+      void fetchDocuments(selectedWorkspaceId);
+      void fetchWorkspaces();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
-  const fetchDocuments = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/document');
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch documents');
-      }
+  const selectWorkspace = useCallback((workspaceId: string | null) => {
+    setSelectedWorkspaceId(workspaceId);
+    void fetchDocuments(workspaceId);
+  }, [fetchDocuments]);
 
-      const data = await response.json();
-      setDocuments(data.documents || []);
+  const refresh = useCallback(() => fetchDocuments(selectedWorkspaceId), [fetchDocuments, selectedWorkspaceId]);
+
+  const createWorkspace = useCallback(async (name: string): Promise<string | null> => {
+    try {
+      const response = await fetch('/api/workspaces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return data.error || data.message || 'Could not create the workspace';
+      setWorkspaces(await (await fetch('/api/workspaces')).json().then((list) => list.workspaces || []));
+      setSelectedWorkspaceId(data.workspace?.id ?? null);
+      void fetchDocuments(data.workspace?.id ?? null);
+      return null;
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch documents');
-    } finally {
-      setLoading(false);
+      return err instanceof Error ? err.message : 'Could not create the workspace';
     }
-  };
+  }, [fetchDocuments]);
 
   const handleCreateDocument = async (title: string, format: DocumentFormatValue) => {
     setIsCreating(true);
@@ -60,7 +110,7 @@ export function useDashboard() {
       const response = await fetch('/api/document', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, format })
+        body: JSON.stringify({ title, format, ...(selectedWorkspaceId ? { workspaceId: selectedWorkspaceId } : {}) })
       });
 
       if (!response.ok) {
@@ -70,7 +120,9 @@ export function useDashboard() {
 
       const newDoc = await response.json();
       setShowCreateModal(false);
-      router.push(`/document/${newDoc.slug}`);
+      // New links open by document id: slugs are only unique per workspace, so a slug link can
+      // land on an older twin, and recipients cannot resolve slugs at all.
+      router.push(`/document/${newDoc.id ?? newDoc.slug}`);
     } catch (err: unknown) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to create document');
       setShowCreateModal(false);
@@ -82,15 +134,10 @@ export function useDashboard() {
 
   const handleDeleteClick = async (doc: DashboardDocument) => {
     try {
-      const response = await fetch(`/api/document/${doc.slug}`, {
-        method: 'DELETE'
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete document');
-      }
-
-      setDocuments((current) => current.filter((item) => item.slug !== doc.slug));
+      // Delete by id via the runtime: a slug could match a same-slug document in another workspace,
+      // and the slug-scoped author lookup would happily resolve and delete the wrong one.
+      await runtime.remove(doc);
+      setDocuments((current) => current.filter((item) => item.id !== doc.id));
     } catch (err: unknown) {
       const error = err instanceof Error ? err : new Error('Failed to delete document');
       setErrorMessage(error.message);
@@ -103,12 +150,9 @@ export function useDashboard() {
     const isFavorite = !doc.isFavorite;
     setDocuments((current) => current.map((item) => item.id === doc.id ? { ...item, isFavorite } : item));
     try {
-      const response = await fetch(`/api/document/${doc.slug}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isFavorite }),
-      });
-      if (!response.ok) throw new Error('Failed to update favorite');
+      // Toggle by id via the runtime, exactly like delete: the slug fallback let a same-slug twin in
+      // another workspace be favorited instead of the row the user actually clicked.
+      await runtime.setFavorite(doc, isFavorite);
     } catch (err: unknown) {
       setDocuments((current) => current.map((item) => item.id === doc.id ? { ...item, isFavorite: doc.isFavorite } : item));
       setErrorMessage(err instanceof Error ? err.message : 'Failed to update favorite');
@@ -129,5 +173,10 @@ export function useDashboard() {
     handleCreateDocument,
     handleDeleteClick,
     handleFavoriteToggle,
+    workspaces,
+    selectedWorkspaceId,
+    selectWorkspace,
+    createWorkspace,
+    refresh,
   };
 }

@@ -2,22 +2,7 @@ import { withAuth } from "@/src/lib/withAuth";
 import { compilationProducer } from "@/producer/queue";
 import { NextResponse } from "next/server";
 import { JobStatus } from "@/src/types/compilation";
-
-async function verifyJobOwnership(jobId: string, userId: string): Promise<{ ok: true } | { ok: false; response: NextResponse }> {
-  const jobDataStr = await compilationProducer.getRawJobData(jobId);
-  if (!jobDataStr) {
-    return { ok: false, response: NextResponse.json({ message: "Job not found" }, { status: 404 }) };
-  }
-  try {
-    const jobData = JSON.parse(jobDataStr);
-    if (jobData.userId !== userId) {
-      return { ok: false, response: NextResponse.json({ message: "Job not found" }, { status: 404 }) };
-    }
-    return { ok: true };
-  } catch {
-    return { ok: false, response: NextResponse.json({ message: "Job not found" }, { status: 404 }) };
-  }
-}
+import { authorizeJob } from "@/src/lib/job-access";
 
 export const GET = withAuth(async (req, session, context) => {
   try {
@@ -26,9 +11,11 @@ export const GET = withAuth(async (req, session, context) => {
       return NextResponse.json({ message: "Job ID is required" }, { status: 400 });
     }
 
-    const userId = session.user.id;
-    const ownership = await verifyJobOwnership(jobId, userId);
-    if (!ownership.ok) return ownership.response;
+    // Not "who submitted the job" but "who may still read this document": the job's documentId
+    // is resolved and current access is re-derived on every request, so a removal or a revoked
+    // share cuts off an old job id immediately.
+    const authorization = await authorizeJob(jobId, session.user.id, 'read');
+    if (!authorization.ok) return authorization.response;
 
     const status = await compilationProducer.getJobStatus(jobId);
     if (!status) {

@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { prisma } from "@/src/lib/db";
+import { ensureDefaultPersonalWorkspace } from "@/src/lib/workspaces";
 
 export const {
   handlers,
@@ -41,6 +42,12 @@ export const {
             },
           });
         }
+
+        // Every account gets exactly one default personal workspace, on the very first sign-in.
+        // Concurrent first requests resolve through the partial unique index, so this is safe to
+        // call on every login and doubles as the repair path for preexisting users.
+        const created = await prisma.user.findUnique({ where: { email: user.email! }, select: { id: true } });
+        if (created) await ensureDefaultPersonalWorkspace(created.id);
 
         return true;
       } catch (error) {

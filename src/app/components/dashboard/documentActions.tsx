@@ -1,18 +1,26 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
-import { Copy, Download, MoreHorizontal, PencilLine, Star, StarOff, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Copy, Download, MoreHorizontal, PencilLine, Share2, Star, StarOff, Trash2 } from "lucide-react";
 import { MorphIcon } from "../ui/morph-icon";
 import HoldToConfirm from "@/components/arc/hold-to-confirm/hold-to-confirm";
 import holdStyles from "@/components/arc/hold-to-confirm/hold-to-confirm.module.css";
 import { DOCUMENT_PATH } from "@/src/lib/paths";
+import { positionMenu } from "@/src/lib/menu-position";
 
 interface DocumentActionsProps {
-  document: { title: string; slug: string; isFavorite: boolean };
+  document: { id?: string; title: string; slug: string; isFavorite: boolean };
   onDelete: () => Promise<void>;
   onFavoriteChange: () => void;
   onDownload?: () => void;
+  /** False for a document the caller merely reads; every write action disappears then. */
+  canManage?: boolean;
+  /** Where "Open" goes. A recipient only has the document id, the author keeps the slug. */
+  openHref?: string;
+  onShare?: () => void;
+  onMove?: () => void;
 }
 
 /**
@@ -20,18 +28,50 @@ interface DocumentActionsProps {
  * neither touch nor keyboard users could reach. This is a real menu button;
  * the confirmation step itself is handled by the caller.
  */
-export default function DocumentActions({ document: doc, onDelete, onFavoriteChange, onDownload }: DocumentActionsProps) {
+export default function DocumentActions({ document: doc, onDelete, onFavoriteChange, onDownload, canManage = true, openHref, onShare, onMove }: DocumentActionsProps) {
   const [open, setOpen] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
   const [copied, setCopied] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+
+    const updatePosition = () => {
+      const button = buttonRef.current;
+      const menu = menuRef.current;
+      if (!button || !menu) return;
+      setMenuPosition(positionMenu(
+        button.getBoundingClientRect(),
+        { width: menu.offsetWidth, height: menu.offsetHeight },
+        { width: window.innerWidth, height: window.innerHeight },
+      ));
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open]);
+
+  const menuIsPositioned = menuPosition !== null;
+  useLayoutEffect(() => {
+    if (open && menuIsPositioned) {
+      menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    }
+  }, [open, menuIsPositioned]);
 
   useEffect(() => {
     if (!open) return undefined;
 
     const onPointerDown = (event: PointerEvent) => {
-      if (!wrapperRef.current?.contains(event.target as Node)) {
+      if (!wrapperRef.current?.contains(event.target as Node) && !menuRef.current?.contains(event.target as Node)) {
         setOpen(false);
       }
     };
@@ -52,9 +92,25 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
 
   const stop = (event: React.MouseEvent) => event.stopPropagation();
 
+  const onMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])') ?? []);
+    if (!items.length) return;
+    event.preventDefault();
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? items.length - 1
+        : event.key === 'ArrowDown' ? (current + 1) % items.length
+          : (current - 1 + items.length) % items.length;
+    items[next]?.focus();
+  };
+
+  // Prefer the id everywhere: the slug fallback only serves rows from before id-keyed links.
+  const href = openHref ?? DOCUMENT_PATH(doc.id ?? doc.slug);
+
   const copyLink = async () => {
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}${DOCUMENT_PATH(doc.slug)}`);
+      await navigator.clipboard.writeText(`${window.location.origin}${href}`);
       setCopied(true);
     } catch {
       setCopied(false);
@@ -69,6 +125,7 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
         ref={buttonRef}
         type="button"
         onClick={() => {
+          setMenuPosition(null);
           setOpen((value) => !value);
         }}
         aria-haspopup="menu"
@@ -79,20 +136,24 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
       </button>
 
-      {open && (
+      {open && createPortal((
         <div
+          ref={menuRef}
           role="menu"
           aria-label={`Actions for ${doc.title}`}
-          className="absolute right-0 z-30 mt-1 w-44 max-w-[calc(100vw-24px)] rounded-md border border-border bg-surface-overlay p-1 shadow-overlay"
+          onClick={stop}
+          onKeyDown={onMenuKeyDown}
+          style={{ left: menuPosition?.left ?? 0, top: menuPosition?.top ?? 0, visibility: menuPosition ? 'visible' : 'hidden' }}
+          className="fixed z-[60] max-h-[calc(100dvh-16px)] w-44 max-w-[calc(100vw-16px)] overflow-y-auto rounded-md border border-border bg-surface-overlay p-1 shadow-overlay"
         >
           <Link
-            href={DOCUMENT_PATH(doc.slug)}
+            href={href}
             role="menuitem"
             onClick={() => setOpen(false)}
             className="flex items-center gap-2 px-3 py-2.5 text-sm text-foreground transition-colors hover:bg-surface-raised"
           >
-            <PencilLine className="h-4 w-4 text-meta" aria-hidden="true" />
-            Open and edit
+            {canManage ? <PencilLine className="h-4 w-4 text-meta" aria-hidden="true" /> : <Download className="h-4 w-4 text-meta" aria-hidden="true" />}
+            {canManage ? "Open and edit" : "Open"}
           </Link>
           <button
             type="button"
@@ -119,6 +180,35 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
               Download
             </button>
           )}
+          {onShare && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onShare();
+              }}
+              className="flex w-full items-center gap-2 border-t border-border-subtle px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-surface-raised"
+            >
+              <Share2 className="h-4 w-4 text-meta" aria-hidden="true" />
+              Share
+            </button>
+          )}
+          {onMove && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onMove();
+              }}
+              className="flex w-full items-center gap-2 border-t border-border-subtle px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-surface-raised"
+            >
+              <ArrowRightLeft className="h-4 w-4 text-meta" aria-hidden="true" />
+              Move to another workspace
+            </button>
+          )}
+          {canManage && (
           <button
             type="button"
             role="menuitem"
@@ -133,8 +223,11 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
             </MorphIcon>
             {doc.isFavorite ? "Remove favorite" : "Add favorite"}
           </button>
+          )}
+          {canManage && (
           <div className="border-t border-border-subtle pt-1" onClick={(event) => event.stopPropagation()}>
             <HoldToConfirm
+              role="menuitem"
               label="Hold to delete"
               icon={<Trash2 className="h-4 w-4" aria-hidden="true" />}
               confirmedLabel="Deleting…"
@@ -151,8 +244,9 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
               className={holdStyles.menuItem}
             />
           </div>
+          )}
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }

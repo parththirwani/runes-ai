@@ -20,11 +20,24 @@ type Row = {
   storageKey: string | null;
 };
 
-type Doc = { id: string; slug: string; title: string; userId: string; content: string | null; mainFilePath: string; format: 'LATEX' | 'MARKDOWN' };
+type Doc = { id: string; slug: string; title: string; userId: string; workspaceId: string; content: string | null; mainFilePath: string; format: 'LATEX' | 'MARKDOWN' };
 
-function fakePrisma(documents: Doc[], files: Row[]) {
+type UserRow = { id: string; email: string; firstName: string | null; lastName: string | null; isAdmin: boolean };
+type WorkspaceRow = { id: string; name: string; kind: 'PERSONAL' | 'TEAM'; ownerUserId: string | null; teamId: string | null; isDefault: boolean };
+
+/** Every seeded user gets one default personal workspace, mirroring the backfill. */
+function workspaceFor(userId: string): WorkspaceRow {
+  return { id: 'ws-' + userId, name: 'Personal', kind: 'PERSONAL', ownerUserId: userId, teamId: null, isDefault: true };
+}
+
+function fakePrisma(documents: Doc[], files: Row[], users: UserRow[] = [], workspaces: WorkspaceRow[] = []) {
   let nextId = 1;
   const rows = files;
+  const people: UserRow[] = users.length > 0 ? users : Array.from(new Set(documents.map((doc) => doc.userId))).map((id) => ({ id, email: id + '@example.test', firstName: null, lastName: null, isAdmin: false }));
+  const collections: WorkspaceRow[] = workspaces.length > 0 ? workspaces : Array.from(new Set(documents.map((doc) => doc.workspaceId))).map((id) => {
+    const owner = documents.find((doc) => doc.workspaceId === id)?.userId ?? null;
+    return { id, name: 'Personal', kind: 'PERSONAL', ownerUserId: owner, teamId: null, isDefault: true };
+  });
   const match = (where: { documentId_path: { documentId: string; path: string } }) =>
     rows.find((row) => row.documentId === where.documentId_path.documentId && row.path === where.documentId_path.path) || null;
 
@@ -48,6 +61,22 @@ function fakePrisma(documents: Doc[], files: Row[]) {
       },
       async delete() { return null; },
     },
+    user: {
+      async findUnique({ where }: { where: { id: string } }) {
+        const user = people.find((row) => row.id === where.id);
+        return user ? { ...user } : null;
+      },
+    },
+    workspace: {
+      async findUnique({ where }: { where: { id: string } }) {
+        const workspace = collections.find((row) => row.id === where.id);
+        return workspace ? { ...workspace, team: null } : null;
+      },
+    },
+    // No shares or team memberships in this fixture: access is author-only here.
+    teamMember: { async findFirst() { return null; } },
+    workspaceGrant: { async findFirst() { return null; } },
+    documentGrant: { async findFirst() { return null; } },
     workspaceFile: {
       async findUnique({ where }: { where: { documentId_path: { documentId: string; path: string } } }) {
         return match(where);
@@ -130,7 +159,7 @@ const OTHER = 'user-other';
 const DOC_ID = 'doc-1';
 
 function seed(overrides: Partial<Doc> = {}) {
-  const documents: Doc[] = [{ id: DOC_ID, slug: 'paper', title: 'Paper', userId: OWNER, content: 'legacy body', mainFilePath: 'main.tex', format: 'LATEX', ...overrides }];
+  const documents: Doc[] = [{ id: DOC_ID, slug: 'paper', title: 'Paper', userId: OWNER, workspaceId: 'ws-' + OWNER, content: 'legacy body', mainFilePath: 'main.tex', format: 'LATEX', ...overrides }];
   const files: Row[] = [{
     id: 'file-main', documentId: DOC_ID, path: 'main.tex', kind: 'tex', mimeType: 'text/x-tex',
     sizeBytes: 11, checksum: sha('legacy body'), revision: 3, content: 'legacy body', storageKey: null,
@@ -170,34 +199,34 @@ describe('workspace file service', () => {
     seed();
     expect(await readWorkspaceTree(OTHER, 'paper')).toBeNull();
     expect(await readWorkspaceFile(OTHER, 'paper', 'main.tex')).toBeNull();
-    expect(await writeTextFile({ userId: OTHER, slug: 'paper', rawPath: 'main.tex', content: 'x' })).toBeNull();
-    expect(await moveFile({ userId: OTHER, slug: 'paper', from: 'main.tex', to: 'a.tex' })).toBeNull();
+    expect(await writeTextFile({ userId: OTHER, ref: 'paper', rawPath: 'main.tex', content: 'x' })).toBeNull();
+    expect(await moveFile({ userId: OTHER, ref: 'paper', from: 'main.tex', to: 'a.tex' })).toBeNull();
     expect(await deleteFile(OTHER, 'paper', 'main.tex')).toBeNull();
     expect(await setMainFile(OTHER, 'paper', 'main.tex')).toBeNull();
-    expect(await uploadFile({ userId: OTHER, slug: 'paper', rawPath: 'x.png', bytes: Buffer.from('x') })).toBeNull();
+    expect(await uploadFile({ userId: OTHER, ref: 'paper', rawPath: 'x.png', bytes: Buffer.from('x') })).toBeNull();
   });
 
   it('rejects paths that try to leave the workspace', async () => {
     seed();
     for (const bad of ['../../etc/passwd', '/etc/passwd.tex', 'a/../../b.tex', '..\\..\\windows.tex', './x.tex', 'x/../y.tex', '', '   ', 'a//b.tex']) {
       expect(() => readWorkspaceFileNeedsPath(bad)).not.toThrow();
-      await expect(writeTextFile({ userId: OWNER, slug: 'paper', rawPath: bad, content: 'x' })).rejects.toBeInstanceOf(WorkspacePathError);
+      await expect(writeTextFile({ userId: OWNER, ref: 'paper', rawPath: bad, content: 'x' })).rejects.toBeInstanceOf(WorkspacePathError);
     }
   });
 
   it('rejects unsupported file types with 415', async () => {
     seed();
-    const error = await writeTextFile({ userId: OWNER, slug: 'paper', rawPath: 'payload.exe', content: 'x' }).catch((e) => e);
+    const error = await writeTextFile({ userId: OWNER, ref: 'paper', rawPath: 'payload.exe', content: 'x' }).catch((e) => e);
     expect(error).toBeInstanceOf(WorkspacePathError);
     expect((error as WorkspacePathError).status).toBe(415);
   });
 
   it('enforces the per file byte limit', async () => {
     seed();
-    const tooBig = await writeTextFile({ userId: OWNER, slug: 'paper', rawPath: 'big.tex', content: 'x'.repeat(1024 * 1024 + 1) }).catch((e) => e);
+    const tooBig = await writeTextFile({ userId: OWNER, ref: 'paper', rawPath: 'big.tex', content: 'x'.repeat(1024 * 1024 + 1) }).catch((e) => e);
     expect((tooBig as WorkspaceError).status).toBe(413);
 
-    const oversizedImage = await uploadFile({ userId: OWNER, slug: 'paper', rawPath: 'huge.png', bytes: Buffer.alloc(5 * 1024 * 1024 + 1) }).catch((e) => e);
+    const oversizedImage = await uploadFile({ userId: OWNER, ref: 'paper', rawPath: 'huge.png', bytes: Buffer.alloc(5 * 1024 * 1024 + 1) }).catch((e) => e);
     expect((oversizedImage as WorkspaceError).status).toBe(413);
   });
 
@@ -210,7 +239,7 @@ describe('workspace file service', () => {
         content: null, storageKey: 'documents/doc-1/f' + index + '.png',
       });
     }
-    const oneMore = await uploadFile({ userId: OWNER, slug: 'paper', rawPath: 'figures/f10.png', bytes: Buffer.alloc(1024 * 1024) }).catch((e) => e);
+    const oneMore = await uploadFile({ userId: OWNER, ref: 'paper', rawPath: 'figures/f10.png', bytes: Buffer.alloc(1024 * 1024) }).catch((e) => e);
     expect((oneMore as WorkspaceError).status).toBe(413);
   });
 
@@ -222,41 +251,41 @@ describe('workspace file service', () => {
         mimeType: 'text/x-tex', sizeBytes: 1, checksum: 'b'.repeat(64), revision: 1, content: 'x', storageKey: null,
       });
     }
-    const oneTooMany = await writeTextFile({ userId: OWNER, slug: 'paper', rawPath: 'generated/extra.tex', content: 'x' }).catch((e) => e);
+    const oneTooMany = await writeTextFile({ userId: OWNER, ref: 'paper', rawPath: 'generated/extra.tex', content: 'x' }).catch((e) => e);
     expect((oneTooMany as WorkspaceError).status).toBe(413);
   });
 
   it('refuses a second name that differs only by case', async () => {
     seed();
-    const error = await writeTextFile({ userId: OWNER, slug: 'paper', rawPath: 'MAIN.TEX', content: 'clash' }).catch((e) => e);
+    const error = await writeTextFile({ userId: OWNER, ref: 'paper', rawPath: 'MAIN.TEX', content: 'clash' }).catch((e) => e);
     expect((error as WorkspaceError).status).toBe(409);
   });
 
   it('rejects a write based on a stale revision', async () => {
     seed();
-    const result = await writeTextFile({ userId: OWNER, slug: 'paper', rawPath: 'main.tex', content: 'changed bytes', baseRevision: 2 });
+    const result = await writeTextFile({ userId: OWNER, ref: 'paper', rawPath: 'main.tex', content: 'changed bytes', baseRevision: 2 });
     expect(result && 'conflict' in result).toBe(true);
   });
 
   it('does not bump the revision when the saved bytes are identical', async () => {
     const { files } = seed();
     const before = files.find((row) => row.path === 'main.tex')!;
-    const result = await writeTextFile({ userId: OWNER, slug: 'paper', rawPath: 'main.tex', content: before.content! });
+    const result = await writeTextFile({ userId: OWNER, ref: 'paper', rawPath: 'main.tex', content: before.content! });
     expect(result && 'unchanged' in result && result.unchanged).toBe(true);
     expect(before.revision).toBe(3);
   });
 
   it('bumps the revision when the bytes change', async () => {
     const { files } = seed();
-    await writeTextFile({ userId: OWNER, slug: 'paper', rawPath: 'main.tex', content: 'different bytes' });
+    await writeTextFile({ userId: OWNER, ref: 'paper', rawPath: 'main.tex', content: 'different bytes' });
     expect(files.find((row) => row.path === 'main.tex')!.revision).toBe(4);
   });
 
   it('keeps the legacy content column pointed at the main file', async () => {
     const { documents } = seed();
-    await writeTextFile({ userId: OWNER, slug: 'paper', rawPath: 'main.tex', content: 'new main source' });
+    await writeTextFile({ userId: OWNER, ref: 'paper', rawPath: 'main.tex', content: 'new main source' });
     expect(documents[0].content).toBe('new main source');
-    await writeTextFile({ userId: OWNER, slug: 'paper', rawPath: 'chapters/other.tex', content: 'not main' });
+    await writeTextFile({ userId: OWNER, ref: 'paper', rawPath: 'chapters/other.tex', content: 'not main' });
     expect(documents[0].content).toBe('new main source');
   });
 
@@ -264,7 +293,7 @@ describe('workspace file service', () => {
     const { documents, files } = seed({ format: 'MARKDOWN', content: '# Original' });
     files.length = 0;
 
-    const result = await writeTextFile({ userId: OWNER, slug: 'paper', rawPath: 'main.md', content: '# Edited' });
+    const result = await writeTextFile({ userId: OWNER, ref: 'paper', rawPath: 'main.md', content: '# Edited' });
 
     expect(result && 'file' in result && result.file.path).toBe('main.md');
     expect(files.find((row) => row.path === 'main.md')?.content).toBe('# Edited');
@@ -274,7 +303,7 @@ describe('workspace file service', () => {
 
   it('follows the main file pointer when it is renamed or moved', async () => {
     const { documents, files } = seed();
-    const moved = await moveFile({ userId: OWNER, slug: 'paper', from: 'main.tex', to: 'paper/main.tex' });
+    const moved = await moveFile({ userId: OWNER, ref: 'paper', from: 'main.tex', to: 'paper/main.tex' });
     expect(moved && moved !== 'notfound' && moved !== 'exists' && moved.mainFilePath).toBe('paper/main.tex');
     expect(documents[0].mainFilePath).toBe('paper/main.tex');
     expect(files.some((row) => row.path === 'paper/main.tex')).toBe(true);
@@ -284,7 +313,7 @@ describe('workspace file service', () => {
     const { documents, files } = seed({ format: 'MARKDOWN', content: '# Original' });
     files.length = 0;
 
-    const moved = await moveFile({ userId: OWNER, slug: 'paper', from: 'main.md', to: 'notes.md' });
+    const moved = await moveFile({ userId: OWNER, ref: 'paper', from: 'main.md', to: 'notes.md' });
 
     expect(moved && moved !== 'notfound' && moved !== 'exists' && moved.mainFilePath).toBe('notes.md');
     expect(documents[0].mainFilePath).toBe('notes.md');
@@ -332,12 +361,12 @@ describe('workspace file service', () => {
 
   it('stores binary uploads by content and refuses empty ones', async () => {
     seed();
-    const empty = await uploadFile({ userId: OWNER, slug: 'paper', rawPath: 'figures/x.png', bytes: Buffer.alloc(0) }).catch((e) => e);
+    const empty = await uploadFile({ userId: OWNER, ref: 'paper', rawPath: 'figures/x.png', bytes: Buffer.alloc(0) }).catch((e) => e);
     expect((empty as WorkspaceError).status).toBe(400);
-    const uploaded = await uploadFile({ userId: OWNER, slug: 'paper', rawPath: 'figures/plot.png', bytes: Buffer.from([1, 2, 3, 4]) });
+    const uploaded = await uploadFile({ userId: OWNER, ref: 'paper', rawPath: 'figures/plot.png', bytes: Buffer.from([1, 2, 3, 4]) });
     expect(uploaded!.kind).toBe('image');
     expect(uploaded!.checksum.length).toBe(64);
-    const again = await uploadFile({ userId: OWNER, slug: 'paper', rawPath: 'figures/plot.png', bytes: Buffer.from([1, 2, 3, 4]) });
+    const again = await uploadFile({ userId: OWNER, ref: 'paper', rawPath: 'figures/plot.png', bytes: Buffer.from([1, 2, 3, 4]) });
     expect(again!.revision).toBe(uploaded!.revision);
   });
 
