@@ -4,6 +4,7 @@ import { withAuth } from "@/src/lib/withAuth";
 import { createDocumentSchema } from "@/src/schema/documentSchema";
 import { latexTemplate, markdownTemplate } from "@/src/lib/templates";
 import { plainTextExcerpt } from "@/src/lib/excerpt";
+import { ensureDefaultPersonalWorkspace } from "@/src/lib/workspace-ownership";
 import { NextResponse } from "next/server";
 import type { ZodError } from 'zod';
 
@@ -36,6 +37,11 @@ export const POST = withAuth(async (req, session) => {
     const format = parsed.data.format ?? "LATEX";
     const userId = session.user.id;
 
+    // Every document belongs to exactly one collection workspace. Legacy clients that do
+    // not name one land in the author's default personal workspace, which is created on
+    // demand so a brand new account can create its first document.
+    const { workspaceId } = await ensureDefaultPersonalWorkspace(prisma, userId);
+
     // Use transaction-safe unique constraint instead of manual check
     const slug = generateSlug(title);
     const source = content ?? (format === "MARKDOWN" ? markdownTemplate(title.trim()) : latexTemplate(title.trim()));
@@ -48,6 +54,7 @@ export const POST = withAuth(async (req, session) => {
         mainFilePath: format === "MARKDOWN" ? "main.md" : "main.tex",
         slug,
         userId,
+        workspaceId,
       },
     });
 

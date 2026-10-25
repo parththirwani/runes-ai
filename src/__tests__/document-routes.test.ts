@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   delete: vi.fn(),
   addJob: vi.fn(),
   rateLimit: vi.fn(),
+  findDefaultWorkspace: vi.fn(),
 }));
 
 vi.mock('@/src/lib/withAuth', () => ({
@@ -26,6 +27,8 @@ vi.mock('@/src/lib/db', () => ({
       delete: mocks.delete,
     },
     documentAsset: { findMany: vi.fn().mockResolvedValue([]) },
+    // Documents now live in a collection workspace; creation resolves the author's default.
+    workspace: { findFirst: mocks.findDefaultWorkspace, create: vi.fn() },
   },
 }));
 vi.mock('@/producer/queue', () => ({ compilationProducer: { addJob: mocks.addJob } }));
@@ -48,6 +51,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.userId = 'owner';
   mocks.rateLimit.mockResolvedValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 });
+  mocks.findDefaultWorkspace.mockResolvedValue({ id: 'ws-default' });
 });
 
 describe('POST /api/document (creation)', () => {
@@ -57,6 +61,7 @@ describe('POST /api/document (creation)', () => {
     expect(res.status).toBe(201);
     const body = mocks.create.mock.calls[0][0].data;
     expect(body.format).toBe('MARKDOWN');
+    expect(body.workspaceId).toBe('ws-default');
     expect(body.content.startsWith('# Notes')).toBe(true);
     expect(body.content).not.toContain('\\documentclass');
   });

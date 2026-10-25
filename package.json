@@ -10,6 +10,9 @@
     "worker:dev": "bun --watch worker/index.ts",
     "dev:all": "concurrently \"bun run dev\" \"bun run worker:dev\"",
     "migrate:workspaces": "bun run scripts/migrate-workspaces.ts",
+    "migrate:workspace-ownership": "bun run scripts/migrate-workspace-ownership.ts",
+    "verify:workspace-ownership": "bun run scripts/migrate-workspace-ownership.ts --verify",
+    "provision:admin": "bun run scripts/provision-admin.ts",
     "bench": "node scripts/bench/bench.mjs"
   },
   "dependencies": {
