@@ -279,11 +279,11 @@ export async function revokeInvitation(invitationId: string, actorUserId: string
   const invitation = await prisma.invitation.findUnique({ where: { id: invitationId } });
   if (!invitation) return null;
   if (invitation.inviterUserId !== actorUserId) return { forbidden: true as const };
-  await prisma.invitation.updateMany({
+  const result = await prisma.invitation.updateMany({
     where: { id: invitationId, status: 'PENDING', revokedAt: null },
     data: { status: 'REVOKED', revokedAt: new Date() },
   });
-  return { forbidden: false as const };
+  return { forbidden: false as const, revoked: result.count > 0 };
 }
 
 /** Marks every still-pending invitation past its expiry as EXPIRED. Safe to call repeatedly. */

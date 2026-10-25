@@ -37,7 +37,6 @@ export type ShareRow = {
 
 function statusOf(invitation: { status: string; expiresAt: Date }): ShareRow['status'] {
   if (invitation.status === 'REVOKED') return 'revoked';
-  if (invitation.status === 'ACCEPTED') return 'active';
   if (invitation.expiresAt.getTime() <= Date.now()) return 'expired';
   return 'pending';
 }
@@ -45,7 +44,7 @@ function statusOf(invitation: { status: string; expiresAt: Date }): ShareRow['st
 async function sharesForWorkspace(workspaceId: string): Promise<ShareRow[]> {
   const [grants, invitations] = await Promise.all([
     prisma.workspaceGrant.findMany({ where: { workspaceId }, orderBy: { createdAt: 'asc' } }),
-    prisma.invitation.findMany({ where: { workspaceId, target: 'WORKSPACE' }, orderBy: { createdAt: 'desc' }, take: 100 }),
+    prisma.invitation.findMany({ where: { workspaceId, target: 'WORKSPACE', status: { not: 'ACCEPTED' } }, orderBy: { createdAt: 'desc' }, take: 100 }),
   ]);
   const userIds = grants.map((grant) => grant.recipientUserId);
   const recipients = userIds.length > 0
@@ -78,7 +77,7 @@ async function sharesForWorkspace(workspaceId: string): Promise<ShareRow[]> {
 async function sharesForDocument(documentId: string): Promise<ShareRow[]> {
   const [grants, invitations] = await Promise.all([
     prisma.documentGrant.findMany({ where: { documentId }, orderBy: { createdAt: 'asc' } }),
-    prisma.invitation.findMany({ where: { documentId, target: 'DOCUMENT' }, orderBy: { createdAt: 'desc' }, take: 100 }),
+    prisma.invitation.findMany({ where: { documentId, target: 'DOCUMENT', status: { not: 'ACCEPTED' } }, orderBy: { createdAt: 'desc' }, take: 100 }),
   ]);
   const userIds = grants.map((grant) => grant.recipientUserId);
   const recipients = userIds.length > 0
@@ -175,7 +174,8 @@ export async function revokeWorkspaceShare(input: { actorUserId: string; workspa
   }
   const invitation = await prisma.invitation.findUnique({ where: { id: input.shareId } });
   if (invitation && invitation.workspaceId === input.workspaceId) {
-    await revokeInvitation(invitation.id, input.actorUserId);
+    const result = await revokeInvitation(invitation.id, input.actorUserId);
+    if (!result?.revoked) throw new SharingError('Only pending invitations can be revoked', 409);
     await recordAuditEvent({ actorUserId: input.actorUserId, action: 'workspace.share.revoke', workspaceId: input.workspaceId, metadata: { invitationOnly: true } });
     return { kind: 'invitation' as const };
   }
@@ -194,7 +194,8 @@ export async function revokeDocumentShare(input: { actorUserId: string; document
   }
   const invitation = await prisma.invitation.findUnique({ where: { id: input.shareId } });
   if (invitation && invitation.documentId === access.document.id) {
-    await revokeInvitation(invitation.id, input.actorUserId);
+    const result = await revokeInvitation(invitation.id, input.actorUserId);
+    if (!result?.revoked) throw new SharingError('Only pending invitations can be revoked', 409);
     await recordAuditEvent({ actorUserId: input.actorUserId, action: 'document.share.revoke', documentId: access.document.id, metadata: { invitationOnly: true } });
     return { kind: 'invitation' as const };
   }

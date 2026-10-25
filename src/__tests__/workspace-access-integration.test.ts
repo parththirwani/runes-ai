@@ -10,7 +10,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@/src/lib/db';
-import { getDocumentAccess, getAppAdminUser } from '@/src/lib/access';
+import { getDocumentAccess, getWorkspaceAccess, getAppAdminUser } from '@/src/lib/access';
 import {
   createDocumentInWorkspace,
   ensureDefaultPersonalWorkspace,
@@ -18,9 +18,9 @@ import {
   moveDocument,
   WorkspaceInputError,
 } from '@/src/lib/workspaces';
-import { createInvitation, acceptInvitation, previewInvitation, revokeInvitation } from '@/src/lib/invitations';
+import { acceptInvitation, previewInvitation, revokeInvitation } from '@/src/lib/invitations';
 import { createTeam, inviteTeamMember, listTeamMembers, removeTeamMember, TeamError } from '@/src/lib/teams';
-import { shareDocumentWithEmail, revokeDocumentShare, listDocumentShares, SharingError } from '@/src/lib/sharing';
+import { shareDocumentWithEmail, revokeDocumentShare, listDocumentShares, shareWorkspaceWithEmail, revokeWorkspaceShare, listWorkspaceShares, SharingError } from '@/src/lib/sharing';
 
 const suite = process.env.DATABASE_URL ? describe : describe.skip;
 
@@ -126,13 +126,41 @@ suite('workspace access against a real database', () => {
     expect((await prisma.invitation.findUnique({ where: { id: invitation.id } }))?.status).toBe('ACCEPTED');
     expect(await getDocumentAccess(actors.recipient.userId, document.id)).not.toBeNull();
 
-    const [share] = await listDocumentShares(actors.author.userId, document.id);
+    const shares = await listDocumentShares(actors.author.userId, document.id);
+    expect(shares.filter((share) => share.status === 'active')).toMatchObject([{ kind: 'grant', email: actors.recipient.email }]);
+    expect(shares.some((share) => share.id === invitation.id)).toBe(false);
+    await expect(revokeDocumentShare({ actorUserId: actors.author.userId, documentId: document.id, shareId: invitation.id }))
+      .rejects.toMatchObject({ status: 409 });
+
+    const [share] = shares;
     await revokeDocumentShare({ actorUserId: actors.author.userId, documentId: document.id, shareId: share.id });
     expect(await getDocumentAccess(actors.recipient.userId, document.id)).toBeNull();
+    expect((await prisma.invitation.findUnique({ where: { id: invitation.id } }))?.status).toBe('ACCEPTED');
 
     // A recipient may not re-share, and a non-author may not move or delete.
     await expect(shareDocumentWithEmail({ actorUserId: actors.recipient.userId, documentId: document.id, email: actors.teammate.email })).rejects.toBeInstanceOf(SharingError);
     await expect(moveDocument({ userId: actors.recipient.userId, documentId: document.id, toWorkspaceId: actors.teammate.workspaceId })).rejects.toBeInstanceOf(WorkspaceInputError);
+  });
+
+  it('lists one revocable active workspace grant while retaining accepted invitation history', async () => {
+    const invitation = await shareWorkspaceWithEmail({ actorUserId: actors.author.userId, workspaceId: actors.author.workspaceId, email: actors.recipient.email });
+    const token = inviteUrlToken(invitation);
+    expect((await listWorkspaceShares(actors.author.userId, actors.author.workspaceId)).find((share) => share.id === invitation.id))
+      .toMatchObject({ kind: 'invitation', status: 'pending' });
+
+    await expect(acceptInvitation(token, { userId: actors.recipient.userId, email: actors.recipient.email })).resolves.toMatchObject({ ok: true });
+    expect((await getWorkspaceAccess(actors.recipient.userId, actors.author.workspaceId))?.capabilities.source).toBe('workspace-grant');
+
+    const shares = await listWorkspaceShares(actors.author.userId, actors.author.workspaceId);
+    expect(shares.filter((share) => share.status === 'active')).toMatchObject([{ kind: 'grant', email: actors.recipient.email }]);
+    expect(shares.some((share) => share.id === invitation.id)).toBe(false);
+    await expect(revokeWorkspaceShare({ actorUserId: actors.author.userId, workspaceId: actors.author.workspaceId, shareId: invitation.id }))
+      .rejects.toMatchObject({ status: 409 });
+
+    await expect(revokeWorkspaceShare({ actorUserId: actors.author.userId, workspaceId: actors.author.workspaceId, shareId: shares[0].id }))
+      .resolves.toMatchObject({ kind: 'grant' });
+    expect(await getWorkspaceAccess(actors.recipient.userId, actors.author.workspaceId)).toBeNull();
+    expect((await prisma.invitation.findUnique({ where: { id: invitation.id } }))?.status).toBe('ACCEPTED');
   });
 
   it('honours expired and revoked invitation tokens', async () => {
