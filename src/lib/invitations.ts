@@ -234,11 +234,16 @@ export async function acceptInvitation(token: string, viewer: { userId: string; 
   }
 
   await prisma.$transaction(async (tx) => {
-    const fresh = await tx.invitation.findUnique({ where: { id: invitation.id } });
-    if (!fresh || fresh.status !== 'PENDING' || fresh.revokedAt !== null || fresh.expiresAt.getTime() <= Date.now()) {
+    const now = new Date();
+    // Claim the pending token before granting access. The conditional update locks this row,
+    // so a concurrent revocation cannot slip between validation and grant creation.
+    const claimed = await tx.invitation.updateMany({
+      where: { id: invitation.id, status: 'PENDING', revokedAt: null, expiresAt: { gt: now } },
+      data: { status: 'ACCEPTED', acceptedById: viewer.userId, acceptedAt: now },
+    });
+    if (claimed.count !== 1) {
       throw new InvitationError('This invitation is no longer valid', 410);
     }
-    const now = new Date();
 
     if (invitation.target === 'TEAM') {
       if (!invitation.teamId) throw new InvitationError('This invitation is incomplete', 410);
@@ -264,7 +269,6 @@ export async function acceptInvitation(token: string, viewer: { userId: string; 
       });
     }
 
-    await tx.invitation.update({ where: { id: invitation.id }, data: { status: 'ACCEPTED', acceptedById: viewer.userId, acceptedAt: now } });
   });
 
   return { ok: true, preview };
@@ -275,7 +279,10 @@ export async function revokeInvitation(invitationId: string, actorUserId: string
   const invitation = await prisma.invitation.findUnique({ where: { id: invitationId } });
   if (!invitation) return null;
   if (invitation.inviterUserId !== actorUserId) return { forbidden: true as const };
-  await prisma.invitation.update({ where: { id: invitationId }, data: { status: 'REVOKED', revokedAt: new Date() } });
+  await prisma.invitation.updateMany({
+    where: { id: invitationId, status: 'PENDING', revokedAt: null },
+    data: { status: 'REVOKED', revokedAt: new Date() },
+  });
   return { forbidden: false as const };
 }
 

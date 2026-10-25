@@ -120,6 +120,12 @@ suite('workspace access against a real database', () => {
     await expect(acceptInvitation(token, { userId: actors.recipient.userId, email: actors.recipient.email })).resolves.toMatchObject({ ok: true });
     expect(await prisma.documentGrant.count({ where: { documentId: document.id, recipientUserId: actors.recipient.userId } })).toBe(1);
 
+    // A late cancellation of the invitation cannot rewrite its accepted state. The grant is
+    // revoked separately, through the share endpoint below.
+    await revokeInvitation(invitation.id, actors.author.userId);
+    expect((await prisma.invitation.findUnique({ where: { id: invitation.id } }))?.status).toBe('ACCEPTED');
+    expect(await getDocumentAccess(actors.recipient.userId, document.id)).not.toBeNull();
+
     const [share] = await listDocumentShares(actors.author.userId, document.id);
     await revokeDocumentShare({ actorUserId: actors.author.userId, documentId: document.id, shareId: share.id });
     expect(await getDocumentAccess(actors.recipient.userId, document.id)).toBeNull();
