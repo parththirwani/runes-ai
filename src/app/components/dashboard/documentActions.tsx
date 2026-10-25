@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { ArrowRightLeft, Copy, Download, MoreHorizontal, PencilLine, Share2, Star, StarOff, Trash2 } from "lucide-react";
 import { MorphIcon } from "../ui/morph-icon";
 import HoldToConfirm from "@/components/arc/hold-to-confirm/hold-to-confirm";
 import holdStyles from "@/components/arc/hold-to-confirm/hold-to-confirm.module.css";
 import { DOCUMENT_PATH } from "@/src/lib/paths";
+import { positionMenu } from "@/src/lib/menu-position";
 
 interface DocumentActionsProps {
   document: { id?: string; title: string; slug: string; isFavorite: boolean };
@@ -32,12 +34,37 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
   const [copied, setCopied] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+
+    const updatePosition = () => {
+      const button = buttonRef.current;
+      const menu = menuRef.current;
+      if (!button || !menu) return;
+      setMenuPosition(positionMenu(
+        button.getBoundingClientRect(),
+        { width: menu.offsetWidth, height: menu.offsetHeight },
+        { width: window.innerWidth, height: window.innerHeight },
+      ));
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return undefined;
 
     const onPointerDown = (event: PointerEvent) => {
-      if (!wrapperRef.current?.contains(event.target as Node)) {
+      if (!wrapperRef.current?.contains(event.target as Node) && !menuRef.current?.contains(event.target as Node)) {
         setOpen(false);
       }
     };
@@ -78,6 +105,7 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
         ref={buttonRef}
         type="button"
         onClick={() => {
+          setMenuPosition(null);
           setOpen((value) => !value);
         }}
         aria-haspopup="menu"
@@ -88,11 +116,14 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
       </button>
 
-      {open && (
+      {open && createPortal((
         <div
+          ref={menuRef}
           role="menu"
           aria-label={`Actions for ${doc.title}`}
-          className="absolute right-0 z-30 mt-1 w-44 max-w-[calc(100vw-24px)] rounded-md border border-border bg-surface-overlay p-1 shadow-overlay"
+          onClick={stop}
+          style={{ left: menuPosition?.left ?? 0, top: menuPosition?.top ?? 0, visibility: menuPosition ? 'visible' : 'hidden' }}
+          className="fixed z-[60] max-h-[calc(100dvh-16px)] w-44 max-w-[calc(100vw-16px)] overflow-y-auto rounded-md border border-border bg-surface-overlay p-1 shadow-overlay"
         >
           <Link
             href={href}
@@ -193,7 +224,7 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
           </div>
           )}
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }
