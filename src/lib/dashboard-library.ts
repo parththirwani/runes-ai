@@ -46,6 +46,27 @@ export function documentOpenPath(document: { id: string }): string {
 }
 
 /**
+ * Who owns the row. "You" is honest only for the caller's own documents; every other row must show
+ * the author the server returned, or shared and team documents would claim to belong to the reader.
+ */
+export function documentOwnerLabel(document: { isAuthor?: boolean; authorName?: string }): string {
+  if (document.isAuthor) return 'You';
+  const name = document.authorName?.trim();
+  return name || 'Unknown author';
+}
+
+/** The caller's capability on the row, exactly as returned; a row with no explicit access is view-only. */
+export function documentAccessLabel(document: { isAuthor?: boolean; access?: 'Edit' | 'View' }): 'Edit' | 'View' {
+  return document.access ?? (document.isAuthor ? 'Edit' : 'View');
+}
+
+/** The scope a row lives in, or a neutral dash when a legacy row carries no workspace. */
+export function documentWorkspaceLabel(document: { workspaceName?: string }): string {
+  const name = document.workspaceName?.trim();
+  return name || '—';
+}
+
+/**
  * Applies the selected workspace before search and format filters. The server already scopes the
  * response, and this keeps the visible list scoped during the in-flight window after a switch, so
  * rows of the previous workspace never linger under the new selection.

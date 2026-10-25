@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  documentAccessLabel,
   documentApiUrl,
   documentOpenPath,
+  documentOwnerLabel,
   documentsListUrl,
+  documentWorkspaceLabel,
   selectLibraryDocuments,
   type LibraryDocument,
 } from '@/src/lib/dashboard-library';
@@ -73,5 +76,34 @@ describe('library scoping between two populated workspaces', () => {
   it('searches titles and sorts in both directions within the scope', () => {
     expect(selectLibraryDocuments(world, { ...all, workspaceId: 'ws-b', search: ' thesis ' }).map((doc) => doc.id)).toEqual(['d3']);
     expect(selectLibraryDocuments(world, { ...all, workspaceId: 'ws-a', newestFirst: false }).map((doc) => doc.id)).toEqual(['d2', 'd1']);
+  });
+});
+
+// The library must attribute a shared or team document to whoever the server returned, not to the
+// reader. "You" is only honest for the caller's own rows; every other row shows the returned author,
+// workspace and the caller's View/Edit capability (access plan UI rule: show author, workspace,
+// format and the user's View or Edit capability).
+describe('library row labels', () => {
+  it('labels the caller\u2019s own rows "You" and everyone else by the returned author', () => {
+    expect(documentOwnerLabel({ isAuthor: true, authorName: 'Ada Lovelace' })).toBe('You');
+    expect(documentOwnerLabel({ isAuthor: false, authorName: 'Ada Lovelace' })).toBe('Ada Lovelace');
+    expect(documentOwnerLabel({ isAuthor: false, authorName: '   Ada Lovelace  ' })).toBe('Ada Lovelace');
+    expect(documentOwnerLabel({ isAuthor: false, authorName: '   ' })).toBe('Unknown author');
+    expect(documentOwnerLabel({ isAuthor: false })).toBe('Unknown author');
+  });
+
+  it('shows the returned View/Edit capability, defaulting a legacy row to view-only', () => {
+    expect(documentAccessLabel({ isAuthor: true, access: 'Edit' })).toBe('Edit');
+    expect(documentAccessLabel({ isAuthor: false, access: 'View' })).toBe('View');
+    expect(documentAccessLabel({ isAuthor: true })).toBe('Edit');
+    expect(documentAccessLabel({ isAuthor: false })).toBe('View');
+    expect(documentAccessLabel({})).toBe('View');
+  });
+
+  it('shows the returned workspace, or a neutral dash for a legacy row without one', () => {
+    expect(documentWorkspaceLabel({ workspaceName: 'Team Research' })).toBe('Team Research');
+    expect(documentWorkspaceLabel({ workspaceName: '  Personal  ' })).toBe('Personal');
+    expect(documentWorkspaceLabel({ workspaceName: '' })).toBe('\u2014');
+    expect(documentWorkspaceLabel({})).toBe('\u2014');
   });
 });
