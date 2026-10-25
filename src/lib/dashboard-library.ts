@@ -66,6 +66,11 @@ export function documentWorkspaceLabel(document: { workspaceName?: string }): st
   return name || '—';
 }
 
+/** The row's format for display; a row with no explicit format is treated as LaTeX, matching the server default. */
+export function documentFormatLabel(document: { format?: 'MARKDOWN' | 'LATEX' }): 'Markdown' | 'LaTeX' {
+  return (document.format ?? 'LATEX') === 'MARKDOWN' ? 'Markdown' : 'LaTeX';
+}
+
 /**
  * Applies the selected workspace before search and format filters. The server already scopes the
  * response, and this keeps the visible list scoped during the in-flight window after a switch, so

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   documentAccessLabel,
   documentApiUrl,
+  documentFormatLabel,
   documentOpenPath,
   documentOwnerLabel,
   documentsListUrl,
@@ -103,7 +104,13 @@ describe('library row labels', () => {
   it('shows the returned workspace, or a neutral dash for a legacy row without one', () => {
     expect(documentWorkspaceLabel({ workspaceName: 'Team Research' })).toBe('Team Research');
     expect(documentWorkspaceLabel({ workspaceName: '  Personal  ' })).toBe('Personal');
-    expect(documentWorkspaceLabel({ workspaceName: '' })).toBe('\u2014');
-    expect(documentWorkspaceLabel({})).toBe('\u2014');
+    expect(documentWorkspaceLabel({ workspaceName: '' })).toBe('—');
+    expect(documentWorkspaceLabel({})).toBe('—');
+  });
+
+  it('shows the row format, treating a legacy row with no format as LaTeX like the server does', () => {
+    expect(documentFormatLabel({ format: 'MARKDOWN' })).toBe('Markdown');
+    expect(documentFormatLabel({ format: 'LATEX' })).toBe('LaTeX');
+    expect(documentFormatLabel({})).toBe('LaTeX');
   });
 });

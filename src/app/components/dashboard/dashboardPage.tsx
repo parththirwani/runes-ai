@@ -7,7 +7,7 @@ import { signOut, useSession } from "next-auth/react";
 import { ArrowDown, ArrowUp, Folder, Menu, Plus, Search, Star, TriangleAlert, X } from "lucide-react";
 import { useDashboard, type DashboardDocument } from "@/src/hooks/useDashboard";
 import { DOCUMENTS_PATH, type CreateFormat } from "@/src/lib/paths";
-import { documentAccessLabel, documentOpenPath, documentOwnerLabel, documentWorkspaceLabel, selectLibraryDocuments, type LibraryFilter } from "@/src/lib/dashboard-library";
+import { documentAccessLabel, documentFormatLabel, documentOpenPath, documentOwnerLabel, documentWorkspaceLabel, selectLibraryDocuments, type LibraryFilter } from "@/src/lib/dashboard-library";
 import UserMenu from "@/components/arc/user-menu/user-menu";
 import AlertModal from "../design/AlertModal";
 import Logo from "../brand/logo";
@@ -194,14 +194,15 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
               <th scope="col">Title</th>
               <th scope="col">Owner</th>
               <th scope="col">Workspace</th>
+              <th scope="col">Format</th>
               <th scope="col">Access</th>
               <th scope="col"><button type="button" onClick={() => setNewestFirst((value) => !value)} aria-label={`Sort by last modified, ${newestFirst ? "oldest first" : "newest first"}`} className="inline-flex items-center gap-1 hover:text-action">Last modified {newestFirst ? <ArrowDown size={15} aria-hidden="true" /> : <ArrowUp size={15} aria-hidden="true" />}</button></th>
             </tr></thead>
             <tbody>
               {status === "loading" || loading ? Array.from({ length: 5 }, (_, index) => (
-                <tr key={index}><td /><td><span className="skeleton block h-4 w-44" /></td><td><span className="skeleton block h-4 w-14" /></td><td><span className="skeleton block h-4 w-20" /></td><td><span className="skeleton block h-4 w-10" /></td><td><span className="skeleton block h-4 w-36" /></td></tr>
+                <tr key={index}><td /><td><span className="skeleton block h-4 w-44" /></td><td><span className="skeleton block h-4 w-14" /></td><td><span className="skeleton block h-4 w-20" /></td><td><span className="skeleton block h-4 w-16" /></td><td><span className="skeleton block h-4 w-10" /></td><td><span className="skeleton block h-4 w-36" /></td></tr>
               )) : visibleDocuments.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">{documents.length === 0 ? "No documents yet. Create one to get started." : "No documents match your search or filter."}</td></tr>
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">{documents.length === 0 ? "No documents yet. Create one to get started." : "No documents match your search or filter."}</td></tr>
               ) : visibleDocuments.map((doc: DashboardDocument) => (
                 <tr key={doc.id}>
                   <td><input type="checkbox" aria-label={`Select ${doc.title}`} checked={selectedIds.has(doc.id)} onChange={() => toggleSelection(doc.id)} /></td>
@@ -211,6 +212,7 @@ export default function DashboardPage({ initialCreateFormat = null }: { initialC
                   </div></td>
                   <td className="truncate" title={documentOwnerLabel(doc)}>{documentOwnerLabel(doc)}</td>
                   <td className="truncate" title={documentWorkspaceLabel(doc)}>{documentWorkspaceLabel(doc)}</td>
+                  <td className={styles.formatCell} data-format={doc.format ?? "LATEX"}>{documentFormatLabel(doc)}</td>
                   <td><span className={styles.accessBadge} data-access={documentAccessLabel(doc)}>{documentAccessLabel(doc)}</span></td>
                   <td><div className="flex items-center justify-between gap-3"><time className="whitespace-nowrap" dateTime={doc.updatedAt}>{modifiedAt(doc.updatedAt)}</time><div className={styles.rowActions}><DocumentActions document={doc} canManage={doc.isAuthor !== false} openHref={openHrefFor(doc)} onDelete={() => handleDeleteClick(doc)} onFavoriteChange={() => handleFavoriteToggle(doc)} onDownload={() => downloadDocument(doc)} onShare={doc.isAuthor !== false ? () => setShareTarget({ id: doc.id, label: doc.title }) : undefined} onMove={doc.isAuthor !== false ? () => setMoveTarget({ id: doc.id, label: doc.title }) : undefined} /></div></div></td>
                 </tr>

@@ -56,10 +56,10 @@ function render() {
 }
 
 describe('document library table attribution', () => {
-  it('shows the returned author, workspace and View/Edit label for shared and team rows', () => {
+  it('shows the returned author, workspace, format and View/Edit label for shared and team rows', () => {
     stubDocuments([
-      row({ id: 'd1', title: 'My Thesis', slug: 'thesis', isAuthor: true, authorName: 'Ada Lovelace', workspaceName: 'Personal', workspaceId: 'ws-a', access: 'Edit', updatedAt: '2026-10-24T00:00:00.000Z' }),
-      row({ id: 'd3', title: 'Thesis', slug: 'thesis', isAuthor: false, authorName: 'Grace Hopper', workspaceName: 'Team Research', workspaceId: 'ws-b', access: 'View', updatedAt: '2026-10-23T00:00:00.000Z' }),
+      row({ id: 'd1', title: 'My Thesis', slug: 'thesis', isAuthor: true, authorName: 'Ada Lovelace', workspaceName: 'Personal', workspaceId: 'ws-a', access: 'Edit', format: 'MARKDOWN', updatedAt: '2026-10-24T00:00:00.000Z' }),
+      row({ id: 'd3', title: 'Thesis', slug: 'thesis', isAuthor: false, authorName: 'Grace Hopper', workspaceName: 'Team Research', workspaceId: 'ws-b', access: 'View', format: 'LATEX', updatedAt: '2026-10-23T00:00:00.000Z' }),
     ]);
     const html = render();
 
@@ -68,11 +68,14 @@ describe('document library table attribution', () => {
     expect(html).toContain('Grace Hopper');
     expect(html).toContain('Team Research');
     expect(html).not.toContain('Ada Lovelace');
-    // Capability labels are the returned ones, one per row.
+    // Format and capability are the returned ones, one per row.
+    expect(html).toContain('data-format="MARKDOWN"');
+    expect(html).toContain('data-format="LATEX"');
     expect(html).toContain('data-access="Edit"');
     expect(html).toContain('data-access="View"');
     expect(html).toContain('>Edit<');
     expect(html).toContain('>View<');
+    expect(html).toContain('>Format<');
     expect(html).toContain('>Access<');
   });
 
