@@ -113,7 +113,7 @@ export async function listAccessibleWorkspaces(userId: string): Promise<Workspac
     for (const workspace of membership.team.workspaces) {
       items.push({
         id: workspace.id,
-        name: membership.team.name,
+        name: workspace.name,
         kind: 'TEAM',
         isDefault: workspace.isDefault,
         teamId: membership.teamId,
@@ -172,6 +172,30 @@ export async function renameWorkspace(userId: string, workspaceId: string, rawNa
     return await prisma.workspace.update({ where: { id: workspaceId }, data: { name } });
   } catch (error) {
     if (isUniqueViolation(error)) throw new WorkspaceInputError('Another workspace is already named ' + name, 409);
+    throw error;
+  }
+}
+
+/** A personal collection can be removed only after its documents have been moved or deleted. */
+export async function deletePersonalWorkspace(userId: string, workspaceId: string): Promise<boolean> {
+  const owned = await prisma.workspace.findFirst({
+    where: { id: workspaceId, ownerUserId: userId, kind: 'PERSONAL' },
+    select: { isDefault: true },
+  });
+  if (!owned) return false;
+  if (owned.isDefault) throw new WorkspaceInputError('The default workspace cannot be deleted', 409);
+
+  // The relation filter and FK restriction both protect documents if a move/create races deletion.
+  try {
+    const deleted = await prisma.workspace.deleteMany({
+      where: { id: workspaceId, ownerUserId: userId, kind: 'PERSONAL', isDefault: false, documents: { none: {} } },
+    });
+    if (deleted.count === 0) throw new WorkspaceInputError('Move or delete the documents in this workspace first', 409);
+    return true;
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2003') {
+      throw new WorkspaceInputError('Move or delete the documents in this workspace first', 409);
+    }
     throw error;
   }
 }

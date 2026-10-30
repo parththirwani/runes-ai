@@ -16,7 +16,7 @@ import DashboardPage from '@/src/app/components/dashboard/dashboardPage';
 
 const noop = () => undefined;
 
-function stubDocuments(documents: unknown[]) {
+function stubDocuments(documents: unknown[], workspaces: unknown[] = [], selectedWorkspaceId: string | null = null, sidebarDocuments: unknown[] = [], canCreateTeams = false) {
   vi.mocked(useDashboard).mockReturnValue({
     documents,
     loading: false,
@@ -30,10 +30,14 @@ function stubDocuments(documents: unknown[]) {
     handleCreateDocument: async () => undefined,
     handleDeleteClick: async () => undefined,
     handleFavoriteToggle: async () => undefined,
-    workspaces: [],
-    selectedWorkspaceId: null,
+    workspaces,
+    sidebarDocuments,
+    canCreateTeams,
+    selectedWorkspaceId,
     selectWorkspace: noop,
     createWorkspace: async () => null,
+    renameWorkspace: async () => null,
+    deleteWorkspace: async () => null,
     refresh: async () => undefined,
   } as ReturnType<typeof useDashboard>);
 }
@@ -56,6 +60,58 @@ function render() {
 }
 
 describe('document library table attribution', () => {
+  it('shows named workspaces and their documents without the default personal or all-workspaces rows', () => {
+    stubDocuments([], [
+      { id: 'ws-own', name: 'Research', kind: 'PERSONAL', isDefault: false, documentCount: 1, access: 'owner', canCreate: true, canRename: true },
+      { id: 'ws-default', name: 'Personal', kind: 'PERSONAL', isDefault: true, documentCount: 0, access: 'owner', canCreate: true, canRename: true },
+      { id: 'ws-shared', name: 'Shared notes', kind: 'PERSONAL', isDefault: false, documentCount: 2, access: 'viewer', canCreate: false, canRename: false },
+    ], null, [{ id: 'doc-1', title: 'Research draft', workspaceId: 'ws-own', updatedAt: '2026-10-25T00:00:00.000Z' }]);
+    const html = render();
+    expect(html).toContain('aria-label="New workspace"');
+    expect(html).toContain('>New document</button>');
+    expect(html.indexOf('>Workspaces</button>')).toBeLessThan(html.indexOf('>Documents</button>'));
+    expect(html).not.toContain('<select');
+    expect(html).not.toContain('All workspaces');
+    expect(html).not.toContain('title="Personal"');
+    expect(html).toContain('Research draft');
+    expect(html).toContain('aria-label="Actions for Research"');
+    expect(html).toContain('aria-label="Actions for Research draft"');
+    expect(html).toContain('aria-label="Collapse workspaces"');
+    expect(html).toContain('aria-label="Collapse Research"');
+    expect(html).toContain('aria-label="Collapse documents"');
+    expect(html).not.toContain('aria-label="Actions for Shared notes"');
+    expect(html).toContain('aria-label="Resize document sidebar"');
+    expect(html).toContain('aria-valuemin="260"');
+    expect(html).toContain('aria-valuemax="440"');
+    expect(html).toContain('--dashboard-sidebar-width:280px');
+  });
+
+  it('names the selected workspace in the document view', () => {
+    stubDocuments([], [{ id: 'ws-research', name: 'Research', kind: 'PERSONAL', isDefault: false, documentCount: 0, access: 'owner', canCreate: true, canRename: true }], 'ws-research');
+    const html = render();
+    expect(html).toContain('>Research</h1>');
+    expect(html).toContain('Search in Research...');
+    expect(html).toContain('No documents in Research yet. Use the workspace menu to add one.');
+  });
+
+  it('shows recent document titles under a workspace and limits the initial list', () => {
+    const workspace = { id: 'ws', name: 'Research', kind: 'PERSONAL', isDefault: false, documentCount: 6, access: 'owner', canCreate: true, canRename: true };
+    const sidebarDocuments = Array.from({ length: 6 }, (_, index) => ({ id: `d${index}`, title: `Note ${index}`, workspaceId: 'ws', updatedAt: '2026-10-25T00:00:00.000Z' }));
+    stubDocuments([], [workspace], null, sidebarDocuments);
+    const html = render();
+    expect(html).toContain('Note 0');
+    expect(html).toContain('Note 4');
+    expect(html).not.toContain('Note 5');
+    expect(html).toContain('Show more (1)');
+  });
+
+  it('links app admins to team creation without showing that link to regular users', () => {
+    stubDocuments([], [], null, [], true);
+    expect(render()).toContain('href="/admin"');
+    stubDocuments([]);
+    expect(render()).not.toContain('href="/admin"');
+  });
+
   it('shows the returned author, workspace, format and View/Edit label for shared and team rows', () => {
     stubDocuments([
       row({ id: 'd1', title: 'My Thesis', slug: 'thesis', isAuthor: true, authorName: 'Ada Lovelace', workspaceName: 'Personal', workspaceId: 'ws-a', access: 'Edit', format: 'MARKDOWN', updatedAt: '2026-10-24T00:00:00.000Z' }),

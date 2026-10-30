@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { withAuth } from '@/src/lib/withAuth';
 import { getWorkspaceAccess } from '@/src/lib/access';
-import { listWorkspaceDocuments, renameWorkspace } from '@/src/lib/workspaces';
+import { deletePersonalWorkspace, listWorkspaceDocuments, renameWorkspace } from '@/src/lib/workspaces';
 import { apiError, jsonBody, notFound } from '@/src/lib/api-errors';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -30,6 +30,17 @@ export const PATCH = withAuth(async (req, session, context: Ctx) => {
     }
     const workspace = await renameWorkspace(session.user.id, id, typeof body?.name === 'string' ? body.name : '');
     return NextResponse.json({ workspace });
+  } catch (error) {
+    return apiError(error);
+  }
+});
+
+/** Removes an empty non-default personal workspace owned by the caller. */
+export const DELETE = withAuth(async (_req, session, context: Ctx) => {
+  try {
+    const { id } = await context.params;
+    if (!await deletePersonalWorkspace(session.user.id, id)) return notFound('Workspace not found');
+    return NextResponse.json({ deleted: true });
   } catch (error) {
     return apiError(error);
   }

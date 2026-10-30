@@ -3,12 +3,31 @@ import Google from "next-auth/providers/google";
 import { prisma } from "@/src/lib/db";
 import { ensureDefaultPersonalWorkspace } from "@/src/lib/workspaces";
 
+// Cookies are shared across ports on the same host, so the default
+// `authjs.session-token` name collides with other local Auth.js apps. A distinct
+// name keeps this app from reading (and clearing) their session cookies.
+const useSecureCookies =
+  (process.env.AUTH_URL ?? process.env.NEXTAUTH_URL)?.startsWith("https://") ??
+  process.env.NODE_ENV === "production";
+const sessionCookieName = `${useSecureCookies ? "__Secure-" : ""}runes-ai.session-token`;
+
 export const {
   handlers,
   auth,
   signIn,
   signOut,
 } = NextAuth({
+  cookies: {
+    sessionToken: {
+      name: sessionCookieName,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: useSecureCookies,
+      },
+    },
+  },
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID!,
@@ -84,5 +103,5 @@ export const {
       return session;
     },
   },
-  secret: process.env.AUTH_SECRET!,
+  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
 });

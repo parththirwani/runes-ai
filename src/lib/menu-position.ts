@@ -3,9 +3,12 @@ type MenuSize = { width: number; height: number };
 type ViewportSize = { width: number; height: number };
 
 /** Keep a floating menu inside the viewport, opening above its trigger when needed. */
-export function positionMenu(trigger: TriggerRect, menu: MenuSize, viewport: ViewportSize) {
+export function positionMenu(trigger: TriggerRect, menu: MenuSize, viewport: ViewportSize, preferRight = false) {
   const margin = 8;
   const gap = 4;
+  if (preferRight && trigger.right + gap + menu.width <= viewport.width - margin) {
+    return { left: trigger.right + gap, top: Math.max(margin, Math.min(trigger.top, viewport.height - menu.height - margin)) };
+  }
   const left = Math.max(margin, Math.min(trigger.right - menu.width, viewport.width - menu.width - margin));
   const below = trigger.bottom + gap;
   const above = trigger.top - menu.height - gap;

@@ -105,6 +105,8 @@ export default function AdminPage() {
         body: JSON.stringify({ name: teamName.trim() }),
       });
       if (!response.ok) throw new Error(await readError(response, 'Could not create the team'));
+      const data = await response.json();
+      if (data.team?.id) setSelectedTeam(data.team.id);
       setTeamName('');
       await loadTeams();
     } catch (err: unknown) {
