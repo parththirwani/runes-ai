@@ -48,6 +48,7 @@ export default function DocumentActions({ document: doc, onDelete, onFavoriteCha
         button.getBoundingClientRect(),
         { width: menu.offsetWidth, height: menu.offsetHeight },
         { width: window.innerWidth, height: window.innerHeight },
+        true,
       ));
     };
 

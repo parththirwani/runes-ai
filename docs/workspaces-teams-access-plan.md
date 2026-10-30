@@ -21,7 +21,7 @@ This release does not include simultaneous editing, presence, cursors, pair edit
 ### Ownership and access
 
 1. Every document has one immutable author (`Document.userId`) and belongs to exactly one collection workspace (`Document.workspaceId`). A document cannot be in two workspaces. Its author may move it between their personal workspaces and team workspaces where they are a member, subject to the move rules below.
-2. Every existing and new user has a default personal workspace. A user may create additional personal workspaces, rename them, and place multiple documents in each. Personal workspaces are private until shared.
+2. Every existing and new user has a default personal workspace. A user may create additional personal workspaces, rename them, and place multiple documents in each. Personal workspaces are private until shared. Owners may delete an additional personal workspace only when it is empty; the default personal workspace cannot be deleted.
 3. A team has one default team workspace when created. The schema can support more later, but creating extra team workspaces is outside this release. All active team members can view every document in the default team workspace, including documents authored by another member. A member may create documents there and edit only their own documents.
 4. The author can share a personal workspace or a single document by email. A workspace share covers its current and future documents while active. A document share covers only that document. The recipient can read; the author can read and edit while they remain a member of the containing workspace. Recipients cannot change the title, content, files, main file, assets, favorite state, sharing, workspace assignment, or document lifecycle. A team member likewise cannot edit another member's document.
 5. The user must accept an invitation before a team membership or personal share becomes active. Invitations to an email without an account remain pending until that email signs in and accepts. Email comparison is normalized and verified against the signed-in account. A copied invitation token alone does not authorize access.
@@ -86,8 +86,8 @@ Prefer document IDs in new APIs. Proposed endpoints:
 
 | Route | Access | Behavior |
 | --- | --- | --- |
-| `GET/POST /api/workspaces` | Signed-in user | List accessible personal/team workspaces; create a personal workspace. |
-| `GET/PATCH /api/workspaces/[id]` | Member/owner as appropriate | Metadata and rename. |
+| `GET/POST /api/workspaces` | Signed-in user | List accessible personal/team workspaces with document title metadata for the sidebar; create a personal workspace. |
+| `GET/PATCH/DELETE /api/workspaces/[id]` | Member/owner as appropriate | Metadata and rename; owners may delete empty, non-default personal workspaces. |
 | `GET/POST /api/workspaces/[id]/documents` | Workspace reader / creator | List documents with author and capability flags; create a document in the selected workspace. |
 | `POST /api/documents/[id]/move` | Author | Move to an allowed workspace, recheck sharing implications, reject collisions. |
 | `POST/GET/DELETE /api/workspaces/[id]/shares` | Personal workspace owner | Invite, list, revoke view grants. |
@@ -105,7 +105,7 @@ Validate all payloads with Zod. Normalize email once, rate limit invitations, ca
 2. Add create/rename personal workspace, create document in the selected workspace, move an authored document, and share controls on personal workspaces and authored documents. Show pending invitations and revoke actions. Make a team workspace visibly read-shared to all members.
 3. Add an invitation acceptance page with the target name, inviter, scope, and `View` permission. Sign-in must preserve a safe return URL. Handle expired, revoked, duplicate, wrong-email, and already-accepted states.
 4. In the editor, show author and access level. For viewers, disable autosave, title changes, file changes, uploads, AI/chat controls, compile, and delete. Keep source, file tree, assets, and existing completed PDF readable. Server checks remain authoritative.
-5. Add `/admin` with team creation, member management, document and author listings, and audit history. Hide navigation from non-admins and reject direct route/API access. Add clear confirmation for member removal and show its effect on team workspace access.
+5. Add `/admin` with team creation, member management, document and author listings, and audit history. Show its navigation only to app admins and reject direct route/API access for others. Add `/teams/[id]` for joined team members to open team documents and for team admins to invite or remove members. Link it from each team workspace. Confirm member removal and show its effect on team workspace access.
 
 ## Implementation sequence and acceptance gates
 

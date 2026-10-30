@@ -9,6 +9,7 @@ interface CreateDocumentModalProps {
   onSubmit: (title: string, format: DocumentFormatValue) => void;
   isLoading?: boolean;
   existingTitles: string[];
+  workspaceName?: string;
   initialFormat?: DocumentFormatValue;
 }
 
@@ -33,6 +34,7 @@ export default function CreateDocumentModal({
   onSubmit,
   isLoading = false,
   existingTitles,
+  workspaceName,
   initialFormat = 'MARKDOWN',
 }: CreateDocumentModalProps) {
   const [title, setTitle] = useState('');
@@ -79,7 +81,9 @@ export default function CreateDocumentModal({
       isOpen={isOpen}
       onClose={onClose}
       title="Create document"
-      description="Choose a name and a format. The format sets up the right editor and PDF pipeline."
+      description={workspaceName
+        ? `Creating in ${workspaceName}. Choose a name and format.`
+        : 'Choose a name and format. The document will be saved in your default workspace.'}
       size="md"
       footer={
         <>

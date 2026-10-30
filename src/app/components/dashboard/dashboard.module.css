@@ -1,4 +1,5 @@
 .shell {
+  --dashboard-sidebar-width: 280px;
   min-height: 100dvh;
   background: var(--color-canvas);
   color: var(--color-foreground);
@@ -34,7 +35,7 @@
   inset: 0 auto 0 0;
   z-index: 50;
   display: flex;
-  width: 235px;
+  width: var(--dashboard-sidebar-width);
   flex-direction: column;
   border-right: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -43,24 +44,34 @@
 
 .main {
   min-height: 100dvh;
-  margin-left: 235px;
+  margin-left: var(--dashboard-sidebar-width);
   padding: 32px 13px 48px 25px;
 }
 
-.navItem {
-  display: flex;
-  min-height: 41px;
-  width: 100%;
-  align-items: center;
-  gap: 12px;
-  border-radius: 6px;
-  padding: 0 12px;
-  color: var(--color-muted-foreground);
-  text-align: left;
-  transition: background-color 140ms ease;
+.shell[data-resizing="true"] { cursor: col-resize; user-select: none; }
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  right: -6px;
+  bottom: 0;
+  z-index: 1;
+  width: 12px;
+  cursor: col-resize;
+  touch-action: none;
 }
-.navItem:hover { background: var(--color-surface-raised); color: var(--color-foreground); }
-.navItem[data-active="true"] { background: var(--color-action-soft); color: var(--color-action); font-weight: 600; }
+.resizeHandle::after {
+  position: absolute;
+  top: 50%;
+  left: 5px;
+  width: 3px;
+  height: 44px;
+  border-radius: 3px;
+  background: var(--color-border);
+  content: "";
+  transform: translateY(-50%);
+}
+.resizeHandle:hover::after, .resizeHandle:focus-visible::after, .shell[data-resizing="true"] .resizeHandle::after { background: var(--color-action); }
+.resizeHandle:focus-visible { outline: 2px solid var(--color-action); outline-offset: -2px; }
 
 .tableWrap {
   overflow-x: auto;
@@ -96,7 +107,8 @@
   .table td:nth-child(7) { white-space: normal; font-size: 12px; }
 }
 @media (max-width: 767px) {
-  .sidebar { transform: translateX(-100%); transition: transform 200ms ease; }
+  .sidebar { width: min(280px, 85vw); transform: translateX(-100%); transition: transform 200ms ease; }
   .sidebar[data-open="true"] { transform: translateX(0); }
+  .resizeHandle { display: none; }
   .main { margin-left: 0; padding: 24px 16px 48px; }
 }

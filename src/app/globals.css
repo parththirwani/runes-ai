@@ -145,6 +145,35 @@
     outline-offset: 2px;
   }
 
+  /* Browsers point at buttons with the default arrow. Every interactive control in the app is
+     clickable, so it should read that way; disabled controls stay visibly unavailable. Links with
+     an href already get the pointer from the UA stylesheet. */
+  :is(
+    button,
+    [role="button"],
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"],
+    [role="tab"],
+    [role="option"],
+    [role="switch"],
+    [role="checkbox"],
+    [role="radio"],
+    [role="link"],
+    summary,
+    label[for],
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"]
+  ):not(:disabled, [aria-disabled="true"], [data-disabled]) {
+    cursor: pointer;
+  }
+
+  :is(button, [role="button"])[disabled],
+  :is(button, [role="button"])[aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
   ::selection {
     background-color: #d6e4dc;
     color: var(--color-foreground);
