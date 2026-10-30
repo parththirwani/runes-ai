@@ -22,6 +22,7 @@ import { analyzeSelection, scanContext, selectionCutsWord } from '@/src/lib/late
 import { analyzeMarkdownSelection, markdownLineIsProse, scanMarkdownContext } from '@/src/lib/markdown-utils';
 import { buildLatexOutline } from '@/src/lib/latex-outline';
 import { buildMarkdownOutline } from '@/src/lib/markdown-outline';
+import { SPLIT_RATIO_DEFAULT, splitRatioAtPointer, splitRatioFromKeyboard } from '@/src/lib/editor-split';
 import { useWorkspace } from '@/src/hooks/useWorkspace';
 import { missingReferencesFrom, workspaceClient } from '@/src/lib/workspace-client';
 import type { WorkspaceDocumentPayload } from '@/src/lib/workspace-types';
@@ -124,6 +125,8 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   // author-scoped, so the id is the only key that stays correct for every caller and every twin.
   const [docRef, setDocRef] = useState(initialDocument ? initialDocument.id : '');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
+  const [splitRatio, setSplitRatio] = useState(SPLIT_RATIO_DEFAULT);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
   const [previewTab, setPreviewTab] = useState<'reading' | 'pdf'>('reading');
   const [showFileTree, setShowFileTree] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -897,10 +900,16 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const pdfIsStale = Boolean(pdfUrl) && workspace.stalePaths.length > 0;
   const statusLine = [compilationStatus, compileInfo].filter(Boolean).join(' · ');
 
+  const resizeSplitAt = (clientX: number) => {
+    const rect = splitContainerRef.current?.getBoundingClientRect();
+    if (rect && rect.width > 0) setSplitRatio(splitRatioAtPointer(clientX, rect));
+  };
+
   return (
     <main id="main" className="document-editor flex h-screen flex-col overflow-hidden bg-canvas">
       <TopNavBar
         documentTitle={title}
+        viewMode={viewMode}
         onViewModeChange={(mode) => {
           if (mode === 'preview' && isMarkdown) setPreviewTab('reading');
           setViewMode(mode);
@@ -992,9 +1001,72 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           isMarkdown={isMarkdown}
         />
 
-        <div className={`min-w-0 flex-1 h-full flex flex-col md:flex-row transition-[padding] duration-300 ${showSettings ? 'pr-80 max-[500px]:pr-[90vw]' : ''}`}>
+        <div ref={splitContainerRef} style={{ '--editor-split-width': `${splitRatio * 100}%` } as React.CSSProperties} className={`min-w-0 flex-1 h-full flex flex-col md:flex-row transition-[padding] duration-300 ${showSettings ? 'pr-80 max-[500px]:pr-[90vw]' : ''}`}>
+          {(viewMode === 'preview' || viewMode === 'split') && (
+            <div className={`${viewMode === 'split' ? 'h-1/2 w-full md:h-full md:w-[var(--editor-split-width)]' : 'h-full w-full'} min-h-0 min-w-0 overflow-hidden`}>
+              {isMarkdown ? (
+                <MarkdownPreviewPane
+                  source={workspace.filesByPath[workspace.mainFilePath]?.content ?? ''}
+                  tab={previewTab}
+                  pdfUrl={pdfUrl}
+                  isCompiling={isCompiling}
+                  compilationStatus={statusLine}
+                  pdfIsStale={pdfIsStale}
+                  onCompile={handleCompile}
+                  onDownloadPdf={handleDownload}
+                />
+              ) : (
+                <PDFPreview
+                  pdfUrl={pdfUrl}
+                  isLoading={isCompiling}
+                  onCompile={handleCompile}
+                  onDownload={handleDownload}
+                  statusMessage={statusLine}
+                  isStale={pdfIsStale}
+                />
+              )}
+            </div>
+          )}
+
+          {viewMode === 'split' && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize preview and editor"
+              aria-valuemin={25}
+              aria-valuemax={75}
+              aria-valuenow={Math.round(splitRatio * 100)}
+              tabIndex={0}
+              title="Drag to resize; double-click to reset"
+              className="group relative hidden w-2 shrink-0 cursor-col-resize touch-none items-center justify-center md:flex"
+              onPointerDown={(event) => {
+                if (event.button !== 0) return;
+                event.preventDefault();
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerMove={(event) => {
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) resizeSplitAt(event.clientX);
+              }}
+              onPointerUp={(event) => {
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+              }}
+              onPointerCancel={(event) => {
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+              }}
+              onDoubleClick={() => setSplitRatio(SPLIT_RATIO_DEFAULT)}
+              onKeyDown={(event) => {
+                const next = splitRatioFromKeyboard(splitRatio, event.key);
+                if (next === null) return;
+                event.preventDefault();
+                setSplitRatio(next);
+              }}
+            >
+              <span className="h-10 w-0.5 rounded-full bg-border transition-colors group-hover:bg-action group-focus-visible:bg-action" aria-hidden="true" />
+            </div>
+          )}
+
           {(viewMode === 'editor' || viewMode === 'split') && (
-            <div className={`${viewMode === 'split' ? 'h-1/2 w-full border-b border-border md:h-full md:w-1/2 md:border-b-0 md:border-r' : 'h-full w-full'} min-h-0 min-w-0 flex flex-col`}>
+            <div className={`${viewMode === 'split' ? 'h-1/2 w-full border-t border-border md:h-full md:flex-1 md:border-t-0' : 'h-full w-full'} min-h-0 min-w-0 flex flex-col`}>
               <FileTabs
                 openPaths={workspace.openPaths}
                 files={workspace.filesByPath}
@@ -1172,31 +1244,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
             </div>
           )}
 
-          {(viewMode === 'preview' || viewMode === 'split') && (
-            <div className={`${viewMode === 'split' ? 'h-1/2 w-full md:h-full md:w-1/2' : 'h-full w-full'} min-h-0 min-w-0 overflow-hidden`}>
-              {isMarkdown ? (
-                <MarkdownPreviewPane
-                  source={workspace.filesByPath[workspace.mainFilePath]?.content ?? ''}
-                  tab={previewTab}
-                  pdfUrl={pdfUrl}
-                  isCompiling={isCompiling}
-                  compilationStatus={statusLine}
-                  pdfIsStale={pdfIsStale}
-                  onCompile={handleCompile}
-                  onDownloadPdf={handleDownload}
-                />
-              ) : (
-                <PDFPreview
-                  pdfUrl={pdfUrl}
-                  isLoading={isCompiling}
-                  onCompile={handleCompile}
-                  onDownload={handleDownload}
-                  statusMessage={statusLine}
-                  isStale={pdfIsStale}
-                />
-              )}
-            </div>
-          )}
         </div>
       </div>
 
