@@ -1,14 +1,16 @@
-import { Menu, FileText, Play, Sparkles, Edit2, Download, Eye, Columns3, Share2, ArrowRightLeft } from 'lucide-react';
+import { Menu, FileText, Play, Sparkles, Edit2, Download, Share2, ArrowRightLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Button from '../design/Button';
 import IconButton from '../design/IconButton';
 import Logo from '../brand/logo';
 import ButtonGroup from '@/components/arc/button-group/button-group';
+import ViewModeToggle from './ViewModeToggle';
 import type { ViewMode } from './ViewModeToggle';
 import type { DocumentFormatValue } from '@/src/types/compilation';
 
 interface TopNavBarProps {
   documentTitle: string;
+  viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
   onMenuToggle: () => void;
   onCompile: () => void;
@@ -34,6 +36,7 @@ interface TopNavBarProps {
 
 export default function TopNavBar({
   documentTitle,
+  viewMode,
   onViewModeChange,
   onMenuToggle,
   onCompile,
@@ -122,28 +125,15 @@ export default function TopNavBar({
 
       {/* Right Section */}
       <div className="flex max-w-full flex-wrap items-center gap-1 sm:gap-2">
+        <ViewModeToggle
+          value={viewMode}
+          onChange={onViewModeChange}
+          labels={{ preview: isMarkdown ? 'Reading' : 'Preview' }}
+        />
         <ButtonGroup
           label="Document actions"
           size="sm"
           items={[
-            {
-              id: 'edit',
-              label: 'Edit',
-              icon: <Edit2 aria-hidden="true" />,
-              onSelect: () => onViewModeChange('editor'),
-            },
-            {
-              id: 'preview',
-              label: 'Preview',
-              icon: <Eye aria-hidden="true" />,
-              onSelect: () => onViewModeChange('preview'),
-            },
-            {
-              id: 'split',
-              label: 'Split',
-              icon: <Columns3 aria-hidden="true" />,
-              onSelect: () => onViewModeChange('split'),
-            },
             ...(onShare ? [{ id: 'share', label: 'Share', icon: <Share2 aria-hidden="true" />, onSelect: onShare }] : []),
             ...(onMove ? [{ id: 'move', label: 'Move', icon: <ArrowRightLeft aria-hidden="true" />, onSelect: onMove }] : []),
             {

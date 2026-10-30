@@ -1,7 +1,10 @@
-import React from 'react';
-import { Code, Eye, Split } from 'lucide-react';
+"use client";
 
-export type ViewMode = 'editor' | 'split' | 'preview';
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Check, ChevronDown, Code, Eye, Split } from "lucide-react";
+import type { ComponentType } from "react";
+
+export type ViewMode = "editor" | "split" | "preview";
 
 interface ViewModeToggleProps {
   value: ViewMode;
@@ -9,33 +12,63 @@ interface ViewModeToggleProps {
   labels?: Partial<Record<ViewMode, string>>;
 }
 
+const modes: { id: ViewMode; icon: ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>; defaultLabel: string }[] = [
+  { id: "editor", icon: Code, defaultLabel: "Code" },
+  { id: "split", icon: Split, defaultLabel: "Split" },
+  { id: "preview", icon: Eye, defaultLabel: "Reading" },
+];
+
+const itemClass =
+  "flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-sm text-foreground outline-none data-[highlighted]:bg-surface-raised data-[state=checked]:font-medium";
+
+/**
+ * One View control instead of three side-by-side buttons. The trigger names the current view and
+ * the menu is a radio group, so the three modes stay mutually exclusive and keyboard readable.
+ */
 export default function ViewModeToggle({ value, onChange, labels }: ViewModeToggleProps) {
-  const modes: { id: ViewMode; icon: React.ReactNode; label: string }[] = [
-    { id: 'editor', icon: <Code className="w-4 h-4" />, label: labels?.editor ?? 'Code' },
-    { id: 'split', icon: <Split className="w-4 h-4" />, label: labels?.split ?? 'Split' },
-    { id: 'preview', icon: <Eye className="w-4 h-4" />, label: labels?.preview ?? 'Preview' }
-  ];
+  const current = modes.find((mode) => mode.id === value) ?? modes[0];
+  const CurrentIcon = current.icon;
+  const labelFor = (mode: (typeof modes)[number]) => labels?.[mode.id] ?? mode.defaultLabel;
+  const currentLabel = labelFor(current);
+
   return (
-    <div className="grid w-[240px] max-w-full grid-cols-3 bg-surface-raised border border-border rounded-lg p-1">
-      {modes.map((mode) => (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
         <button
-          key={mode.id}
           type="button"
-          onClick={() => onChange(mode.id)}
-          className={`min-h-10 w-full justify-center px-1.5 py-1 rounded-md text-xs transition-all duration-200 flex items-center gap-1 cursor-pointer ${
-            value === mode.id
-              ? 'bg-action text-white shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-surface'
-          }`}
-          title={mode.label}
-          aria-label={mode.label}
-          aria-pressed={value === mode.id}
+          aria-label={`View: ${currentLabel}. Change view`}
+          title={`View: ${currentLabel}`}
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-surface-raised px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-surface-overlay"
         >
-          {mode.icon}
-          <span className="hidden min-[380px]:inline sm:hidden">{mode.id === 'preview' ? 'Reading' : mode.label}</span>
-          <span className="hidden sm:inline">{mode.label}</span>
+          <CurrentIcon className="size-4" aria-hidden="true" />
+          <span className="hidden sm:inline">{currentLabel}</span>
+          <ChevronDown className="size-3.5 text-meta" aria-hidden="true" />
         </button>
-      ))}
-    </div>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="end"
+          sideOffset={6}
+          aria-label="View"
+          className="z-[60] min-w-44 rounded-md border border-border bg-surface-overlay p-1 shadow-overlay"
+        >
+          <DropdownMenu.RadioGroup value={value} onValueChange={(next) => onChange(next as ViewMode)}>
+            {modes.map((mode) => {
+              const Icon = mode.icon;
+              const label = labelFor(mode);
+              return (
+                <DropdownMenu.RadioItem key={mode.id} value={mode.id} className={itemClass}>
+                  <Icon className="size-4 text-meta" aria-hidden="true" />
+                  <span className="flex-1">{label}</span>
+                  <DropdownMenu.ItemIndicator>
+                    <Check className="size-4 text-action" aria-hidden="true" />
+                  </DropdownMenu.ItemIndicator>
+                </DropdownMenu.RadioItem>
+              );
+            })}
+          </DropdownMenu.RadioGroup>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
