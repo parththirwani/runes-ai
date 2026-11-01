@@ -8,10 +8,10 @@
 // rechecks document id, model URI, model version and the original bytes.
 
 import React from 'react';
-import { AlertTriangle, Check, X } from 'lucide-react';
+import { AlertTriangle, X } from 'lucide-react';
 import Button from '../design/Button';
 import { computeDiff } from '@/src/lib/proposal-engine';
-import { reviewActionForKey, cycleChangeFocus, summarizeReview, reviewAnnouncement, type InlineEditKeySignal } from '@/src/lib/inline-edit-review';
+import { reviewActionForKey, summarizeReview, reviewAnnouncement, type InlineEditKeySignal } from '@/src/lib/inline-edit-review';
 import type { InlineEditHunkModel } from '@/src/lib/inline-edit-hunks';
 import { InlineEditDiffText } from './InlineEditCard';
 
@@ -22,8 +22,6 @@ export interface InlineEditReviewCardProps {
   focusIndex: number | null;
   onFocusChange: (index: number | null) => void;
   onDecision: (hunkId: string, decision: 'accepted' | 'rejected') => void;
-  onAcceptAll: () => void;
-  onRejectAll: () => void;
   onApply: () => void;
   onDismiss: () => void;
   /** Set when the anchor is no longer exact: every action becomes inert. */
@@ -36,8 +34,6 @@ export default function InlineEditReviewCard({
   focusIndex,
   onFocusChange,
   onDecision,
-  onAcceptAll,
-  onRejectAll,
   onApply,
   onDismiss,
   staleReason = null,
@@ -64,20 +60,11 @@ export default function InlineEditReviewCard({
     event.preventDefault();
     event.stopPropagation();
     switch (action.type) {
-      case 'focusNext':
-        onFocusChange(cycleChangeFocus(model.hunks.length, focusIndex, 'next'));
-        break;
-      case 'focusPrev':
-        onFocusChange(cycleChangeFocus(model.hunks.length, focusIndex, 'prev'));
-        break;
-      case 'acceptFocused':
-        if (focused) onDecision(focused.id, 'accepted');
-        break;
       case 'rejectFocused':
         if (focused) onDecision(focused.id, 'rejected');
         break;
-      case 'acceptRest':
-        if (canAct) onAcceptAll();
+      case 'apply':
+        if (summary.canApply && canAct) onApply();
         break;
     }
   };
@@ -94,7 +81,7 @@ export default function InlineEditReviewCard({
       <div className="flex items-center justify-between gap-2 px-3 pt-3">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-foreground">Review changes</span>
-          <span className="text-[11px] text-meta tabular-nums" role="status">{summary.changesLabel}</span>
+          <span className="text-[11px] text-meta tabular-nums" role="status">{summary.total} {summary.total === 1 ? 'change' : 'changes'}</span>
         </div>
         <button type="button" onClick={onDismiss} title="Dismiss (Esc)" className="rounded p-1 text-meta hover:bg-surface-raised hover:text-foreground" aria-label="Dismiss review without changing the source">
           <X className="size-4" aria-hidden="true" />
@@ -109,43 +96,21 @@ export default function InlineEditReviewCard({
             decisions={decisions}
             focusOrdinal={focusIndex}
             onFocusChange={(ordinal) => onFocusChange(ordinal)}
+            onToggleChange={(ordinal) => {
+              const hunk = model.hunks[ordinal];
+              if (hunk && canAct) onDecision(hunk.id, hunk.decision === 'rejected' ? 'accepted' : 'rejected');
+            }}
             totalChanges={summary.total}
           />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-1.5">
-          <span className="text-[11px] text-meta">
-            {focused
-              ? 'Change ' + (focused.ordinal + 1) + ' of ' + summary.total + ' — ' + (focused.decision === 'pending' ? 'no decision yet' : focused.decision)
-              : 'Select a change to accept or reject it on its own'}
-          </span>
-          {focused && <span className="flex items-center gap-1.5">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={!focused || !canAct}
-              onClick={() => focused && onDecision(focused.id, 'rejected')}
-              icon={<X className="h-3.5 w-3.5" />}
-              aria-label="Reject focused change"
-              title={!focused ? 'Focus a change with Tab first' : 'Reject this change and keep the original words'}
-            >
-              Reject
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={!focused || !canAct}
-              onClick={() => focused && onDecision(focused.id, 'accepted')}
-              icon={<Check className="h-3.5 w-3.5" />}
-              aria-label="Accept focused change"
-              title={!focused ? 'Focus a change with Tab first' : 'Accept this change'}
-            >
-              Accept
-            </Button>
-          </span>}
-        </div>
+        <p className="text-[11px] text-meta">
+          {focused
+            ? 'Change ' + (focused.ordinal + 1) + ' of ' + summary.total + ' — ' + (focused.decision === 'rejected' ? 'original kept' : 'suggestion selected')
+            : 'Click a highlighted change to keep its original wording'}
+        </p>
 
-        {blocked && (
+        {blocked && (staleReason || !summary.canApply) && (
           <p className={staleReason
             ? 'flex items-start gap-1 rounded-md border border-warning/30 bg-warning-subtle px-2 py-1 text-[11px] text-warning'
             : 'text-[11px] text-meta'}>
@@ -156,33 +121,16 @@ export default function InlineEditReviewCard({
         <p className="sr-only text-[11px]" role="status" aria-live="polite">{reviewAnnouncement(summary)}</p>
       </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-border px-3 py-2">
-          <button
-            type="button"
-            onClick={onRejectAll}
-            disabled={!canAct}
-            className="mr-auto rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-40 [@media(pointer:coarse)]:min-h-11"
-          >
-            Reject all
-          </button>
-          <button
-            type="button"
-            onClick={onAcceptAll}
-            disabled={!canAct}
-            title={`Accept remaining changes (${commandLabel}+Enter)`}
-            className="rounded-md px-2 py-1 text-[11px] text-foreground hover:bg-surface-raised disabled:opacity-40 [@media(pointer:coarse)]:min-h-11"
-          >
-            Accept all
-          </button>
+      <div className="flex items-center justify-end border-t border-border px-3 py-2">
           <Button
             variant="primary"
             size="sm"
             disabled={!summary.canApply || !canAct}
             onClick={onApply}
-            aria-label={summary.applyLabel}
-            title={blocked ?? 'Apply the assembled replacement as one undoable edit'}
+            aria-label={summary.applyLabel === 'Keep original' ? 'Keep original text' : 'Accept changes'}
+            title={blocked ?? `Accept the selected changes (${commandLabel}+Enter)`}
           >
-            {summary.applyLabel}
+            {summary.applyLabel === 'Keep original' ? 'Keep original' : 'Accept changes'}
           </Button>
       </div>
     </div>

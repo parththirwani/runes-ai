@@ -18,17 +18,21 @@ These are interaction references. Runes keeps its own visual style, Monaco edito
 1. Keep the title, view control, Compile, and one More menu in the document bar. Put Share, Move, Save draft, Download source, Insert image, and Writing tools in More.
 2. Remove the persistent AI toolbar. Show a slim status row only during an AI request, suggestion, error, or image upload. Keep autocomplete preferences in Writing tools.
 3. Keep the selection bubble and Ctrl/Cmd+K. Open a compact edit card with one focused instruction field, a send control, Clearer and Shorter, and a More menu for Formal and Fix grammar. Show the character count only near the limit.
-4. Keep per-change review, undo, access checks, protected syntax checks, and one undoable Apply. Make the review card quieter by hiding per-change controls until a change is focused and removing the always-visible shortcut legend.
+4. Keep per-change review, undo, access checks, protected syntax checks, and one undoable commit. Make the review card quieter by removing the always-visible shortcut legend.
 5. Close Writing tools when an inline edit opens. Escape closes the tools panel.
 
 ## Verification
 
 - An idle editor has no AI toolbar, while thinking, ready, retry, and error states still have visible feedback.
 - All document actions and four quick edits remain reachable by pointer and keyboard.
-- The edit prompt, stream, review, Apply, and undo still work for Markdown and LaTeX.
+- The edit prompt, stream, review, acceptance, and undo still work for Markdown and LaTeX.
 - At 1440×900 and 390×844, the card stays inside the editor and its controls remain usable.
 - TypeScript, unit tests, ESLint, build, and database integration tests pass.
 
-Browser checks use the development AI stub. In Markdown, a free instruction reached review; Accept all, Apply, and Undo restored the exact original bytes. In LaTeX, Clearer reached review and Keep original left the model unchanged. The document menu opened the image file chooser for Markdown and omitted Insert image for LaTeX. The secondary Formal preset opened from More and reached review. Escape closed Writing tools.
+Browser checks use the development AI stub. In Markdown, a free instruction reached review; acceptance and Undo restored the exact original bytes. In LaTeX, Clearer reached review and Keep original left the model unchanged. The document menu opened the image file chooser for Markdown and omitted Insert image for LaTeX. The secondary Formal preset opened from More and reached review. Escape closed Writing tools.
+
+## Follow-up: one-click acceptance
+
+The review now starts with all suggested changes selected. **Accept changes** commits them in one undoable edit. A writer can click a highlighted change once to keep its original wording, and click it again to restore the suggestion. The review has one action button, and the source stays untouched until that action. Ctrl/Cmd+Enter commits the current choices. The anchor and protected-syntax checks still run before applying.
 
 Screenshots: [idle desktop](screenshots/editor-focus/01-idle-desktop.png), [edit prompt desktop](screenshots/editor-focus/02-edit-prompt-desktop.png), [review desktop](screenshots/editor-focus/03-review-desktop.png), [edit prompt narrow](screenshots/editor-focus/04-edit-prompt-narrow.png).

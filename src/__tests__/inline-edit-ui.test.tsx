@@ -41,8 +41,6 @@ function reviewProps(model: ReturnType<typeof buildInlineEditHunks>, overrides: 
     focusIndex: null,
     onFocusChange: idle,
     onDecision: idle,
-    onAcceptAll: idle,
-    onRejectAll: idle,
     onApply: idle,
     onDismiss: idle,
     ...overrides,
@@ -185,45 +183,46 @@ describe('inline edit diff text', () => {
 describe('inline edit review card', () => {
   const model = buildInlineEditHunks(ORIGINAL, REPLACEMENT);
 
-  it('blocks Apply until every change has a decision and counts them out loud', () => {
-    const html = renderToStaticMarkup(React.createElement(InlineEditReviewCard, reviewProps(model)));
+  it('offers a single accept action with the complete suggestion selected', () => {
+    const selected = withAllDecisions(model, 'accepted');
+    const html = renderToStaticMarkup(React.createElement(InlineEditReviewCard, reviewProps(selected)));
     expect(html).toContain('Review changes');
-    expect(html).toContain('0 of 2 changes');
-    expect(html).toContain('2 of 2 changes still need a decision');
-    expect(html).toContain('Select a change to accept or reject it on its own');
+    expect(html).toContain('2 changes');
+    expect(html).toContain('Click a highlighted change to keep its original wording');
     expect(html).not.toContain('through changes');
     expect(html).not.toContain('aria-label="Accept focused change"');
-    expect(html).toContain('Reject all');
-    expect(html).toContain('Accept all');
+    expect(html).not.toContain('Reject all');
+    expect(html).not.toContain('Accept all');
     expect(html).toContain('aria-label="Review AI changes"');
     expect(html).toContain('Removed text is struck through. Added text is underlined.');
-    expect(html).toContain('>Apply<');
-    expect(html).toContain('disabled');
+    expect(html).toContain('>Accept changes<');
+    expect(html).not.toContain('disabled=""');
   });
 
   it('names the focused change and its decision state', () => {
     const html = renderToStaticMarkup(React.createElement(InlineEditReviewCard, reviewProps(
-      withHunkDecision(model, 'hunk-0-4-5', 'accepted')!,
+      withHunkDecision(withAllDecisions(model, 'accepted'), 'hunk-0-4-5', 'rejected')!,
       { focusIndex: 1 },
     )));
     expect(html).toContain('Change 2 of 2');
-    expect(html).toContain('no decision yet');
-    expect(html).toContain('1 of 2 changes');
+    expect(html).toContain('suggestion selected');
+    expect(html).toContain('Activate to keep original');
     expect(html).toContain('aria-live="polite"');
   });
 
-  it('offers one Apply once everything is decided', () => {
+  it('keeps individual choices optional and uses the same primary action', () => {
     const onApply = vi.fn();
+    const mixed = withHunkDecision(withAllDecisions(model, 'accepted'), 'hunk-0-4-5', 'rejected')!;
     const html = renderToStaticMarkup(React.createElement(InlineEditReviewCard, reviewProps(
-      withAllDecisions(model, 'accepted'),
+      mixed,
       { focusIndex: 0, onApply },
     )));
-    expect(html).toContain('>Apply<');
-    expect(html).toContain('one undoable edit');
+    expect(html).toContain('>Accept changes<');
+    expect(html).toContain('Activate to use suggestion');
     expect(html).not.toContain('need a decision');
   });
 
-  it('turns Apply into Keep original when everything was rejected', () => {
+  it('turns the primary action into Keep original when everything was rejected', () => {
     const html = renderToStaticMarkup(React.createElement(InlineEditReviewCard, reviewProps(
       withAllDecisions(model, 'rejected'),
     )));
@@ -237,7 +236,7 @@ describe('inline edit review card', () => {
       { focusIndex: 0, staleReason: 'Selection text has been modified' },
     )));
     expect(html).toContain('Selection text has been modified');
-    expect(html.match(/disabled=/g)?.length).toBeGreaterThanOrEqual(5);
+    expect(html).toContain('disabled=""');
   });
 
   it('renders the same change count as the hunk model', () => {

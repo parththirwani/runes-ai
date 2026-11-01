@@ -73,12 +73,12 @@ describe('groupDiffSegments', () => {
 
 describe('reviewActionForKey', () => {
   it('maps the plan keyboard model onto review actions', () => {
-    expect(reviewActionForKey({ key: 'Tab' }, true)).toEqual({ type: 'focusNext' });
-    expect(reviewActionForKey({ key: 'Tab', shiftKey: true }, true)).toEqual({ type: 'focusPrev' });
-    expect(reviewActionForKey({ key: 'Enter' }, true)).toEqual({ type: 'acceptFocused' });
+    expect(reviewActionForKey({ key: 'Tab' }, true)).toBeNull();
+    expect(reviewActionForKey({ key: 'Tab', shiftKey: true }, true)).toBeNull();
+    expect(reviewActionForKey({ key: 'Enter' }, true)).toBeNull();
     expect(reviewActionForKey({ key: 'Backspace' }, true)).toEqual({ type: 'rejectFocused' });
-    expect(reviewActionForKey({ key: 'Enter', ctrlKey: true }, true)).toEqual({ type: 'acceptRest' });
-    expect(reviewActionForKey({ key: 'Enter', metaKey: true }, false)).toEqual({ type: 'acceptRest' });
+    expect(reviewActionForKey({ key: 'Enter', ctrlKey: true }, true)).toEqual({ type: 'apply' });
+    expect(reviewActionForKey({ key: 'Enter', metaKey: true }, false)).toEqual({ type: 'apply' });
   });
 
   it('leaves unhandled keys and undirected accept/reject to the editor', () => {
@@ -158,7 +158,7 @@ describe('reviewAnnouncement', () => {
       'hunk-0-4-5',
       'accepted',
     );
-    expect(reviewAnnouncement(summarizeReview(mixed!))).toContain('1 accepted, 1 rejected');
+    expect(reviewAnnouncement(summarizeReview(mixed!))).toContain('1 selected, 1 original');
   });
 });
 

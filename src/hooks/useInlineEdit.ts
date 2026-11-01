@@ -339,7 +339,9 @@ export function useInlineEdit(options: UseInlineEditOptions) {
         }
         terminal = true;
         if (event.type === 'done') {
-          setHunkModel(buildInlineEditHunks(anchor.originalText, event.replacementText));
+          // The complete suggestion is selected by default. Readers can keep
+          // individual original spans before committing it in one action.
+          setHunkModel(withAllDecisions(buildInlineEditHunks(anchor.originalText, event.replacementText), 'accepted'));
           setFocusIndex(null);
           setPreviewTokens([]);
           dispatch({ type: 'result', requestId, replacementText: event.replacementText });
@@ -414,16 +416,6 @@ export function useInlineEdit(options: UseInlineEditOptions) {
   const decide = useCallback((hunkId: string, decision: 'accepted' | 'rejected') => {
     setApplyBlockedReason(null);
     setHunkModel((prev) => (prev ? withHunkDecision(prev, hunkId, decision) ?? prev : prev));
-  }, []);
-
-  const acceptAll = useCallback(() => {
-    setApplyBlockedReason(null);
-    setHunkModel((prev) => (prev ? withAllDecisions(prev, 'accepted') : prev));
-  }, []);
-
-  const rejectAll = useCallback(() => {
-    setApplyBlockedReason(null);
-    setHunkModel((prev) => (prev ? withAllDecisions(prev, 'rejected') : prev));
   }, []);
 
   // --- Apply: one undoable Monaco edit after a full anchor recheck ---------
@@ -739,8 +731,6 @@ export function useInlineEdit(options: UseInlineEditOptions) {
     dismiss,
     retry,
     decide,
-    acceptAll,
-    rejectAll,
     apply,
     undoApply,
   };
