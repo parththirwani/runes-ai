@@ -1,0 +1,155 @@
+# Runes AI — inline edit states (same flow as the Arc reference set)
+
+Captured with Playwright + headless Chromium against a local `next dev` server on this
+branch, driven through the real Monaco editor (pointer selection, real clicks, real keys).
+These are Runes screenshots; `../ai-inline-edit-reference/` holds the Arc demo screenshots
+they were built against. Nothing here is a mock-up: every image is the product DOM after a
+user action.
+
+## Environment
+
+- `npm run dev` on port 3055, `NODE_ENV=development`.
+- Auth: repo `DEV_AUTH_BYPASS=1` dev session (`/api/dev-login`) — no real identity provider.
+- Data: local PostgreSQL (apt `postgresql-14`) with the Prisma schema pushed.
+- AI: **no live provider key exists here**, so the request was answered by the repo's
+  development-only, env-gated stub (`src/lib/ai-dev-stub.ts`, `AI_DEV_STUB=1`). The stub only
+  replaces the provider *reply*: authentication, writable-document checks, quota, the single
+  active slot, protected-token masking/restore, size caps and the 15 s timeout all still run
+  on the stubbed reply. `AI_DEV_STUB_DELAY_MS=220` paces the stubbed stream so the streaming
+  and Stop states are observable. **No image in this folder proves behaviour of a real model.**
+- Viewports: desktop **1440x900** (light theme; the editor is light-only today, so there is no
+  dark variant to compare), narrow **390x844**.
+- Element-crop images (bubble, cards, receipts) are cropped to the card; `-editor`, `-full`,
+  `-idle` and the `anchor-`/`save-` images are full 1440x900 pages.
+
+## Images, in flow order
+
+| File | State | How it was produced |
+| --- | --- | --- |
+| `md-01-editor-idle.png` | Idle editor with the shortcut hint in the AI toolbar | Opened a Markdown document, no selection |
+| `md-02b-bubble.png` | `Edit` bubble on an eligible selection | Real mouse drag across one prose sentence |
+| `md-03-prompt.png` | Prompt card: four quick actions + bounded instruction, `esc` hint | Clicked the bubble |
+| `stream-01-early.png`, `stream-02-partial.png` | Streaming: `Editing`, `Stop`, `esc`, word-by-word word diff, source untouched | Clicked `Clearer`; two frames ~0.5 s apart |
+| `stream-03-stopped.png` | Stop discards the partial edit and explains why | Clicked `Stop` mid-stream; the model text was verified unchanged |
+| `md-05-review.png` | Per-change review: `0 of 2 changes`, struck-through/underlined word diff, Apply blocked with the pending-decision reason | Waited for the terminal `done` event |
+| `md-06-review-focused.png` | Focused change after `Tab` (roving focus, `aria-current`) | Pressed `Tab` inside the card |
+| `md-07-review-accepted.png` | `Ctrl+Enter` accepted the rest | Pressed `Control+Enter` |
+| `md-08-receipt.png` | Receipt `Applied 2 of 2` with `Undo` | Clicked `Apply` (one undoable Monaco edit) |
+| `md-09-applied-editor.png` | Model after the accepted edit (protected `` `pytest` `` intact) | Same run |
+| `save-03-after-undo.png` | `Undo` from the receipt restores the exact original bytes (full 1440x900 frame; the byte round trip is asserted by re-reading the saved file) | Clicked `Undo` on the receipt, then `Ctrl+S` |
+| `md-11-ctrlk-prompt.png` | `Ctrl+K` with only a caret opens the prompt on the sentence at the caret | Clicked in a sentence, pressed `Control+K` |
+| `md-12-prompt-typed.png` | Typed free instruction with the live `0/500` counter | Typed `make it warmer` |
+| `md-12b-free-instruction-review.png` | Review produced from a free instruction | Pressed `Enter` in the instruction field |
+| `md-12c-kept-original.png` | `Kept the original` — Reject all commits **zero bytes** | `Reject all` then `Keep original` |
+| `md-13-refusal.png` | Honest refusal when the trigger is ineligible (`Caret is not on a prose line`) | Caret on a `# heading` line, then `Control+K` |
+| `tex-01-review.png` | LaTeX document review (`Formal` quick action) | Same flow in a `.tex` document |
+| `tex-02-receipt.png` | LaTeX receipt `Applied 1 of 1` with `\cite{}` untouched | Clicked `Apply` |
+| `anchor-01-open.png` | Review anchored under the selection | Long (60 paragraph) document |
+| `anchor-02-after-scroll.png` | Same card followed the anchor after a 300 px wheel scroll | Card box moved 50 px with the text |
+| `anchor-03-after-resize.png` | Card re-placed and still clamped inside the editor after a viewport resize to 1100x620 | `setViewportSize` |
+| `save-01-receipt-and-dirty.png` | Accepted edit leaves the file dirty (unsaved marker) | After `Apply`, before saving |
+| `save-02-after-save.png` | Normal save path persisted the accepted text | `Ctrl+S`; verified by reading the file back over the API |
+| `save-03-after-undo.png` | One undo step + save returns the exact original bytes | `Undo` then `Ctrl+S` |
+| `mobile-01-ctrlk.png` | Narrow viewport 390x844 with the keyboard-triggered prompt | Clicked a sentence, `Control+K` |
+
+## Ghost text (iteration 9) — `ghost/`
+
+Produced with a scripted Playwright run against `AI_DEV_STUB=1` (deterministic completion:
+" and the same pattern held across the next set of runs"). Every measurement opens a brand-new
+document (fresh Monaco mount, fresh provider state); text is read back from the server after
+`Ctrl+S`, not from the DOM. Cadence: ~130 ms/keystroke (a normal writing speed — see gaps).
+
+| File | What it shows | How |
+| --- | --- | --- |
+| `ghost/01-idle.png` | Resting chip `AI complete` (check icon), no ghost | Fresh `.tex` document, nothing typed |
+| `ghost/02-thinking.png` | Chip `Thinking…` during the 450 ms debounce + stream | Typed ` rose` at end of prose |
+| `ghost/03-ready.png` | Italic ghost `and the same pattern held across the next set of runs` + chip `Tab to accept` / `Accept` button | Same cycle, after `done` |
+| `ghost/04-accepted.png` | Model after `Tab`: full insertion in the document, ghost cleared instantly | `Tab`; server file read |
+| `ghost/05-word-accept.png` | After `Ctrl+Right`: exactly one word (` and`) inserted, remainder kept as ghost | Server file read + ghost DOM |
+| `ghost/06-consumed.png` | Typing the suggestion's own words (` and the`) consumes them without duplication; remainder re-offered | Typed over a ready ghost |
+| `ghost/07-mismatch.png` | A mismatching keystroke (`X`) clears the ghost, `soonX` kept | Typed over a ready ghost |
+| `ghost/08-dismissed.png` | `Escape` dismisses with **zero** document-byte changes (before/after file hashes compared) | `Escape` on ready ghost |
+| `ghost/09-none.png` | `No suggestion` chip when the provider declines (prefix ends with `timeout`); aria-live said `AI made no suggestion` | Fresh doc, trailing space typed |
+| `ghost/10-markdown-accepted.png` | Ghost works in Markdown prose; `Tab` accepted (server read) | Fresh `.md` document |
+| `ghost/11-fence-protected.png` | Inside a ``` fence no ghost appears and the chip rests at idle (no false `Tab to accept`) | Caret in fence, typed prose |
+| `ghost/12-narrow-390.png` | Chip stays visible/tappable (128x39 box) at 390x844 | Viewport resize |
+| `ghost/13-reduced-motion.png` | Chip carries `motion-reduce` variants under `prefers-reduced-motion: reduce` | Playwright `reducedMotion` context |
+
+
+## Access and dirty scope (iteration 11) — `access/`
+
+Two second-user journeys driven through the real product: a document shared with a **second
+dev account that accepted the invitation** (so `canEdit` is derived from a real
+`DocumentGrant` row, not a flag), and a **two-file workspace** where the accepted AI edit happens
+in the active file. Every server assertion below re-read the stored bytes through
+`GET /api/document/<slug>/file?path=…` rather than trusting the DOM. The run is scripted at
+`/tmp/cora/pw/runes-access-journey.mjs` (outside the repo, Playwright + headless Chromium, nothing
+installed into `package.json`); the 34-assertion version passed end to end twice on this state, and
+its earlier revisions passed on the way (one of them flagged a too-broad `AI complete` selector that
+matched the AI-workspace drawer's `Enable AI complete` label, which is why the selector now matches
+the toolbar label exactly). `/tmp/cora/runes/iter11-access-run2.log` holds one full transcript.
+
+| File | State | How it was produced / what the run asserted |
+| --- | --- | --- |
+| `access/ro-01-no-affordance.png` | Reader's idle editor: no `Select text and press Ctrl K` hint, no ghost chip, no `AI complete` toggle, no dirty tab | Opened the shared document as the reader by document id; header reads `View-only shared by` |
+| `access/ro-02-selection-no-bubble.png` | Real prose selection by the reader raises **no** Edit bubble | Clicked the line, `Home`, `Shift+End`; bubble selector absent |
+| `access/ro-03-ctrlk-refusal.png` | `Ctrl+K` as a reader gives the honest refusal `This document is read-only — AI edits are unavailable` and opens **no** prompt card | Pressed `Control+K` with the editor focused |
+| `access/ro-04-narrow-no-affordance.png` | Same absence at 390x844 (no clipped or re-flowed affordance) | `setViewportSize` |
+| `access/ro-05-latex-no-affordance.png` | Same absence in a **LaTeX** document shared with the same reader | Selection across `We collected samples … \cite{smith2024}.` |
+| `access/mf-01-two-tabs-clean.png` | Two files open (`main.md` active, `notes.md` second tab), nothing dirty | Opened `notes.md` from the file tree |
+| `access/mf-02-only-active-tab-dirty.png` | After the accepted inline edit: unsaved dot on the `main.md` tab **only**; `notes.md` tab and tree entry have none; receipt `Applied 1 of 1` | `Shorter` quick action → `Accept all` → `Apply` |
+| `access/mf-03-saved-none-dirty.png` | `Ctrl+S` clears the single marker; `main.md` changed on the server, `notes.md` byte-identical | Server file reads before and after the save |
+| `access/st-01-stale-review-inert.png` | A **stale** review refuses to apply: after one keystroke elsewhere the card reads `Selection text has been modified`, `Reject all` / `Accept all` / `Apply` are disabled, and the model shows only the human keystroke (`Access proof x`) — no AI bytes | `Formal` quick action, then `End` + ` x` on the heading line |
+
+Server-side refusals captured in the same run (statuses, not pictures): accepted reader
+`POST /api/ai/inline-edit` → **404**, `POST /api/ai/complete` → **404**, `PUT /api/document/<id>`
+→ **404**; unrelated user `POST /api/ai/inline-edit` → **404**; typing as a reader left the model
+text unchanged; after the refused LaTeX request the `.tex` bytes were byte-identical to creation.
+`mf-02` also shows the chip back at `Thinking…`: after `Apply` the caret moved, so autocomplete
+re-armed for the *next* completion — expected, and the edit itself was already committed.
+
+Honest scope note: the pre-existing legacy `Paraphrase`/tone toolbar buttons, the `Insert image`
+control and the AI-workspace drawer stay visible to a reader exactly as they were on `dev`
+(this branch does not touch them). They are inert for a reader: the editor model is read-only,
+every write path re-checks `canEdit`, and the AI routes answer 404 (`src/lib/document-lookup.ts`
+write intent). **No new** edit or autocomplete affordance is rendered for a read-only user.
+
+There is deliberately **no** Runes-vs-Arc pair for these frames in `../ai-inline-edit-compare/`:
+the Arc public demos are single-user sandboxes with no sharing, roles or multi-file workspace,
+so the reader and second-tab states have no reference frame to be compared against.
+
+
+## Known gaps (honest, for the next pass)
+
+- `Thinking`-style provider latency and real model wording are **not** represented: the answers
+  come from the dev stub, so the visible edit is deterministic
+  (`Overall, …`, filler removal, contraction expansion) rather than intelligent.
+- Touch tap-to-accept and a real mobile touch selection are not shown here; the bubble and cards
+  carry `[@media(pointer:coarse)]:min-h-11` touch targets, but no touch-device capture exists yet.
+- Side-by-side Runes-vs-Arc pairs and the differences table now live in
+  [`../ai-inline-edit-compare/`](../ai-inline-edit-compare/README.md) (25 pairs, both sides captured
+  at 1440x900 and 390x844 with the same crop rule).
+- Ghost streaming: the comparison frames predate the follow-up fix. Complete words now render as
+  injected text during the stream, without changing the model. The native inline completion
+  replaces this preview at `done`; moving the caret or cancelling clears it. See
+  `ghost/ghost-partial-stream-followup.png` for the `Thinking…` state with partial text.
+- Keyboard Retry: `ghost/ghost-retry-keyboard-followup.png` shows the focused Retry button after
+  pressing Tab in Monaco. Enter started a second `/api/ai/complete` request in the browser check.
+- Ghost keystroke cadence: at ~60 ms/char Playwright lost one keystroke during ghost repaints on
+  the CDN Monaco 0.55 EditContext build; at a normal ~130 ms/char cadence zero keystrokes were
+  lost across the full journey. Worth a targeted retest on real typing (or a Monaco upgrade)
+  before claiming burst-typing safety.
+- The inline-run frames above were captured in the default split view, so the Monaco source pane
+  occupies the left half at 1440 px; the comparison panels in `../ai-inline-edit-compare/` were
+  re-captured in Code view (full-width source) so both sides line up. Ghost frames already use Code
+  view.
+- Regression re-runs on this state (iteration 11): the iteration-9 ghost journey (`/tmp/cora/pw
+  /runes-ghost-journey.mjs`) still finishes `DONE` (idle `AI complete` → `Thinking…` →
+  `Tab to accept` with the full italic ghost → Tab accept → exact undo → one-word accept with the
+  remainder → consume → mismatch → `Escape` byte-identical → `No suggestion` → Markdown accept →
+  fence stays idle → 390 px chip box → reduced-motion classes), and the iteration-8 save journey
+  still persists the accepted bytes on `Ctrl+S` (`…were very noisy…` → `…were noisy…`) and ends with
+  `undo restored the original bytes: true`. (That older script also prints a stale `Overall` marker
+  probe, which the `Shorter` stub reply no longer produces — the byte comparison above is the real
+  assertion.) So the reader-only gating of the chip/preference and the dirty-derivation extraction
+  changed only what a reader can see, not what a writer can do.

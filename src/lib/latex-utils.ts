@@ -325,6 +325,23 @@ export function verifyAndRestore(
   return { success: true, restored };
 }
 
+/**
+ * Byte-for-byte protected LaTeX spans of a selection, in masking order.
+ * Same pass analyzeSelection uses to build its placeholders, so an assembled
+ * review text can be re-checked against these exact originals.
+ */
+export function extractProtectedLatexTokens(selectedText: string): string[] {
+  const tokens: string[] = [];
+  let masked = selectedText;
+  for (const pattern of PROTECTED_PATTERNS) {
+    masked = masked.replace(pattern, (match: string) => {
+      tokens.push(match);
+      return `@@P${tokens.length - 1}~`;
+    });
+  }
+  return tokens;
+}
+
 export function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -255,6 +255,12 @@
   background: color-mix(in srgb, AccentColor, transparent 75%);
 }
 
+.ghost-text-stream-preview {
+  color: var(--color-meta);
+  opacity: 0.7;
+  font-style: italic;
+}
+
 @keyframes shimmer {
   0% {
     background-position: -200% 0;

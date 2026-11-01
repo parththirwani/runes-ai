@@ -8,6 +8,7 @@ import { workspaceClient } from '@/src/lib/workspace-client';
 import type { WorkspaceDocumentPayload, WorkspaceFileKind, WorkspaceFileMeta } from '@/src/lib/workspace-types';
 import type { TreeNode } from '@/src/lib/workspace-paths';
 import { buildTree } from '@/src/lib/workspace-paths';
+import { dirtyPathsOf } from '@/src/lib/workspace-dirty';
 
 export type ManagedFile = {
   path: string;
@@ -117,10 +118,7 @@ export function useWorkspace(initialDocument: WorkspaceDocumentPayload | null) {
     update(path, { content });
   }, [update]);
 
-  const dirtyPaths = useMemo(
-    () => Object.values(filesByPath).filter((file) => !file.binary && file.loaded && file.content !== file.savedContent).map((file) => file.path),
-    [filesByPath],
-  );
+  const dirtyPaths = useMemo(() => dirtyPathsOf(filesByPath), [filesByPath]);
 
   const saveAll = useCallback((): Promise<{ ok: boolean; error?: string }> => {
     const run = async (): Promise<{ ok: boolean; error?: string }> => {
