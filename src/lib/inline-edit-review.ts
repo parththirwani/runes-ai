@@ -69,9 +69,9 @@ export function groupDiffSegments(tokens: DiffToken[]): DiffSegment[] {
 }
 
 // -------------------------------------------------------------------------
-// Keyboard model (plan step 5): Tab cycles changes, Enter accepts the focused
-// change, Backspace rejects it, Ctrl/Cmd+Enter accepts the rest. Escape is the
-// controller's dismiss, and unhandled keys keep their normal behaviour.
+// Keyboard model: native Tab/Enter navigation activates each change button.
+// Backspace keeps the focused original; Ctrl/Cmd+Enter commits the choices.
+// Escape is the controller's dismiss.
 // -------------------------------------------------------------------------
 
 export type InlineEditKeySignal = {
@@ -82,20 +82,15 @@ export type InlineEditKeySignal = {
 };
 
 export type InlineEditReviewAction =
-  | { type: 'focusNext' }
-  | { type: 'focusPrev' }
-  | { type: 'acceptFocused' }
   | { type: 'rejectFocused' }
-  | { type: 'acceptRest' };
+  | { type: 'apply' };
 
 export function reviewActionForKey(signal: InlineEditKeySignal, hasFocusedChange: boolean): InlineEditReviewAction | null {
   const command = signal.ctrlKey === true || signal.metaKey === true;
   switch (signal.key) {
-    case 'Tab':
-      return signal.shiftKey === true ? { type: 'focusPrev' } : { type: 'focusNext' };
     case 'Enter':
-      if (command) return { type: 'acceptRest' };
-      return hasFocusedChange && signal.shiftKey !== true ? { type: 'acceptFocused' } : null;
+      if (command) return { type: 'apply' };
+      return null;
     case 'Backspace':
       return !command && hasFocusedChange ? { type: 'rejectFocused' } : null;
     default:
@@ -175,8 +170,8 @@ export function reviewAnnouncement(summary: InlineEditReviewSummary): string {
     return `${summary.changesLabel} decided, ${summary.pending} still to review`;
   }
   if (summary.accepted === 0) return `All ${summary.total} changes rejected — the original text is kept`;
-  if (summary.rejected === 0) return `All ${summary.total} changes accepted — Apply makes one undoable edit`;
-  return `${summary.accepted} accepted, ${summary.rejected} rejected — Apply makes one undoable edit`;
+  if (summary.rejected === 0) return `All ${summary.total} changes selected — Accept changes makes one undoable edit`;
+  return `${summary.accepted} selected, ${summary.rejected} original — Accept changes makes one undoable edit`;
 }
 
 // -------------------------------------------------------------------------

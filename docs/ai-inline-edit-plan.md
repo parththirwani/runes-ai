@@ -81,3 +81,7 @@ Build a pure hunk model from the original selection and validated replacement. E
 Before the implementation PR, run `./node_modules/.bin/tsc --noEmit`, `bun run test`, `./node_modules/.bin/eslint .`, and `bun run build`. This feature changes the writable-document access path, so run the Postgres-backed integration suite with `docker compose -f docker/docker-compose.yml up -d` and `bun run test:integration`. Record command results in the implementation PR.
 
 The agent implementing this should branch from current `dev`, keep the change scoped to inline editing, and open a PR into `dev`. The plan PR contains no runtime changes. Arc UI remains a visual and behavior reference; the implementation should use Runes AI code and its existing dependencies.
+
+## Later review interaction
+
+The original acceptance steps above describe the first release. The later editor review update in [editor-focus-plan.md](editor-focus-plan.md) selects the complete suggestion by default. A highlighted change toggles between suggested and original wording with one click or Enter, and one **Accept changes** action commits the current choices. Source anchoring, syntax checks, and one-step undo remain required.

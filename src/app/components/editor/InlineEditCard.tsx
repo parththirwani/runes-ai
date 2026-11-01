@@ -74,12 +74,14 @@ export function InlineEditDiffText({
   decisions,
   focusOrdinal = null,
   onFocusChange,
+  onToggleChange,
   totalChanges,
 }: {
   tokens: DiffToken[];
   decisions?: HunkDecision[];
   focusOrdinal?: number | null;
   onFocusChange?: (ordinal: number) => void;
+  onToggleChange?: (ordinal: number) => void;
   totalChanges?: number;
 }) {
   const segments = groupDiffSegments(tokens);
@@ -101,7 +103,8 @@ export function InlineEditDiffText({
         const label = 'Change ' + (segment.ordinal + 1) + ' of ' + Math.max(shown, segment.ordinal + 1) +
           ': ' + (segment.removed ? 'removed ' + JSON.stringify(segment.removed) : 'nothing removed') +
           ', ' + (segment.added ? 'added ' + JSON.stringify(segment.added) : 'nothing added') +
-          (status && status !== 'pending' ? ', ' + status : '');
+          (status && status !== 'pending' ? ', ' + status : '') +
+          (onToggleChange ? '. Activate to ' + (status === 'rejected' ? 'use suggestion' : 'keep original') : '');
         const marks = (
           <>
             {segment.removed !== '' && (
@@ -122,16 +125,20 @@ export function InlineEditDiffText({
             aria-label={label}
             aria-current={focused ? 'true' : undefined}
             data-hunk-ordinal={segment.ordinal}
-            onClick={() => onFocusChange(segment.ordinal)}
+            onFocus={() => onFocusChange(segment.ordinal)}
+            onClick={() => {
+              onFocusChange(segment.ordinal);
+              onToggleChange?.(segment.ordinal);
+            }}
             className={
               'rounded-sm px-0.5 align-baseline ' +
               (focused ? 'ring-1 ring-action bg-surface-raised' : 'hover:bg-surface-raised')
             }
           >
             {marks}
-            {status && status !== 'pending' && (
+            {status === 'rejected' && (
               <span className="ml-0.5 align-super font-sans text-[9px] uppercase tracking-wide text-meta">
-                {status}
+                original
               </span>
             )}
           </button>

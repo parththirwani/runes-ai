@@ -1183,8 +1183,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                           focusIndex={inlineEdit.focusIndex}
                           onFocusChange={inlineEdit.setFocusIndex}
                           onDecision={inlineEdit.decide}
-                          onAcceptAll={inlineEdit.acceptAll}
-                          onRejectAll={inlineEdit.rejectAll}
                           onApply={inlineEdit.apply}
                           onDismiss={inlineEdit.dismiss}
                           staleReason={inlineEdit.blockedReason}
