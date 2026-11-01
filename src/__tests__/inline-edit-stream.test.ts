@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   encodeInlineEditEvent,
   isPartialPlaceholder,
+  maskedTokensForPreview,
   parseProviderSseLine,
   readInlineEditStream,
   restoreMaskedPreview,
   type InlineEditStreamEvent,
 } from '@/src/lib/inline-edit-stream';
+import { buildStreamingPreview } from '@/src/lib/inline-edit-review';
+import { analyzeSelection } from '@/src/lib/latex-utils';
+import { analyzeMarkdownSelection, scanMarkdownContext } from '@/src/lib/markdown-utils';
 
 const enc = new TextEncoder();
 
@@ -168,5 +172,44 @@ describe('parseProviderSseLine', () => {
 
   it('surfaces an in-band provider error payload', () => {
     expect(parseProviderSseLine('data: {"error":{"message":"boom"}}')).toEqual({ kind: 'provider-error' });
+  });
+});
+
+describe('maskedTokensForPreview', () => {
+  it('reproduces the Markdown masking table the route uses, index for index', () => {
+    const selection = 'Read the [guide](https://example.com/g) before using `npm run build` today.';
+    const analysis = analyzeMarkdownSelection(selection, scanMarkdownContext(selection, 0));
+    expect(analysis.eligible).toBe(true);
+    expect(maskedTokensForPreview(selection, 'markdown')).toEqual(analysis.protectedTokens);
+  });
+
+  it('reproduces the LaTeX masking table the route uses, index for index', () => {
+    const selection = 'As shown by \\cite{chen2021} the energy $E=mc^2$ stays constant.';
+    const analysis = analyzeSelection(selection, {
+      isInDocument: true, isInPreamble: false, isInComment: false,
+      isInMath: false, isInVerbatim: false, isInCommandName: false, isInCommandArg: false,
+    });
+    expect(analysis.eligible).toBe(true);
+    expect(maskedTokensForPreview(selection, 'latex')).toEqual(analysis.protectedTokens);
+  });
+
+  it('lets a streamed preview show protected bytes without waiting for the terminal event', () => {
+    const selection = 'Read the [guide](https://example.com/g) before using `npm run build` today.';
+    const tokens = maskedTokensForPreview(selection, 'markdown');
+    // The provider echoes placeholders; deltas arrive split across chunks.
+    const masked = 'Skim the @@PROTECTED_0__ before `npm run build` today@@PROTE';
+    const { visible, held } = restoreMaskedPreview(masked, tokens);
+    expect(visible).toBe('Skim the [guide](https://example.com/g) before `npm run build` today');
+    expect(held).toBe('@@PROTE');
+
+    const preview = buildStreamingPreview(selection, visible);
+    expect(preview.revealed).toBe('Skim the [guide](https://example.com/g) before `npm run build` ');
+    expect(preview.held).toBe('today');
+    expect(preview.tokens.some((token) => token.type === 'add' && token.value.includes('today'))).toBe(false);
+  });
+
+  it('returns nothing when the selection holds no protected syntax', () => {
+    expect(maskedTokensForPreview('Just prose here.', 'markdown')).toEqual([]);
+    expect(maskedTokensForPreview('Just prose here.', 'latex')).toEqual([]);
   });
 });

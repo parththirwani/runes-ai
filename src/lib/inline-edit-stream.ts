@@ -7,7 +7,8 @@
 // show real protected spans byte-for-byte while never flashing a half-formed
 // placeholder. No React, no Monaco, no fetch.
 
-import { PLACEHOLDER_PREFIX, escapeRegex } from './latex-utils';
+import { PLACEHOLDER_PREFIX, escapeRegex, extractProtectedLatexTokens } from './latex-utils';
+import { extractProtectedMarkdownTokens } from './markdown-utils';
 
 // -------------------------------------------------------------------------
 // Events
@@ -131,6 +132,20 @@ export function isPartialPlaceholder(text: string): boolean {
 }
 
 export type MaskedPreviewTokens = { placeholder: string; original: string }[];
+
+/**
+ * Rebuild the server masking table on the client so a streamed preview can show
+ * real protected bytes. The route masks with `@@PROTECTED_<n>__` in the order
+ * its patterns match; extractProtected*Tokens walks the identical pattern list,
+ * so renumbering by index reproduces the same placeholder-to-original pairs.
+ * Display only: applying still uses the verified terminal `done` text.
+ */
+export function maskedTokensForPreview(originalSelection: string, format: 'markdown' | 'latex'): MaskedPreviewTokens {
+  const originals = format === 'markdown'
+    ? extractProtectedMarkdownTokens(originalSelection)
+    : extractProtectedLatexTokens(originalSelection);
+  return originals.map((original, index) => ({ placeholder: `${PLACEHOLDER_PREFIX}${index}__`, original }));
+}
 
 /**
  * Split accumulated masked text into the part that is safe to display and a
