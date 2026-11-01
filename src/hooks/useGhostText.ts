@@ -18,8 +18,8 @@ import {
   type RefObject,
 } from 'react';
 import type { editor, languages } from 'monaco-editor';
-import { scanContext } from '@/src/lib/latex-utils';
-import { markdownLineIsProse, scanMarkdownContext } from '@/src/lib/markdown-utils';
+import { filterCompletion, scanContext } from '@/src/lib/latex-utils';
+import { filterMarkdownCompletion, markdownLineIsProse, scanMarkdownContext } from '@/src/lib/markdown-utils';
 import {
   completionNoticeForStatus,
   consumeGhostByTyping,
@@ -31,6 +31,7 @@ import {
   isRetryableCompletionStatus,
   nextGhostWord,
   readCompleteStream,
+  streamedGhostWords,
   type GhostChipPhase,
 } from '@/src/lib/ghost-text';
 
@@ -80,7 +81,7 @@ export type GhostTextController = {
   /** Chip Retry: clears the failure notice and asks Monaco to re-suggest. */
   retry: () => void;
   /** Abort everything in flight; blur, file switch, disable, unmount use this. */
-  cancel: () => void;
+  cancel: (preserveRetry?: boolean) => void;
 };
 
 type ReadyGhost = {
@@ -123,6 +124,39 @@ export function useGhostText(options: GhostTextOptions): GhostTextController {
   const readyGhostRef = useRef<ReadyGhost | null>(null);
   const ensureTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const chipPhaseRef = useRef<GhostChipPhase>('idle');
+  const previewRef = useRef<{ editor: editor.IStandaloneCodeEditor; decorations: editor.IEditorDecorationsCollection } | null>(null);
+
+  const clearPreview = useCallback(() => {
+    previewRef.current?.decorations.clear();
+  }, []);
+
+  const showPreview = useCallback((position: GhostPosition, text: string) => {
+    const editorInstance = optionsRef.current.editorRef.current;
+    const model = editorInstance?.getModel();
+    if (!editorInstance || !model) return;
+    if (previewRef.current?.editor !== editorInstance) {
+      previewRef.current?.decorations.clear();
+      previewRef.current = { editor: editorInstance, decorations: editorInstance.createDecorationsCollection() };
+    }
+    // Monaco omits injected text on a zero-width decoration. Anchor it to
+    // the adjacent character while leaving the model bytes untouched.
+    const atLineStart = position.column === 1;
+    const hasNextCharacter = model.getLineMaxColumn(position.lineNumber) > 1;
+    if (atLineStart && !hasNextCharacter) {
+      clearPreview();
+      return;
+    }
+    previewRef.current.decorations.set(text ? [{
+      range: {
+        startLineNumber: position.lineNumber, endLineNumber: position.lineNumber,
+        startColumn: atLineStart ? 1 : position.column - 1,
+        endColumn: atLineStart ? 2 : position.column,
+      },
+      options: atLineStart
+        ? { before: { content: text, inlineClassName: 'ghost-text-stream-preview' } }
+        : { after: { content: text, inlineClassName: 'ghost-text-stream-preview' } },
+    }] : []);
+  }, [clearPreview]);
 
   const applyChip = useCallback((phase: GhostChipPhase, announce: boolean) => {
     chipPhaseRef.current = phase;
@@ -145,13 +179,14 @@ export function useGhostText(options: GhostTextOptions): GhostTextController {
   }, []);
 
   const abortInflight = useCallback(() => {
+    clearPreview();
     const inflight = inflightRef.current;
     if (!inflight) return;
     inflightRef.current = null;
     inflight.terminal = true;
     inflight.controller.abort();
     for (const resolve of inflight.resolvers.splice(0)) resolve(EMPTY_RESULT);
-  }, []);
+  }, [clearPreview]);
 
   /** Abandon a waiting debounce timer (its promises must never hang). */
   const clearPendingDebounce = useCallback(() => {
@@ -163,13 +198,13 @@ export function useGhostText(options: GhostTextOptions): GhostTextController {
     for (const resolve of pendingResolversRef.current.splice(0)) resolve(EMPTY_RESULT);
   }, []);
 
-  const cancel = useCallback(() => {
+  const cancel = useCallback((preserveRetry = false) => {
     requestIdRef.current += 1;
     clearPendingDebounce();
     abortInflight();
     readyGhostRef.current = null;
     if (ensureTimerRef.current) { clearInterval(ensureTimerRef.current); ensureTimerRef.current = null; }
-    if (chipPhaseRef.current !== 'idle') applyChip('idle', false);
+    if (chipPhaseRef.current !== 'idle' && !(preserveRetry && chipPhaseRef.current === 'unavailable')) applyChip('idle', false);
   }, [abortInflight, applyChip, clearPendingDebounce]);
 
   // Autocomplete disabled, loss of edit rights, or an open inline-edit
@@ -221,8 +256,10 @@ export function useGhostText(options: GhostTextOptions): GhostTextController {
     const { documentId } = optionsRef.current;
     const offset = model.getOffsetAt(position);
     const full = model.getValue();
+    const version = model.getVersionId();
     const prefix = full.slice(Math.max(0, offset - 2000), offset);
     const suffix = full.slice(offset, offset + 1000);
+    const current = () => model.getVersionId() === version && isCurrent(requestId, model, position);
 
     const controller = new AbortController();
     abortInflight();
@@ -230,7 +267,6 @@ export function useGhostText(options: GhostTextOptions): GhostTextController {
       key, requestId, controller,
       preview: '', terminal: false, finalText: null, resolvers: [],
     };
-    abortInflight();
     inflightRef.current = inflight;
     applyChip('thinking', true);
 
@@ -259,9 +295,8 @@ export function useGhostText(options: GhostTextOptions): GhostTextController {
         // Pre-stream refusals stay plain JSON statuses, same as inline edit.
         inflight.terminal = true;
         settle(null);
-        if (isCurrent(requestId, model, position)) {
-          settle(null);
-        if (isRetryableCompletionStatus(res.status)) {
+        if (current()) {
+          if (isRetryableCompletionStatus(res.status)) {
             optionsRef.current.onNotice(completionNoticeForStatus(res.status));
             applyChip('unavailable', true);
           } else {
@@ -276,13 +311,24 @@ export function useGhostText(options: GhostTextOptions): GhostTextController {
           if (inflight.terminal || requestIdRef.current !== requestId) break;
           if (event.type === 'delta') {
             inflight.preview = (inflight.preview + event.text).slice(0, GHOST_TEXT_MAX_INSERTION);
+            if (!current()) {
+              clearPreview();
+              controller.abort();
+              break;
+            }
+            const words = streamedGhostWords(inflight.preview);
+            const safe = optionsRef.current.isMarkdown
+              ? filterMarkdownCompletion(words, prefix).accepted
+              : filterCompletion(words, prefix).accepted;
+            showPreview(position, safe ? words : '');
           } else if (event.type === 'done') {
             inflight.terminal = true;
+            clearPreview();
             if (event.insertion && event.insertion.length <= GHOST_TEXT_MAX_INSERTION) {
               inflight.preview = event.insertion;
               inflight.finalText = event.insertion;
               setModelName(`${event.provider} · ${event.model}`);
-              if (isCurrent(requestId, model, position)) {
+              if (current()) {
                 readyGhostRef.current = { uri: model.uri.toString(), startOffset: offset, text: event.insertion };
                 applyChip('ready', true);
                 settle(event.insertion);
@@ -293,15 +339,16 @@ export function useGhostText(options: GhostTextOptions): GhostTextController {
               }
             } else {
               if (event.insertion) setModelName(`${event.provider} · ${event.model}`);
-              if (isCurrent(requestId, model, position)) applyChip('none', true);
+              if (current()) applyChip('none', true);
               settle(null);
             }
           } else {
             inflight.terminal = true;
+            clearPreview();
             inflight.preview = '';
             readyGhostRef.current = null;
             settle(null);
-            if (isCurrent(requestId, model, position)) {
+            if (current()) {
               optionsRef.current.onNotice(completionNoticeForStatus(502));
               applyChip('unavailable', true);
             }
@@ -309,8 +356,9 @@ export function useGhostText(options: GhostTextOptions): GhostTextController {
         }
         if (!inflight.terminal) {
           inflight.terminal = true;
+          clearPreview();
           settle(null);
-          if (isCurrent(requestId, model, position) && chipPhaseRef.current === 'thinking') applyChip('none', true);
+          if (current() && chipPhaseRef.current === 'thinking') applyChip('none', true);
         }
         return;
       }
@@ -321,7 +369,7 @@ export function useGhostText(options: GhostTextOptions): GhostTextController {
       const insertion = typeof data.insertion === 'string' && data.insertion.length <= GHOST_TEXT_MAX_INSERTION
         ? data.insertion : null;
       if (data.provider && data.model) setModelName(`${data.provider} · ${data.model}`);
-      if (insertion && isCurrent(requestId, model, position)) {
+      if (insertion && current()) {
         inflight.preview = insertion;
         inflight.finalText = insertion;
         readyGhostRef.current = { uri: model.uri.toString(), startOffset: offset, text: insertion };
@@ -331,15 +379,16 @@ export function useGhostText(options: GhostTextOptions): GhostTextController {
         ensurePainted();
       } else {
         settle(null);
-        if (isCurrent(requestId, model, position)) applyChip('none', true);
+        if (current()) applyChip('none', true);
       }
     } catch {
       inflight.terminal = true;
+      clearPreview();
       settle(null);
     } finally {
       clearTimeout(timeoutId);
     }
-  }, [abortInflight, applyChip, ensurePainted, isCurrent, retrigger]);
+  }, [abortInflight, applyChip, clearPreview, ensurePainted, isCurrent, retrigger, showPreview]);
 
   const provideInlineCompletions = useCallback(async (
     model: MonacoModel,
@@ -555,14 +604,25 @@ export function useGhostText(options: GhostTextOptions): GhostTextController {
   }, [applyChip]);
 
   const retry = useCallback(() => {
+    clearPendingDebounce();
+    abortInflight();
+    requestIdRef.current += 1;
     optionsRef.current.onNotice(null);
     applyChip('idle', false);
     const editorInstance = optionsRef.current.editorRef.current;
     if (editorInstance?.getAction('editor.action.inlineSuggest.trigger')) {
       editorInstance.focus();
+      const model = editorInstance.getModel();
+      const position = editorInstance.getPosition();
+      if (model && position) {
+        void provideInlineCompletions(model, position, {}, {
+          isCancellationRequested: false,
+          onCancellationRequested: () => ({ dispose() {} }),
+        });
+      }
       editorInstance.trigger('ghost-chip-retry', 'editor.action.inlineSuggest.trigger', { explicit: true });
     }
-  }, [applyChip]);
+  }, [abortInflight, applyChip, clearPendingDebounce, provideInlineCompletions]);
 
   /**
    * Cmd/Ctrl+Right with a visible suggestion: insert exactly one word as one
@@ -623,7 +683,18 @@ export function useGhostText(options: GhostTextOptions): GhostTextController {
     if (!node) return;
     const isMac = typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.userAgent);
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || !readyGhostRef.current) return;
+      if (event.defaultPrevented) return;
+      if (chipPhaseRef.current === 'unavailable' && event.key === 'Tab'
+        && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+        const retryButton = document.querySelector<HTMLElement>('[data-testid="ghost-text-retry"]');
+        if (retryButton) {
+          event.preventDefault();
+          event.stopPropagation();
+          retryButton.focus();
+          return;
+        }
+      }
+      if (!readyGhostRef.current) return;
       const { accept: acceptAll, acceptGhostWord: acceptWord } = keyHandlersRef.current;
       if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
         event.preventDefault();
@@ -663,6 +734,7 @@ export function useGhostText(options: GhostTextOptions): GhostTextController {
     if (!editorInstance) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const kick = () => {
+      clearPreview();
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
@@ -680,8 +752,7 @@ export function useGhostText(options: GhostTextOptions): GhostTextController {
       contentListener.dispose();
       caretListener.dispose();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- same lifecycle as the key handler: per Monaco instance
-  }, [options.editorRevision]);
+  }, [options.editorRevision, clearPreview]);
 
   return { provider, chipPhase, modelName, announcement, accept, retry, cancel };
 }

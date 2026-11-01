@@ -62,7 +62,6 @@ export default function GhostTextStatusChip({
           type="button"
           data-testid="ghost-text-retry"
           aria-label="Retry AI completion"
-          tabIndex={-1}
           onPointerDown={(event) => event.preventDefault()}
           onClick={onRetry}
           className="rounded-full border border-border px-1.5 py-0.5 text-[10px] text-foreground hover:bg-surface-raised"

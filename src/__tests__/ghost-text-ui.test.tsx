@@ -53,11 +53,11 @@ describe('GhostTextStatusChip markup', () => {
     expect(render({ phase: 'ready' })).not.toContain('ghost-text-retry');
   });
 
-  it('keeps chip buttons out of the tab order so editor focus never moves', () => {
+  it('keeps Accept out of the tab order while making Retry keyboard reachable', () => {
     const accept = render({ phase: 'ready' });
     expect(accept).toContain('tabindex="-1"');
     const retry = render({ phase: 'unavailable' });
-    expect(retry).toContain('tabindex="-1"');
+    expect(retry).not.toContain('tabindex="-1"');
   });
 
   it('announces through one polite live region', () => {

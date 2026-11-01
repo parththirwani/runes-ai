@@ -129,9 +129,12 @@ so the reader and second-tab states have no reference frame to be compared again
 - Side-by-side Runes-vs-Arc pairs and the differences table now live in
   [`../ai-inline-edit-compare/`](../ai-inline-edit-compare/README.md) (25 pairs, both sides captured
   at 1440x900 and 390x844 with the same crop rule).
-- Ghost streaming: the route does stream NDJSON deltas, but the editor paints the ghost once at
-  `done` rather than word-by-word while thinking. Monaco 0.55 dedupes re-requests for the same
-  position/version, so mid-stream repaints are suppressed; the chip shows `Thinking…` meanwhile.
+- Ghost streaming: the comparison frames predate the follow-up fix. Complete words now render as
+  injected text during the stream, without changing the model. The native inline completion
+  replaces this preview at `done`; moving the caret or cancelling clears it. See
+  `ghost/ghost-partial-stream-followup.png` for the `Thinking…` state with partial text.
+- Keyboard Retry: `ghost/ghost-retry-keyboard-followup.png` shows the focused Retry button after
+  pressing Tab in Monaco. Enter started a second `/api/ai/complete` request in the browser check.
 - Ghost keystroke cadence: at ~60 ms/char Playwright lost one keystroke during ghost repaints on
   the CDN Monaco 0.55 EditContext build; at a normal ~130 ms/char cadence zero keystrokes were
   lost across the full journey. Worth a targeted retest on real typing (or a Monaco upgrade)

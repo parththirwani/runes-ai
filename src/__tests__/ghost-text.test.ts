@@ -15,6 +15,7 @@ import {
   nextGhostWord,
   readCompleteStream,
   shouldShowGhostChip,
+  streamedGhostWords,
   type CompleteStreamEvent,
 } from '@/src/lib/ghost-text';
 import { splitGhostWord } from '@/src/hooks/useGhostText';
@@ -42,6 +43,14 @@ describe('ghost text timing and caps', () => {
     expect(GHOST_TEXT_DEBOUNCE_MS).toBe(450);
     expect(GHOST_TEXT_MAX_INSERTION).toBe(200);
     expect(GHOST_TEXT_STREAM_MAX_CHARS).toBeGreaterThanOrEqual(GHOST_TEXT_MAX_INSERTION);
+  });
+});
+
+describe('streamed ghost preview', () => {
+  it('reveals complete words as chunks arrive without showing the unfinished word', () => {
+    expect(streamedGhostWords('The next')).toBe('The ');
+    expect(streamedGhostWords('The next word')).toBe('The next ');
+    expect(streamedGhostWords('The')).toBe('');
   });
 });
 

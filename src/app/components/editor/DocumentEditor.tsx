@@ -372,7 +372,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     // must never insert into a model the user has left.
     blurListenerRef.current?.dispose();
     blurListenerRef.current = editorInstance.onDidBlurEditorWidget(() => {
-      ghostImplRef.current?.cancel();
+      ghostImplRef.current?.cancel(true);
     });
     modelListenerRef.current?.dispose();
     modelListenerRef.current = editorInstance.onDidChangeModel(() => {

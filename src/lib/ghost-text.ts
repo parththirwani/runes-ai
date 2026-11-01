@@ -261,3 +261,9 @@ export async function* readCompleteStream(
 export function ghostStreamKey(modelUri: string, offset: number, prefix: string): string {
   return `${modelUri}:${offset}:${prefix.slice(-40)}`;
 }
+
+/** Show only finished words while a streamed completion is still arriving. */
+export function streamedGhostWords(text: string): string {
+  const boundary = Math.max(text.lastIndexOf(' '), text.lastIndexOf('\t'));
+  return boundary < 0 ? '' : text.slice(0, boundary + 1);
+}
