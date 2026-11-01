@@ -123,6 +123,19 @@ export function ghostChipView(phase: GhostChipPhase, modelName: string | null): 
   }
 }
 
+/**
+ * Whether the editor toolbar may show the status chip at all. A read-only reader gets
+ * no chip (and the provider never runs, see ghostEligibilityReason), so autocomplete is
+ * invisible rather than merely inert.
+ */
+export function shouldShowGhostChip(input: {
+  canEdit: boolean;
+  autocompleteEnabled: boolean;
+  isBinaryActive: boolean;
+}): boolean {
+  return input.canEdit && input.autocompleteEnabled && !input.isBinaryActive;
+}
+
 /** Polite screen-reader text; null keeps the previous announcement. */
 export function ghostAnnouncement(phase: GhostChipPhase): string | null {
   switch (phase) {

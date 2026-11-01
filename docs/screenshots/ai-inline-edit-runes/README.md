@@ -76,6 +76,49 @@ document (fresh Monaco mount, fresh provider state); text is read back from the 
 | `ghost/13-reduced-motion.png` | Chip carries `motion-reduce` variants under `prefers-reduced-motion: reduce` | Playwright `reducedMotion` context |
 
 
+## Access and dirty scope (iteration 11) — `access/`
+
+Two second-user journeys driven through the real product: a document shared with a **second
+dev account that accepted the invitation** (so `canEdit` is derived from a real
+`DocumentGrant` row, not a flag), and a **two-file workspace** where the accepted AI edit happens
+in the active file. Every server assertion below re-read the stored bytes through
+`GET /api/document/<slug>/file?path=…` rather than trusting the DOM. The run is scripted at
+`/tmp/cora/pw/runes-access-journey.mjs` (outside the repo, Playwright + headless Chromium, nothing
+installed into `package.json`); the 34-assertion version passed end to end twice on this state, and
+its earlier revisions passed on the way (one of them flagged a too-broad `AI complete` selector that
+matched the AI-workspace drawer's `Enable AI complete` label, which is why the selector now matches
+the toolbar label exactly). `/tmp/cora/runes/iter11-access-run2.log` holds one full transcript.
+
+| File | State | How it was produced / what the run asserted |
+| --- | --- | --- |
+| `access/ro-01-no-affordance.png` | Reader's idle editor: no `Select text and press Ctrl K` hint, no ghost chip, no `AI complete` toggle, no dirty tab | Opened the shared document as the reader by document id; header reads `View-only shared by` |
+| `access/ro-02-selection-no-bubble.png` | Real prose selection by the reader raises **no** Edit bubble | Clicked the line, `Home`, `Shift+End`; bubble selector absent |
+| `access/ro-03-ctrlk-refusal.png` | `Ctrl+K` as a reader gives the honest refusal `This document is read-only — AI edits are unavailable` and opens **no** prompt card | Pressed `Control+K` with the editor focused |
+| `access/ro-04-narrow-no-affordance.png` | Same absence at 390x844 (no clipped or re-flowed affordance) | `setViewportSize` |
+| `access/ro-05-latex-no-affordance.png` | Same absence in a **LaTeX** document shared with the same reader | Selection across `We collected samples … \cite{smith2024}.` |
+| `access/mf-01-two-tabs-clean.png` | Two files open (`main.md` active, `notes.md` second tab), nothing dirty | Opened `notes.md` from the file tree |
+| `access/mf-02-only-active-tab-dirty.png` | After the accepted inline edit: unsaved dot on the `main.md` tab **only**; `notes.md` tab and tree entry have none; receipt `Applied 1 of 1` | `Shorter` quick action → `Accept all` → `Apply` |
+| `access/mf-03-saved-none-dirty.png` | `Ctrl+S` clears the single marker; `main.md` changed on the server, `notes.md` byte-identical | Server file reads before and after the save |
+| `access/st-01-stale-review-inert.png` | A **stale** review refuses to apply: after one keystroke elsewhere the card reads `Selection text has been modified`, `Reject all` / `Accept all` / `Apply` are disabled, and the model shows only the human keystroke (`Access proof x`) — no AI bytes | `Formal` quick action, then `End` + ` x` on the heading line |
+
+Server-side refusals captured in the same run (statuses, not pictures): accepted reader
+`POST /api/ai/inline-edit` → **404**, `POST /api/ai/complete` → **404**, `PUT /api/document/<id>`
+→ **404**; unrelated user `POST /api/ai/inline-edit` → **404**; typing as a reader left the model
+text unchanged; after the refused LaTeX request the `.tex` bytes were byte-identical to creation.
+`mf-02` also shows the chip back at `Thinking…`: after `Apply` the caret moved, so autocomplete
+re-armed for the *next* completion — expected, and the edit itself was already committed.
+
+Honest scope note: the pre-existing legacy `Paraphrase`/tone toolbar buttons, the `Insert image`
+control and the AI-workspace drawer stay visible to a reader exactly as they were on `dev`
+(this branch does not touch them). They are inert for a reader: the editor model is read-only,
+every write path re-checks `canEdit`, and the AI routes answer 404 (`src/lib/document-lookup.ts`
+write intent). **No new** edit or autocomplete affordance is rendered for a read-only user.
+
+There is deliberately **no** Runes-vs-Arc pair for these frames in `../ai-inline-edit-compare/`:
+the Arc public demos are single-user sandboxes with no sharing, roles or multi-file workspace,
+so the reader and second-tab states have no reference frame to be compared against.
+
+
 ## Known gaps (honest, for the next pass)
 
 - `Thinking`-style provider latency and real model wording are **not** represented: the answers
@@ -97,3 +140,13 @@ document (fresh Monaco mount, fresh provider state); text is read back from the 
   occupies the left half at 1440 px; the comparison panels in `../ai-inline-edit-compare/` were
   re-captured in Code view (full-width source) so both sides line up. Ghost frames already use Code
   view.
+- Regression re-runs on this state (iteration 11): the iteration-9 ghost journey (`/tmp/cora/pw
+  /runes-ghost-journey.mjs`) still finishes `DONE` (idle `AI complete` → `Thinking…` →
+  `Tab to accept` with the full italic ghost → Tab accept → exact undo → one-word accept with the
+  remainder → consume → mismatch → `Escape` byte-identical → `No suggestion` → Markdown accept →
+  fence stays idle → 390 px chip box → reduced-motion classes), and the iteration-8 save journey
+  still persists the accepted bytes on `Ctrl+S` (`…were very noisy…` → `…were noisy…`) and ends with
+  `undo restored the original bytes: true`. (That older script also prints a stale `Overall` marker
+  probe, which the `Shorter` stub reply no longer produces — the byte comparison above is the real
+  assertion.) So the reader-only gating of the chip/preference and the dirty-derivation extraction
+  changed only what a reader can see, not what a writer can do.

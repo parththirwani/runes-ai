@@ -135,6 +135,17 @@ describe('FileTabs', () => {
     expect(single).not.toContain('aria-label="Main file"');
   });
 
+  it('puts the unsaved dot on exactly the dirty tab, not on the other open tabs', () => {
+    const html = renderTabs();
+    expect(html.match(/aria-label="Unsaved changes"/g)).toHaveLength(1);
+    const tabs = html.split('role="tab"').slice(1);
+    const dotted = tabs.filter((tab) => tab.includes('aria-label="Unsaved changes"'));
+    expect(dotted).toHaveLength(1);
+    expect(dotted[0]).toContain('title="chapters/methods.tex"');
+    // Editing one file leaves the other open tabs byte-clean, so they show no dot.
+    expect(tabs.filter((tab) => tab.includes('title="main.tex"'))[0]).not.toContain('Unsaved changes');
+  });
+
   it('renders nothing when no files are open', () => {
     expect(renderTabs({ openPaths: [] })).toBe('');
   });

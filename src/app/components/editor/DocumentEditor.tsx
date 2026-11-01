@@ -24,6 +24,7 @@ import DiffReview from './DiffReview';
 import AiWorkspacePanel from './AiWorkspacePanel';
 import { useInlineEdit } from '@/src/hooks/useInlineEdit';
 import { useGhostText, type GhostTextController } from '@/src/hooks/useGhostText';
+import { shouldShowGhostChip } from '@/src/lib/ghost-text';
 import GhostTextStatusChip from './GhostTextStatusChip';
 import InputModal from '../design/InputModal';
 import AlertModal from '../design/AlertModal';
@@ -1134,7 +1135,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                   )}
                   {aiError && !proposal && <span className="text-xs text-status-error">{aiError}</span>}
                   {autocompleteNotice && <span role="status" className="text-xs text-status-stale">{autocompleteNotice}</span>}
-                  {canEdit && autocompleteEnabled && !isBinaryActive && (
+                  {shouldShowGhostChip({ canEdit, autocompleteEnabled, isBinaryActive }) && (
                     <GhostTextStatusChip
                       phase={ghost.chipPhase}
                       modelName={ghost.modelName}
@@ -1144,15 +1145,17 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                     />
                   )}
 
-                  <label className="hidden sm:flex items-center gap-1.5 text-[11px] text-meta cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={autocompleteEnabled}
-                      onChange={(event) => setAutocompleteEnabled(event.target.checked)}
-                      className="w-3 h-3 accent-action"
-                    />
-                    AI complete
-                  </label>
+                  {canEdit && (
+                    <label className="hidden sm:flex items-center gap-1.5 text-[11px] text-meta cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={autocompleteEnabled}
+                        onChange={(event) => setAutocompleteEnabled(event.target.checked)}
+                        className="w-3 h-3 accent-action"
+                      />
+                      AI complete
+                    </label>
+                  )}
                 </div>
               </div>
 

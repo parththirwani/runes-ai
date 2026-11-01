@@ -14,6 +14,7 @@ import {
   isRetryableCompletionStatus,
   nextGhostWord,
   readCompleteStream,
+  shouldShowGhostChip,
   type CompleteStreamEvent,
 } from '@/src/lib/ghost-text';
 import { splitGhostWord } from '@/src/hooks/useGhostText';
@@ -53,6 +54,21 @@ describe('ghostEligibilityReason', () => {
     expect(ghostEligibilityReason({ enabled: true, canEdit: false, hasSelection: false, inlineEditOpen: false })).toContain('edit access');
     expect(ghostEligibilityReason({ enabled: true, canEdit: true, hasSelection: true, inlineEditOpen: false })).toContain('selection');
     expect(ghostEligibilityReason({ enabled: true, canEdit: true, hasSelection: false, inlineEditOpen: true })).toContain('inline edit');
+  });
+});
+
+describe('shouldShowGhostChip (toolbar visibility)', () => {
+  it('shows the chip only for a writable, enabled, text editor', () => {
+    expect(shouldShowGhostChip({ canEdit: true, autocompleteEnabled: true, isBinaryActive: false })).toBe(true);
+  });
+
+  it('hides every autocomplete affordance from a read-only reader', () => {
+    expect(shouldShowGhostChip({ canEdit: false, autocompleteEnabled: true, isBinaryActive: false })).toBe(false);
+  });
+
+  it('hides the chip when the preference is off or a binary asset is active', () => {
+    expect(shouldShowGhostChip({ canEdit: true, autocompleteEnabled: false, isBinaryActive: false })).toBe(false);
+    expect(shouldShowGhostChip({ canEdit: true, autocompleteEnabled: true, isBinaryActive: true })).toBe(false);
   });
 });
 
