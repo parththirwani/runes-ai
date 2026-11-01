@@ -12,7 +12,6 @@ import {
   InlineEditAppliedReceipt,
   InlineEditBubble,
   InlineEditErrorCard,
-  InlineEditIdleHint,
   InlineEditPromptCard,
   InlineEditStreamingCard,
 } from './InlineEditCard';
@@ -28,7 +27,6 @@ import { shouldShowGhostChip } from '@/src/lib/ghost-text';
 import GhostTextStatusChip from './GhostTextStatusChip';
 import InputModal from '../design/InputModal';
 import AlertModal from '../design/AlertModal';
-import Button from '../design/Button';
 import { JobStatus } from '@/src/types/compilation';
 import { EditProposal, verifyAcceptance, checkStale, generateProposalId } from '@/src/lib/proposal-engine';
 import { analyzeSelection, scanContext, selectionCutsWord } from '@/src/lib/latex-utils';
@@ -42,7 +40,7 @@ import type { WorkspaceDocumentPayload } from '@/src/lib/workspace-types';
 import type { CompileDiagnostic } from '@/src/lib/compile-errors';
 import type { MissingReference } from '@/src/lib/workspace-types';
 import type { editor, languages } from 'monaco-editor';
-import { Wand2, RefreshCw, FileWarning, ImagePlus } from 'lucide-react';
+import { RefreshCw, FileWarning } from 'lucide-react';
 
 const initialCode = `\\documentclass{article}
 \\usepackage[utf8]{inputenc}
@@ -403,6 +401,17 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     overlayRef: editorAreaRef,
     onModelChanged: (path, text) => workspace.setContent(path, text),
   });
+  useEffect(() => {
+    if (inlineEdit.surface !== 'none' && inlineEdit.surface !== 'bubble') setShowSettings(false);
+  }, [inlineEdit.surface]);
+  useEffect(() => {
+    if (!showSettings) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowSettings(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [showSettings]);
   // --- Ghost text autocomplete controller (inline completion + status chip) ---
   // Kept silent while an inline edit prompt/request/review is open (step 5).
   const ghost = useGhostText({
@@ -889,6 +898,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   const pdfIsStale = Boolean(pdfUrl) && workspace.stalePaths.length > 0;
   const statusLine = [compilationStatus, compileInfo].filter(Boolean).join(' · ');
+  const showGhostStatus = shouldShowGhostChip({ canEdit, autocompleteEnabled, isBinaryActive })
+    && !['idle', 'none'].includes(ghost.chipPhase);
+  const showEditorStatus = Boolean(imageUploadStatus || isAiLoading || aiError || autocompleteNotice || showGhostStatus);
 
   const resizeSplitAt = (clientX: number) => {
     const rect = splitContainerRef.current?.getBoundingClientRect();
@@ -916,12 +928,29 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
         format={syntheticDocument.format}
         fileName={`${slug || 'document'}.${isMarkdown ? 'md' : 'tex'}`}
         onDownloadSource={handleDownloadSource}
+        onSave={() => { void handleSave(); }}
+        onInsertImage={() => imageInputRef.current?.click()}
+        canInsertImage={!isUploadingImage && !isBinaryActive && !!docRef && !!activePath?.toLowerCase().endsWith('.md')}
         canEdit={canEdit}
         canShare={canShare}
         authorName={initialDocument?.author?.name ?? null}
         onShare={canShare ? () => setShareOpen(true) : undefined}
         onMove={canEdit ? openMoveDialog : undefined}
       />
+      {isMarkdown && canEdit && (
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          aria-label="Choose image to insert"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void handleImageUpload(file);
+            event.target.value = '';
+          }}
+        />
+      )}
 
       {shareOpen && initialDocument && (
         <ShareDialog isOpen onClose={() => setShareOpen(false)} target={{ kind: 'DOCUMENT', id: initialDocument.id, label: initialDocument.title }} />
@@ -975,23 +1004,13 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
           onClose={() => setShowSettings(false)}
           autocompleteEnabled={autocompleteEnabled}
           onAutocompleteEnabledChange={(enabled) => setAutocompleteEnabled(enabled)}
-          onParaphrase={handleParaphrase}
+          onParaphrase={() => { void handleParaphrase('Clearer'); }}
           paraphraseDisabledReason={paraphraseDisabledReason}
           isAiLoading={isAiLoading}
-          aiError={aiError}
-          autocompleteNotice={autocompleteNotice}
           hasProposal={!!proposal}
-          lastTone={lastToneRef.current}
-          pdfIsStale={pdfIsStale}
-          hasPdf={!!pdfUrl}
-          hasUnsavedChanges={hasUnsavedChanges}
-          onCompile={handleCompile}
-          onSave={() => { void handleSave(); }}
-          onDownloadPdf={() => { void handleDownload(); }}
-          isMarkdown={isMarkdown}
         />
 
-        <div ref={splitContainerRef} style={{ '--editor-split-width': `${splitRatio * 100}%` } as React.CSSProperties} className={`min-w-0 flex-1 h-full flex flex-col md:flex-row transition-[padding] duration-300 ${showSettings ? 'pr-80 max-[500px]:pr-[90vw]' : ''}`}>
+        <div ref={splitContainerRef} style={{ '--editor-split-width': `${splitRatio * 100}%` } as React.CSSProperties} className={`min-w-0 flex-1 h-full flex flex-col md:flex-row transition-[padding] duration-200 ${showSettings ? 'pr-72 max-[500px]:pr-[90vw]' : ''}`}>
           {(viewMode === 'preview' || viewMode === 'split') && (
             <div className={`${viewMode === 'split' ? 'h-1/2 w-full md:h-full md:w-[var(--editor-split-width)]' : 'h-full w-full'} min-h-0 min-w-0 overflow-hidden`}>
               {isMarkdown ? (
@@ -1067,66 +1086,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                 onClose={workspace.closeFile}
               />
 
-              {/* AI Toolbar */}
-              <div className="min-h-10 bg-surface border-b border-border flex flex-wrap items-center px-3 py-1 gap-2 shrink-0">
-                {isMarkdown && (
-                  <>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => imageInputRef.current?.click()}
-                      disabled={isUploadingImage || isBinaryActive || !docRef || !activePath?.toLowerCase().endsWith('.md')}
-                      icon={<ImagePlus className="w-3.5 h-3.5" />}
-                    >
-                      Insert image
-                    </Button>
-                    <input
-                      ref={imageInputRef}
-                      type="file"
-                      accept="image/png,image/jpeg,image/gif,image/webp"
-                      aria-label="Choose image to insert"
-                      className="hidden"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (file) void handleImageUpload(file);
-                        event.target.value = '';
-                      }}
-                    />
-                    {imageUploadStatus && <span role="status" className="text-xs text-action">{imageUploadStatus}</span>}
-                    <div className="h-4 w-px bg-border" />
-                  </>
-                )}
-                <span title={paraphraseDisabledReason || 'Paraphrase selection'}>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => handleParaphrase('Clearer')}
-                    disabled={isAiLoading || !!proposal || !!paraphraseDisabledReason || isBinaryActive}
-                    icon={<Wand2 className="w-3.5 h-3.5" />}
-                    title={paraphraseDisabledReason || 'Paraphrase selection (Clearer)'}
-                  >
-                    Paraphrase
-                  </Button>
-                </span>
-
-                <div className="h-4 w-px bg-border" />
-
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-meta">Tone:</span>
-                  {['Clearer', 'Shorter', 'Formal'].map((tone) => (
-                    <button
-                      key={tone}
-                      onClick={() => handleParaphrase(tone)}
-                      disabled={isAiLoading || !!proposal || !!paraphraseDisabledReason || isBinaryActive}
-                      className="text-[11px] px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-surface-raised transition-colors disabled:opacity-40"
-                    >
-                      {tone}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="ml-auto flex items-center gap-2">
-                  {canEdit && <InlineEditIdleHint shortcutLabel={editShortcutLabel} />}
+              {showEditorStatus && (
+                <div className="flex min-h-9 shrink-0 items-center justify-end gap-2 border-b border-border bg-surface px-3 py-1">
+                  {imageUploadStatus && <span role="status" className="mr-auto text-xs text-action">{imageUploadStatus}</span>}
                   {isAiLoading && (
                     <span className="text-xs text-status-compiling flex items-center gap-1">
                       <RefreshCw className="w-3 h-3 animate-spin" />
@@ -1135,7 +1097,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                   )}
                   {aiError && !proposal && <span className="text-xs text-status-error">{aiError}</span>}
                   {autocompleteNotice && <span role="status" className="text-xs text-status-stale">{autocompleteNotice}</span>}
-                  {shouldShowGhostChip({ canEdit, autocompleteEnabled, isBinaryActive }) && (
+                  {showGhostStatus && (
                     <GhostTextStatusChip
                       phase={ghost.chipPhase}
                       modelName={ghost.modelName}
@@ -1145,19 +1107,8 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                     />
                   )}
 
-                  {canEdit && (
-                    <label className="hidden sm:flex items-center gap-1.5 text-[11px] text-meta cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={autocompleteEnabled}
-                        onChange={(event) => setAutocompleteEnabled(event.target.checked)}
-                        className="w-3 h-3 accent-action"
-                      />
-                      AI complete
-                    </label>
-                  )}
                 </div>
-              </div>
+              )}
 
               {/* Editor, binary preview, or empty state */}
               <div ref={editorAreaRef} className="flex-1 overflow-hidden relative">

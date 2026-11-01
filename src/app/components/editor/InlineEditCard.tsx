@@ -8,7 +8,8 @@
 // edit reference captured in docs/screenshots/ai-inline-edit-reference/.
 
 import React from 'react';
-import { AlertTriangle, Check, Square, Undo2, Wand2, X } from 'lucide-react';
+import { AlertTriangle, ArrowUp, Check, ChevronDown, Square, Undo2, Wand2, X } from 'lucide-react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import Button from '../design/Button';
 import type { DiffToken } from '@/src/lib/proposal-engine';
 import type { HunkDecision } from '@/src/lib/inline-edit-hunks';
@@ -160,7 +161,7 @@ export interface InlineEditPromptProps {
   busy?: boolean;
 }
 
-/** Prompt card: four quick actions plus one bounded free instruction. */
+/** Prompt card: the instruction is primary; presets remain one click away. */
 export function InlineEditPromptCard({
   selectionPreview,
   instruction,
@@ -173,38 +174,18 @@ export function InlineEditPromptCard({
   busy = false,
 }: InlineEditPromptProps) {
   return (
-    <div className={`${CARD_CLASS} w-[min(24rem,calc(100vw-2rem))] overflow-hidden`} role="dialog" aria-label="Edit with AI">
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-surface-raised px-2.5 py-1.5">
-        <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          <Wand2 className="h-3 w-3 text-action" aria-hidden="true" />
-          Edit with AI
-        </span>
-        <span className="flex items-center gap-1 text-[10px] text-meta">
-          <Kbd>esc</Kbd>
-          <span>dismiss</span>
-        </span>
+    <div className={`${CARD_CLASS} w-[min(23rem,calc(100vw-2rem))] overflow-hidden p-3`} role="dialog" aria-label="Edit with AI">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-xs font-semibold text-foreground">Edit with AI</h2>
+          <p className="mt-1 truncate text-[11px] text-meta" title={selectionPreview}>“{selectionPreview}”</p>
+        </div>
+        <button type="button" onClick={onDismiss} aria-label="Close AI edit" title="Close (Esc)" className="-mr-1 -mt-1 shrink-0 rounded p-1 text-meta hover:bg-surface-raised hover:text-foreground">
+          <X className="size-4" aria-hidden="true" />
+        </button>
       </div>
 
-      <div className="space-y-2 p-2.5">
-        <p className="truncate text-[11px] text-muted-foreground" title={selectionPreview}>
-          Selection: {selectionPreview}
-        </p>
-
-        <div className="flex flex-wrap gap-1" role="group" aria-label="Quick edits">
-          {INLINE_EDIT_QUICK_ACTION_IDS.map((action) => (
-            <button
-              key={action}
-              type="button"
-              disabled={busy}
-              onClick={() => onQuickAction(action)}
-              aria-label={'Quick edit: ' + INLINE_EDIT_QUICK_ACTION_LABELS[action]}
-              className="rounded-md border border-border bg-surface-raised px-2 py-1 text-[11px] text-foreground hover:bg-surface-overlay disabled:opacity-40 [@media(pointer:coarse)]:min-h-11"
-            >
-              {INLINE_EDIT_QUICK_ACTION_LABELS[action]}
-            </button>
-          ))}
-        </div>
-
+      <div className="mt-3 flex items-center gap-1 rounded-md border border-border bg-canvas p-1 focus-within:border-action">
         <input
           type="text"
           value={instruction}
@@ -221,36 +202,43 @@ export function InlineEditPromptCard({
               onDismiss();
             }
           }}
-          placeholder="Ask AI to edit the selection"
+          placeholder="Describe the change…"
           aria-label="Instruction for AI"
           aria-invalid={validationError !== null}
           aria-describedby={validationError ? 'inline-edit-instruction-error' : undefined}
-          className="w-full rounded-md border border-border bg-canvas px-2 py-1.5 text-xs text-foreground placeholder:text-meta focus:border-action focus:outline-none"
+          className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-xs text-foreground outline-none placeholder:text-meta"
         />
-
-        <div className="flex flex-wrap items-center justify-between gap-1.5">
-          <span className="flex items-center gap-1 text-[10px] text-meta">
-            <Kbd>enter</Kbd>
-            <span>send</span>
-            <span className="ml-1 tabular-nums">{instruction.length}/{instructionLimit}</span>
-          </span>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={busy || validationError !== null || instruction.trim() === ''}
-            onClick={onSubmitInstruction}
-          >
-            Rewrite
-          </Button>
-        </div>
-
-        {validationError && (
-          <p id="inline-edit-instruction-error" role="alert" className="flex items-start gap-1 text-[11px] text-status-error">
-            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
-            <span>{validationError}</span>
-          </p>
-        )}
+        <button type="button" onClick={onSubmitInstruction} disabled={busy || validationError !== null || instruction.trim() === ''} aria-label="Rewrite selection" title="Rewrite selection (Enter)" className="flex size-7 shrink-0 items-center justify-center rounded bg-action text-white disabled:bg-surface-raised disabled:text-meta">
+          <ArrowUp className="size-3.5" aria-hidden="true" />
+        </button>
       </div>
+
+      <div className="mt-2 flex items-center gap-1" role="group" aria-label="Quick edits">
+        {(['clearer', 'shorter'] as const).map((action) => (
+          <button key={action} type="button" disabled={busy} onClick={() => onQuickAction(action)} aria-label={'Quick edit: ' + INLINE_EDIT_QUICK_ACTION_LABELS[action]} className="rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-surface-raised hover:text-foreground disabled:opacity-40 [@media(pointer:coarse)]:min-h-11">
+            {INLINE_EDIT_QUICK_ACTION_LABELS[action]}
+          </button>
+        ))}
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button type="button" disabled={busy} aria-label="More quick edits" className="inline-flex items-center gap-0.5 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-surface-raised hover:text-foreground disabled:opacity-40 [@media(pointer:coarse)]:min-h-11">More <ChevronDown className="size-3" aria-hidden="true" /></button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content align="start" sideOffset={4} className="z-[70] min-w-36 rounded-md border border-border bg-surface-overlay p-1 shadow-overlay">
+              {INLINE_EDIT_QUICK_ACTION_IDS.filter((action) => action !== 'clearer' && action !== 'shorter').map((action) => (
+                <DropdownMenu.Item key={action} onSelect={() => onQuickAction(action)} aria-label={'Quick edit: ' + INLINE_EDIT_QUICK_ACTION_LABELS[action]} className="cursor-pointer rounded px-2.5 py-2 text-xs text-foreground outline-none data-[highlighted]:bg-surface-raised">{INLINE_EDIT_QUICK_ACTION_LABELS[action]}</DropdownMenu.Item>
+              ))}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+        {instruction.length >= instructionLimit - 50 && <span className="ml-auto text-[10px] tabular-nums text-meta">{instruction.length}/{instructionLimit}</span>}
+      </div>
+      {validationError && (
+        <p id="inline-edit-instruction-error" role="alert" className="mt-2 flex items-start gap-1 text-[11px] text-status-error">
+          <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+          <span>{validationError}</span>
+        </p>
+      )}
     </div>
   );
 }
