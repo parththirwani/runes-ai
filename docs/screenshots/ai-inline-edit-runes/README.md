@@ -36,7 +36,7 @@ user action.
 | `md-07-review-accepted.png` | `Ctrl+Enter` accepted the rest | Pressed `Control+Enter` |
 | `md-08-receipt.png` | Receipt `Applied 2 of 2` with `Undo` | Clicked `Apply` (one undoable Monaco edit) |
 | `md-09-applied-editor.png` | Model after the accepted edit (protected `` `pytest` `` intact) | Same run |
-| `md-10-after-undo.png` | `Undo` pressed from the receipt (the byte-exact round trip is asserted in `save-03-after-undo.png`) | Clicked `Undo` on the receipt |
+| `save-03-after-undo.png` | `Undo` from the receipt restores the exact original bytes (full 1440x900 frame; the byte round trip is asserted by re-reading the saved file) | Clicked `Undo` on the receipt, then `Ctrl+S` |
 | `md-11-ctrlk-prompt.png` | `Ctrl+K` with only a caret opens the prompt on the sentence at the caret | Clicked in a sentence, pressed `Control+K` |
 | `md-12-prompt-typed.png` | Typed free instruction with the live `0/500` counter | Typed `make it warmer` |
 | `md-12b-free-instruction-review.png` | Review produced from a free instruction | Pressed `Enter` in the instruction field |
@@ -83,8 +83,9 @@ document (fresh Monaco mount, fresh provider state); text is read back from the 
   (`Overall, …`, filler removal, contraction expansion) rather than intelligent.
 - Touch tap-to-accept and a real mobile touch selection are not shown here; the bubble and cards
   carry `[@media(pointer:coarse)]:min-h-11` touch targets, but no touch-device capture exists yet.
-- Side-by-side Runes-vs-Arc comparison pairs and the differences table are still to be produced
-  from these files (plan §"Screenshot reference and visual match").
+- Side-by-side Runes-vs-Arc pairs and the differences table now live in
+  [`../ai-inline-edit-compare/`](../ai-inline-edit-compare/README.md) (25 pairs, both sides captured
+  at 1440x900 and 390x844 with the same crop rule).
 - Ghost streaming: the route does stream NDJSON deltas, but the editor paints the ghost once at
   `done` rather than word-by-word while thinking. Monaco 0.55 dedupes re-requests for the same
   position/version, so mid-stream repaints are suppressed; the chip shows `Thinking…` meanwhile.
@@ -92,5 +93,7 @@ document (fresh Monaco mount, fresh provider state); text is read back from the 
   the CDN Monaco 0.55 EditContext build; at a normal ~130 ms/char cadence zero keystrokes were
   lost across the full journey. Worth a targeted retest on real typing (or a Monaco upgrade)
   before claiming burst-typing safety.
-- The Markdown/preview split occupies the left half at 1440 px, so Runes frames are not pixel
-  aligned with the Arc demo frames; see the pending differences table.
+- The inline-run frames above were captured in the default split view, so the Monaco source pane
+  occupies the left half at 1440 px; the comparison panels in `../ai-inline-edit-compare/` were
+  re-captured in Code view (full-width source) so both sides line up. Ghost frames already use Code
+  view.
