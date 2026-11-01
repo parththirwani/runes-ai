@@ -65,16 +65,20 @@ describe('inline edit idle and bubble surfaces', () => {
 });
 
 describe('inline edit prompt card', () => {
-  it('offers exactly the four quick actions plus one bounded instruction field', () => {
+  it('keeps the instruction primary and moves secondary presets into More', () => {
     const html = renderToStaticMarkup(React.createElement(InlineEditPromptCard, promptProps()));
-    for (const label of ['Shorter', 'Clearer', 'Formal', 'Fix grammar']) {
+    for (const label of ['Shorter', 'Clearer']) {
       expect(html).toContain('Quick edit: ' + label);
       expect(html).toContain('>' + label + '<');
     }
-    expect(html).toContain('placeholder="Ask AI to edit the selection"');
+    expect(html).toContain('aria-label="More quick edits"');
+    expect(html).not.toContain('Quick edit: Formal');
+    expect(html).not.toContain('Quick edit: Fix grammar');
+    expect(html).toContain('placeholder="Describe the change…"');
     expect(html).toContain('aria-label="Instruction for AI"');
     expect(html).toMatch(new RegExp('maxlength="' + INLINE_EDIT_MAX_INSTRUCTION_CHARS + '"', 'i'));
-    expect(html).toContain('0/' + INLINE_EDIT_MAX_INSTRUCTION_CHARS);
+    expect(html).not.toContain('0/' + INLINE_EDIT_MAX_INSTRUCTION_CHARS);
+    expect(html).toContain('aria-label="Rewrite selection"');
     // An empty instruction cannot start a request at all.
     expect(html).toContain('disabled');
   });
@@ -93,12 +97,22 @@ describe('inline edit prompt card', () => {
     })));
     expect(valid).not.toContain('role="alert"');
     expect(valid).toContain('Make it warmer');
-    expect(valid).toContain('>Rewrite<');
+    expect(valid).toContain('aria-label="Rewrite selection"');
+    expect(valid).not.toContain('aria-invalid="true"');
   });
 
   it('names the selection it is about to change', () => {
     const html = renderToStaticMarkup(React.createElement(InlineEditPromptCard, promptProps()));
-    expect(html).toContain('Selection: The quick brown fox jumps.');
+    expect(html).toContain('The quick brown fox jumps.');
+    expect(html).toContain('title="The quick brown fox jumps."');
+    expect(html).toContain('aria-label="Close AI edit"');
+  });
+
+  it('shows the length only as the instruction approaches its cap', () => {
+    const html = renderToStaticMarkup(React.createElement(InlineEditPromptCard, promptProps({
+      instruction: 'a'.repeat(INLINE_EDIT_MAX_INSTRUCTION_CHARS - 40),
+    })));
+    expect(html).toContain(`${INLINE_EDIT_MAX_INSTRUCTION_CHARS - 40}/${INLINE_EDIT_MAX_INSTRUCTION_CHARS}`);
   });
 });
 
@@ -177,8 +191,8 @@ describe('inline edit review card', () => {
     expect(html).toContain('0 of 2 changes');
     expect(html).toContain('2 of 2 changes still need a decision');
     expect(html).toContain('Select a change to accept or reject it on its own');
-    expect(html).toContain('through changes');
-    expect(html).toContain('accept the rest');
+    expect(html).not.toContain('through changes');
+    expect(html).not.toContain('aria-label="Accept focused change"');
     expect(html).toContain('Reject all');
     expect(html).toContain('Accept all');
     expect(html).toContain('aria-label="Review AI changes"');

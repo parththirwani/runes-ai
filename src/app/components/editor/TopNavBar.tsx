@@ -1,9 +1,9 @@
-import { Menu, FileText, Play, Sparkles, Edit2, Download, Share2, ArrowRightLeft } from 'lucide-react';
+import { Menu, FileText, Play, Sparkles, Edit2, Download, Share2, ArrowRightLeft, MoreHorizontal, ImagePlus, Save } from 'lucide-react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useRouter } from 'next/navigation';
 import Button from '../design/Button';
 import IconButton from '../design/IconButton';
 import Logo from '../brand/logo';
-import ButtonGroup from '@/components/arc/button-group/button-group';
 import ViewModeToggle from './ViewModeToggle';
 import type { ViewMode } from './ViewModeToggle';
 import type { DocumentFormatValue } from '@/src/types/compilation';
@@ -26,6 +26,9 @@ interface TopNavBarProps {
   fileName?: string;
   /** Downloads the document's main source file. */
   onDownloadSource?: () => void;
+  onSave?: () => void;
+  onInsertImage?: () => void;
+  canInsertImage?: boolean;
   /** False for a reader: every write control is then absent, not merely disabled. */
   canEdit?: boolean;
   canShare?: boolean;
@@ -33,6 +36,8 @@ interface TopNavBarProps {
   onShare?: () => void;
   onMove?: () => void;
 }
+
+const menuItemClass = 'flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-sm text-foreground outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-surface-raised';
 
 export default function TopNavBar({
   documentTitle,
@@ -50,6 +55,9 @@ export default function TopNavBar({
   format = 'LATEX',
   fileName,
   onDownloadSource,
+  onSave,
+  onInsertImage,
+  canInsertImage = false,
   canEdit = true,
   canShare = false,
   authorName,
@@ -130,24 +138,6 @@ export default function TopNavBar({
           onChange={onViewModeChange}
           labels={{ preview: isMarkdown ? 'Reading' : 'Preview' }}
         />
-        <ButtonGroup
-          label="Document actions"
-          size="sm"
-          items={[
-            ...(onShare ? [{ id: 'share', label: 'Share', icon: <Share2 aria-hidden="true" />, onSelect: onShare }] : []),
-            ...(onMove ? [{ id: 'move', label: 'Move', icon: <ArrowRightLeft aria-hidden="true" />, onSelect: onMove }] : []),
-            {
-              id: 'download-source',
-              label: 'Download',
-              icon: <Download aria-hidden="true" />,
-              onSelect: onDownloadSource,
-              disabled: !onDownloadSource,
-            },
-          ]}
-        />
-        
-        <div className="hidden h-6 w-px bg-border sm:block" />
-
         {canEdit && (
           <Button
             variant="primary"
@@ -161,15 +151,46 @@ export default function TopNavBar({
           </Button>
         )}
 
-        {canEdit && (
-          <IconButton
-            icon={<Sparkles className="w-5 h-5" />}
-            label="AI workspace"
-            tooltip="AI workspace"
-            onClick={onSettingsToggle}
-            className="cursor-pointer"
-          />
-        )}
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button type="button" aria-label="More document actions" title="More actions" className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-raised hover:text-foreground focus-visible:outline-2 focus-visible:outline-action">
+              <MoreHorizontal className="size-5" aria-hidden="true" />
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content align="end" sideOffset={6} className="z-[70] min-w-48 rounded-lg border border-border bg-surface-overlay p-1 shadow-overlay">
+              {canShare && onShare && (
+                <DropdownMenu.Item onSelect={onShare} className={menuItemClass}>
+                  <Share2 className="size-4 text-meta" aria-hidden="true" />Share
+                </DropdownMenu.Item>
+              )}
+              {onMove && (
+                <DropdownMenu.Item onSelect={onMove} className={menuItemClass}>
+                  <ArrowRightLeft className="size-4 text-meta" aria-hidden="true" />Move document
+                </DropdownMenu.Item>
+              )}
+              {isMarkdown && canEdit && onInsertImage && (
+                <DropdownMenu.Item disabled={!canInsertImage} onSelect={onInsertImage} className={menuItemClass}>
+                  <ImagePlus className="size-4 text-meta" aria-hidden="true" />Insert image
+                </DropdownMenu.Item>
+              )}
+              {canEdit && onSave && (
+                <DropdownMenu.Item onSelect={onSave} className={menuItemClass}>
+                  <Save className="size-4 text-meta" aria-hidden="true" />Save draft
+                </DropdownMenu.Item>
+              )}
+              <DropdownMenu.Item disabled={!onDownloadSource} onSelect={onDownloadSource} className={menuItemClass}>
+                <Download className="size-4 text-meta" aria-hidden="true" />Download source
+              </DropdownMenu.Item>
+              {canEdit && onSettingsToggle && <>
+                <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                <DropdownMenu.Item onSelect={onSettingsToggle} className={menuItemClass}>
+                  <Sparkles className="size-4 text-meta" aria-hidden="true" />Writing tools
+                </DropdownMenu.Item>
+              </>}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
       </div>
     </div>
   );

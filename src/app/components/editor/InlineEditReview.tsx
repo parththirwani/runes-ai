@@ -13,11 +13,7 @@ import Button from '../design/Button';
 import { computeDiff } from '@/src/lib/proposal-engine';
 import { reviewActionForKey, cycleChangeFocus, summarizeReview, reviewAnnouncement, type InlineEditKeySignal } from '@/src/lib/inline-edit-review';
 import type { InlineEditHunkModel } from '@/src/lib/inline-edit-hunks';
-import {
-  InlineEditDiffLegend,
-  InlineEditDiffText,
-  Kbd,
-} from './InlineEditCard';
+import { InlineEditDiffText } from './InlineEditCard';
 
 const CARD_CLASS = 'rounded-lg border border-border bg-surface shadow-overlay text-foreground';
 
@@ -95,24 +91,19 @@ export default function InlineEditReviewCard({
       data-inline-edit-review=""
       onKeyDown={handleKeyDown}
     >
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-surface-raised px-2.5 py-1.5">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Review changes
-        </span>
-        <span className="flex items-center gap-2">
-          <span className="text-[10px] text-meta tabular-nums" role="status">{summary.changesLabel}</span>
-          <span className="flex items-center gap-1 text-[10px] text-meta">
-            <Kbd>esc</Kbd>
-            <button type="button" onClick={onDismiss} className="hover:text-foreground" aria-label="Dismiss review without changing the source">
-              dismiss
-            </button>
-          </span>
-        </span>
+      <div className="flex items-center justify-between gap-2 px-3 pt-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-foreground">Review changes</span>
+          <span className="text-[11px] text-meta tabular-nums" role="status">{summary.changesLabel}</span>
+        </div>
+        <button type="button" onClick={onDismiss} title="Dismiss (Esc)" className="rounded p-1 text-meta hover:bg-surface-raised hover:text-foreground" aria-label="Dismiss review without changing the source">
+          <X className="size-4" aria-hidden="true" />
+        </button>
       </div>
 
-      <div className="space-y-2 p-2.5">
-        <InlineEditDiffLegend />
-        <div className="max-h-44 overflow-y-auto rounded-md border border-border bg-canvas p-2">
+      <div className="space-y-2 px-3 pb-3 pt-2">
+        <p className="sr-only">Removed text is struck through. Added text is underlined.</p>
+        <div className="max-h-44 overflow-y-auto rounded-md bg-canvas p-2.5">
           <InlineEditDiffText
             tokens={tokens}
             decisions={decisions}
@@ -123,12 +114,12 @@ export default function InlineEditReviewCard({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-1.5">
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-[11px] text-meta">
             {focused
               ? 'Change ' + (focused.ordinal + 1) + ' of ' + summary.total + ' — ' + (focused.decision === 'pending' ? 'no decision yet' : focused.decision)
               : 'Select a change to accept or reject it on its own'}
           </span>
-          <span className="flex items-center gap-1.5">
+          {focused && <span className="flex items-center gap-1.5">
             <Button
               variant="secondary"
               size="sm"
@@ -151,31 +142,26 @@ export default function InlineEditReviewCard({
             >
               Accept
             </Button>
-          </span>
+          </span>}
         </div>
 
         {blocked && (
-          <p className="flex items-start gap-1 rounded-md border border-warning/30 bg-warning-subtle px-2 py-1 text-[11px] text-warning">
-            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+          <p className={staleReason
+            ? 'flex items-start gap-1 rounded-md border border-warning/30 bg-warning-subtle px-2 py-1 text-[11px] text-warning'
+            : 'text-[11px] text-meta'}>
+            {staleReason && <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />}
             <span>{blocked}</span>
           </p>
         )}
         <p className="sr-only text-[11px]" role="status" aria-live="polite">{reviewAnnouncement(summary)}</p>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface-raised px-2.5 py-1.5">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-meta">
-          <span className="flex items-center gap-1"><Kbd>Tab</Kbd><span>through changes</span></span>
-          <span className="flex items-center gap-1"><Kbd>enter</Kbd><span>accept</span></span>
-          <span className="flex items-center gap-1"><Kbd>backspace</Kbd><span>reject</span></span>
-          <span className="flex items-center gap-1"><Kbd>{commandLabel} + enter</Kbd><span>accept the rest</span></span>
-        </span>
-        <span className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-border px-3 py-2">
           <button
             type="button"
             onClick={onRejectAll}
             disabled={!canAct}
-            className="rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-40 [@media(pointer:coarse)]:min-h-11"
+            className="mr-auto rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-40 [@media(pointer:coarse)]:min-h-11"
           >
             Reject all
           </button>
@@ -183,10 +169,10 @@ export default function InlineEditReviewCard({
             type="button"
             onClick={onAcceptAll}
             disabled={!canAct}
-            className="flex items-center gap-1 rounded-md border border-border bg-surface px-1.5 py-1 text-[11px] text-foreground hover:bg-surface-overlay disabled:opacity-40 [@media(pointer:coarse)]:min-h-11"
+            title={`Accept remaining changes (${commandLabel}+Enter)`}
+            className="rounded-md px-2 py-1 text-[11px] text-foreground hover:bg-surface-raised disabled:opacity-40 [@media(pointer:coarse)]:min-h-11"
           >
             Accept all
-            <Kbd>{commandLabel} + enter</Kbd>
           </button>
           <Button
             variant="primary"
@@ -198,7 +184,6 @@ export default function InlineEditReviewCard({
           >
             {summary.applyLabel}
           </Button>
-        </span>
       </div>
     </div>
   );
