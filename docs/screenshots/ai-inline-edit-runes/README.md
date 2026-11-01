@@ -52,6 +52,30 @@ user action.
 | `save-03-after-undo.png` | One undo step + save returns the exact original bytes | `Undo` then `Ctrl+S` |
 | `mobile-01-ctrlk.png` | Narrow viewport 390x844 with the keyboard-triggered prompt | Clicked a sentence, `Control+K` |
 
+## Ghost text (iteration 9) — `ghost/`
+
+Produced with a scripted Playwright run against `AI_DEV_STUB=1` (deterministic completion:
+" and the same pattern held across the next set of runs"). Every measurement opens a brand-new
+document (fresh Monaco mount, fresh provider state); text is read back from the server after
+`Ctrl+S`, not from the DOM. Cadence: ~130 ms/keystroke (a normal writing speed — see gaps).
+
+| File | What it shows | How |
+| --- | --- | --- |
+| `ghost/01-idle.png` | Resting chip `AI complete` (check icon), no ghost | Fresh `.tex` document, nothing typed |
+| `ghost/02-thinking.png` | Chip `Thinking…` during the 450 ms debounce + stream | Typed ` rose` at end of prose |
+| `ghost/03-ready.png` | Italic ghost `and the same pattern held across the next set of runs` + chip `Tab to accept` / `Accept` button | Same cycle, after `done` |
+| `ghost/04-accepted.png` | Model after `Tab`: full insertion in the document, ghost cleared instantly | `Tab`; server file read |
+| `ghost/05-word-accept.png` | After `Ctrl+Right`: exactly one word (` and`) inserted, remainder kept as ghost | Server file read + ghost DOM |
+| `ghost/06-consumed.png` | Typing the suggestion's own words (` and the`) consumes them without duplication; remainder re-offered | Typed over a ready ghost |
+| `ghost/07-mismatch.png` | A mismatching keystroke (`X`) clears the ghost, `soonX` kept | Typed over a ready ghost |
+| `ghost/08-dismissed.png` | `Escape` dismisses with **zero** document-byte changes (before/after file hashes compared) | `Escape` on ready ghost |
+| `ghost/09-none.png` | `No suggestion` chip when the provider declines (prefix ends with `timeout`); aria-live said `AI made no suggestion` | Fresh doc, trailing space typed |
+| `ghost/10-markdown-accepted.png` | Ghost works in Markdown prose; `Tab` accepted (server read) | Fresh `.md` document |
+| `ghost/11-fence-protected.png` | Inside a ``` fence no ghost appears and the chip rests at idle (no false `Tab to accept`) | Caret in fence, typed prose |
+| `ghost/12-narrow-390.png` | Chip stays visible/tappable (128x39 box) at 390x844 | Viewport resize |
+| `ghost/13-reduced-motion.png` | Chip carries `motion-reduce` variants under `prefers-reduced-motion: reduce` | Playwright `reducedMotion` context |
+
+
 ## Known gaps (honest, for the next pass)
 
 - `Thinking`-style provider latency and real model wording are **not** represented: the answers
@@ -61,5 +85,12 @@ user action.
   carry `[@media(pointer:coarse)]:min-h-11` touch targets, but no touch-device capture exists yet.
 - Side-by-side Runes-vs-Arc comparison pairs and the differences table are still to be produced
   from these files (plan §"Screenshot reference and visual match").
+- Ghost streaming: the route does stream NDJSON deltas, but the editor paints the ghost once at
+  `done` rather than word-by-word while thinking. Monaco 0.55 dedupes re-requests for the same
+  position/version, so mid-stream repaints are suppressed; the chip shows `Thinking…` meanwhile.
+- Ghost keystroke cadence: at ~60 ms/char Playwright lost one keystroke during ghost repaints on
+  the CDN Monaco 0.55 EditContext build; at a normal ~130 ms/char cadence zero keystrokes were
+  lost across the full journey. Worth a targeted retest on real typing (or a Monaco upgrade)
+  before claiming burst-typing safety.
 - The Markdown/preview split occupies the left half at 1440 px, so Runes frames are not pixel
   aligned with the Arc demo frames; see the pending differences table.

@@ -178,4 +178,49 @@ describe('POST /api/ai/complete with the development stub', () => {
     const data = await response.json();
     expect(data.insertion).toBeNull();
   });
+
+  it('streams the completion as bounded NDJSON naming the real dev-stub model', async () => {
+    const response = await callComplete({
+      documentId: DOCUMENT_ID,
+      prefix: '\\begin{document}\nThe measured value rose again and then',
+      suffix: '.',
+      stream: true,
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('application/x-ndjson');
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    const events = await readEvents(response);
+    expect(events.filter((event) => event.type === 'delta').length).toBeGreaterThan(1);
+    const last = events[events.length - 1];
+    expect(last).toEqual({
+      type: 'done',
+      insertion: ' and the same pattern held across the next set of runs',
+      provider: 'dev-stub',
+      model: 'dev-stub (no provider)',
+    });
+  });
+
+  it('streams a clean no-suggestion answer for the timeout trigger', async () => {
+    const response = await callComplete({
+      documentId: DOCUMENT_ID,
+      prefix: '\\begin{document}\nThe measured value rose after the timeout',
+      suffix: '.',
+      stream: true,
+    });
+    const events = await readEvents(response);
+    expect(events.filter((event) => event.type === 'delta')).toHaveLength(0);
+    expect(events[events.length - 1]).toMatchObject({ type: 'done', insertion: null });
+  });
+
+  it('still reports the real model identity on a filtered single response', async () => {
+    const response = await callComplete({
+      documentId: DOCUMENT_ID,
+      prefix: '\\begin{document}\nThe measured value rose again and then',
+      suffix: '.',
+    });
+    const data = await response.json();
+    expect(data.provider).toBe('dev-stub');
+    expect(data.model).toBe('dev-stub (no provider)');
+  });
 });

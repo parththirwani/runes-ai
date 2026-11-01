@@ -87,6 +87,30 @@ export function stubCompletion(prefix: string): string {
   return ' and the same pattern held across the next set of runs';
 }
 
+/**
+ * Stream the same completion in small word groups so the ghost-text states
+ * (partial reveal, Tab-ready, word accept) are observable without a provider.
+ */
+export function stubCompletionChunks(prefix: string, wordsPerChunk = 3): string[] {
+  const reply = stubCompletion(prefix);
+  if (reply === '') return [];
+  const parts = reply.split(/(\s+)/);
+  const chunks: string[] = [];
+  let current = '';
+  let words = 0;
+  for (const part of parts) {
+    current += part;
+    if (/\S/.test(part)) words += 1;
+    if (words >= wordsPerChunk) {
+      chunks.push(current);
+      current = '';
+      words = 0;
+    }
+  }
+  if (current !== '') chunks.push(current);
+  return chunks;
+}
+
 /** True when a stubbed reply still carries every placeholder exactly once. */
 export function stubKeepsPlaceholders(original: string, reply: string): boolean {
   const count = (text: string): string[] => text.match(PLACEHOLDER_RUN) ?? [];

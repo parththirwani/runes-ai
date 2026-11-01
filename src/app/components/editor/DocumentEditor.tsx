@@ -23,13 +23,15 @@ import MarkdownPreviewPane from './MarkdownPreviewPane';
 import DiffReview from './DiffReview';
 import AiWorkspacePanel from './AiWorkspacePanel';
 import { useInlineEdit } from '@/src/hooks/useInlineEdit';
+import { useGhostText, type GhostTextController } from '@/src/hooks/useGhostText';
+import GhostTextStatusChip from './GhostTextStatusChip';
 import InputModal from '../design/InputModal';
 import AlertModal from '../design/AlertModal';
 import Button from '../design/Button';
 import { JobStatus } from '@/src/types/compilation';
 import { EditProposal, verifyAcceptance, checkStale, generateProposalId } from '@/src/lib/proposal-engine';
 import { analyzeSelection, scanContext, selectionCutsWord } from '@/src/lib/latex-utils';
-import { analyzeMarkdownSelection, markdownLineIsProse, scanMarkdownContext } from '@/src/lib/markdown-utils';
+import { analyzeMarkdownSelection, scanMarkdownContext } from '@/src/lib/markdown-utils';
 import { buildLatexOutline } from '@/src/lib/latex-outline';
 import { buildMarkdownOutline } from '@/src/lib/markdown-outline';
 import { SPLIT_RATIO_DEFAULT, splitRatioAtPointer, splitRatioFromKeyboard } from '@/src/lib/editor-split';
@@ -172,8 +174,6 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof import('monaco-editor') | null>(null);
-  // Ghost text stays silent while an inline edit prompt, request or review is open.
-  const inlineEditGhostSuppressedRef = useRef(false);
   const [editorRevision, setEditorRevision] = useState(0);
 
   const [proposal, setProposal] = useState<EditProposal | null>(null);
@@ -191,11 +191,21 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const proposalRef = useRef<EditProposal | null>(null);
   useEffect(() => { proposalRef.current = proposal; }, [proposal]);
 
-  const completeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const completeDebounceResolverRef = useRef<((v: { items: [] }) => void) | null>(null);
-  const completeAbortRef = useRef<AbortController | null>(null);
-  const completeRequestIdRef = useRef(0);
+  // Ghost text is driven by useGhostText (below, after the inline-edit
+  // controller it must stay silent for). The shell keeps a stable provider
+  // identity for Monaco while the live controller swaps in each render.
+  const ghostImplRef = useRef<GhostTextController | null>(null);
+  const ghostProvider = useMemo<languages.InlineCompletionsProvider>(() => ({
+    provideInlineCompletions: (...args) =>
+      ghostImplRef.current?.provider.provideInlineCompletions(...args) ?? Promise.resolve({ items: [] }),
+    handlePartialAccept: (...args) => ghostImplRef.current?.provider.handlePartialAccept?.(...args),
+    handleEndOfLifetime: (...args) => ghostImplRef.current?.provider.handleEndOfLifetime?.(...args),
+    handleRejection: (...args) => ghostImplRef.current?.provider.handleRejection?.(...args),
+    disposeInlineCompletions: () => {},
+  }), []);
   const completeProviderDisposableRef = useRef<{ dispose(): void } | null>(null);
+  const blurListenerRef = useRef<{ dispose(): void } | null>(null);
+  const modelListenerRef = useRef<{ dispose(): void } | null>(null);
 
   const pendingParaphraseStaleRef = useRef(false);
   const paraphraseAbortRef = useRef<AbortController | null>(null);
@@ -313,6 +323,21 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     };
   }, [currentJobId]);
 
+  // Monaco 0.55's trigger command resolves its promise through the inline
+  // completion model; when a newer request supersedes an in-flight one the
+  // old promise rejects with a plain `Canceled` that the standalone command
+  // service drops on the floor. Swallow exactly that shape (name/value
+  // `Canceled`) so real application rejections still reach the console.
+  useEffect(() => {
+    const onUnhandled = (event: PromiseRejectionEvent) => {
+      const reason = event.reason as { name?: string } | string | undefined;
+      const name = typeof reason === 'string' ? reason : reason?.name;
+      if (name === 'Canceled') event.preventDefault();
+    };
+    window.addEventListener('unhandledrejection', onUnhandled);
+    return () => window.removeEventListener('unhandledrejection', onUnhandled);
+  }, []);
+
   // --- Editor ready: register the AI inline completion provider once per document ---
   const handleEditorReady = useCallback((editorInstance: editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) => {
     editorRef.current = editorInstance;
@@ -342,117 +367,27 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     cursorListenerRef.current = editorInstance.onDidChangeCursorPosition((event) => {
       setCurrentLineNumber(event.position.lineNumber);
     });
+    // Ghost text aborts on blur and on editor file switches; late chunks
+    // must never insert into a model the user has left.
+    blurListenerRef.current?.dispose();
+    blurListenerRef.current = editorInstance.onDidBlurEditorWidget(() => {
+      ghostImplRef.current?.cancel();
+    });
+    modelListenerRef.current?.dispose();
+    modelListenerRef.current = editorInstance.onDidChangeModel(() => {
+      ghostImplRef.current?.cancel();
+    });
 
     if (completeProviderDisposableRef.current) {
       completeProviderDisposableRef.current.dispose();
       completeProviderDisposableRef.current = null;
     }
 
-    const provideInlineCompletions: languages.InlineCompletionsProvider['provideInlineCompletions'] = async (model, position, _context, token) => {
-        if (!autocompleteEnabledRef.current || proposalRef.current || inlineEditGhostSuppressedRef.current || token.isCancellationRequested || model !== editorInstance.getModel()) return { items: [] };
-
-        const requestId = ++completeRequestIdRef.current;
-        completeAbortRef.current?.abort();
-
-        const offset = model.getOffsetAt(position);
-        const fullSource = model.getValue();
-        const allowed = isMarkdown
-          ? !scanMarkdownContext(fullSource, offset).inProtected && markdownLineIsProse(fullSource.slice(fullSource.lastIndexOf('\n', offset - 1) + 1, offset))
-          : (() => {
-            const ctx = scanContext(fullSource, offset);
-            return ctx.isInDocument && !ctx.isInPreamble && !ctx.isInMath && !ctx.isInVerbatim && !ctx.isInComment && !ctx.isInCommandName && !ctx.isInCommandArg;
-          })();
-        if (!allowed) {
-          return { items: [] };
-        }
-
-        const sel = editorInstance.getSelection();
-        if (sel && !sel.isEmpty()) return { items: [] };
-
-        const prefix = fullSource.slice(Math.max(0, offset - 2000), offset);
-        const suffix = fullSource.slice(offset, offset + 1000);
-
-        if (completeDebounceRef.current) {
-          clearTimeout(completeDebounceRef.current);
-          if (completeDebounceResolverRef.current) {
-            completeDebounceResolverRef.current({ items: [] });
-            completeDebounceResolverRef.current = null;
-          }
-        }
-
-        return new Promise((resolve) => {
-          completeDebounceResolverRef.current = resolve as (v: { items: [] }) => void;
-
-          completeDebounceRef.current = setTimeout(async () => {
-            completeDebounceResolverRef.current = null;
-            completeDebounceRef.current = null;
-
-            if (token.isCancellationRequested || requestId !== completeRequestIdRef.current) {
-              resolve({ items: [] });
-              return;
-            }
-
-            if (completeAbortRef.current) completeAbortRef.current.abort();
-
-            const abortCtrl = new AbortController();
-            completeAbortRef.current = abortCtrl;
-            const modelVersion = model.getVersionId();
-
-            try {
-              const res = await fetch('/api/ai/complete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  documentId,
-                  prefix: prefix.slice(-2000),
-                  suffix: suffix.slice(0, 1000),
-                  requestId: String(requestId),
-                }),
-                signal: abortCtrl.signal,
-              });
-
-              if (!res.ok || token.isCancellationRequested || requestId !== completeRequestIdRef.current) {
-                if (!token.isCancellationRequested && requestId === completeRequestIdRef.current &&
-                    (res.status === 429 || res.status >= 500) && !autocompleteNoticeShownRef.current) {
-                  autocompleteNoticeShownRef.current = true;
-                  setAutocompleteNotice(res.status === 429 ? 'AI completion rate limit reached' : 'AI completion unavailable');
-                }
-                resolve({ items: [] }); return;
-              }
-
-              const data = await res.json();
-              if (!data.insertion || token.isCancellationRequested || requestId !== completeRequestIdRef.current) { resolve({ items: [] }); return; }
-
-              const curPos = editorInstance.getPosition();
-              if (model.getVersionId() !== modelVersion ||
-                  curPos?.lineNumber !== position.lineNumber ||
-                  curPos?.column !== position.column ||
-                  proposalRef.current || !autocompleteEnabledRef.current || editorInstance.getModel() !== model) {
-                resolve({ items: [] }); return;
-              }
-
-              const insertion = data.insertion;
-              if (!insertion || insertion.length > 200) { resolve({ items: [] }); return; }
-
-              resolve({
-                items: [{ insertText: insertion, range: { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: position.column, endColumn: position.column } }],
-              });
-            } catch (error: unknown) {
-              if (!(error instanceof Error && error.name === 'AbortError') && !autocompleteNoticeShownRef.current) {
-                autocompleteNoticeShownRef.current = true;
-                setAutocompleteNotice('AI completion unavailable');
-              }
-              resolve({ items: [] });
-            }
-          }, 400);
-        });
-    };
-
     completeProviderDisposableRef.current = monaco.languages.registerInlineCompletionsProvider(
       isMarkdown ? 'markdown' : 'latex',
-      { provideInlineCompletions, disposeInlineCompletions: () => {} },
+      ghostProvider,
     );
-  }, [documentId, isMarkdown]);
+  }, [isMarkdown, ghostProvider]);
 
   // --- AI inline edit controller (bubble, prompt, stream, review, apply) ---
   const editorAreaRef = useRef<HTMLDivElement | null>(null);
@@ -467,7 +402,29 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     overlayRef: editorAreaRef,
     onModelChanged: (path, text) => workspace.setContent(path, text),
   });
-  inlineEditGhostSuppressedRef.current = inlineEdit.ghostSuppressed;
+  // --- Ghost text autocomplete controller (inline completion + status chip) ---
+  // Kept silent while an inline edit prompt/request/review is open (step 5).
+  const ghost = useGhostText({
+    editorRef,
+    editorRevision,
+    documentId,
+    isMarkdown,
+    canEdit: canEdit && !isBinaryActive,
+    autocompleteEnabled,
+    inlineEditOpen: inlineEdit.ghostSuppressed || !!proposal || isAiLoading,
+    onNotice: (notice) => {
+      if (notice) {
+        if (!autocompleteNoticeShownRef.current) {
+          autocompleteNoticeShownRef.current = true;
+          setAutocompleteNotice(notice);
+        }
+      } else {
+        autocompleteNoticeShownRef.current = false;
+        setAutocompleteNotice(null);
+      }
+    },
+  });
+  ghostImplRef.current = ghost;
   const editShortcutLabel = typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.userAgent) ? '⌘ K' : 'Ctrl K';
   const editCommandLabel = editShortcutLabel.split(' ')[0];
 
@@ -911,12 +868,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     const paraphraseRequestId = paraphraseRequestIdRef;
     return () => {
       if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
-      if (completeAbortRef.current) completeAbortRef.current.abort();
+      ghostImplRef.current?.cancel();
       paraphraseAbortRef.current?.abort();
       paraphraseRequestId.current++;
-      if (completeDebounceRef.current) clearTimeout(completeDebounceRef.current);
-      completeDebounceResolverRef.current?.({ items: [] });
-      completeDebounceResolverRef.current = null;
       if (completeProviderDisposableRef.current) {
         completeProviderDisposableRef.current.dispose();
         completeProviderDisposableRef.current = null;
@@ -925,6 +879,10 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       selectionListenerRef.current = null;
       cursorListenerRef.current?.dispose();
       cursorListenerRef.current = null;
+      blurListenerRef.current?.dispose();
+      blurListenerRef.current = null;
+      modelListenerRef.current?.dispose();
+      modelListenerRef.current = null;
     };
   }, []);
 
@@ -1176,6 +1134,15 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                   )}
                   {aiError && !proposal && <span className="text-xs text-status-error">{aiError}</span>}
                   {autocompleteNotice && <span role="status" className="text-xs text-status-stale">{autocompleteNotice}</span>}
+                  {canEdit && autocompleteEnabled && !isBinaryActive && (
+                    <GhostTextStatusChip
+                      phase={ghost.chipPhase}
+                      modelName={ghost.modelName}
+                      announcement={ghost.announcement}
+                      onAccept={ghost.accept}
+                      onRetry={ghost.retry}
+                    />
+                  )}
 
                   <label className="hidden sm:flex items-center gap-1.5 text-[11px] text-meta cursor-pointer">
                     <input
