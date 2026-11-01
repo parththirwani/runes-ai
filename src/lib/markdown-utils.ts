@@ -204,6 +204,23 @@ export function analyzeMarkdownSelection(selectedText: string, context: Markdown
   return { eligible: true, protectedTokens, maskedSelection: masked };
 }
 
+/**
+ * Byte-for-byte protected Markdown spans of a selection, in masking order.
+ * Same pass analyzeMarkdownSelection uses to build its placeholders, so an
+ * assembled review text can be re-checked against these exact originals.
+ */
+export function extractProtectedMarkdownTokens(selectedText: string): string[] {
+  const tokens: string[] = [];
+  let masked = selectedText;
+  for (const pattern of MD_PROTECTED_PATTERNS) {
+    masked = masked.replace(pattern, (match) => {
+      tokens.push(match);
+      return `@@P${tokens.length - 1}~`;
+    });
+  }
+  return tokens;
+}
+
 export type MarkdownRestoreResult =
   | { success: true; restored: string }
   | { success: false; reason: string };
