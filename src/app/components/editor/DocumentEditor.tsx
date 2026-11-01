@@ -7,12 +7,22 @@ import type { ViewMode } from './ViewModeToggle';
 import WorkspacePanel from './WorkspacePanel';
 import FileTabs from './FileTabs';
 import MonacoEditorWrapper from './MonacoEditorWrapper';
+import InlineEditReviewCard from './InlineEditReview';
+import {
+  InlineEditAppliedReceipt,
+  InlineEditBubble,
+  InlineEditErrorCard,
+  InlineEditIdleHint,
+  InlineEditPromptCard,
+  InlineEditStreamingCard,
+} from './InlineEditCard';
 import PDFPreview from './PDFPreview';
 import ShareDialog from '../sharing/shareDialog';
 import MoveDialog, { type MoveWorkspaceOption } from '../sharing/moveDialog';
 import MarkdownPreviewPane from './MarkdownPreviewPane';
 import DiffReview from './DiffReview';
 import AiWorkspacePanel from './AiWorkspacePanel';
+import { useInlineEdit } from '@/src/hooks/useInlineEdit';
 import InputModal from '../design/InputModal';
 import AlertModal from '../design/AlertModal';
 import Button from '../design/Button';
@@ -162,6 +172,9 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof import('monaco-editor') | null>(null);
+  // Ghost text stays silent while an inline edit prompt, request or review is open.
+  const inlineEditGhostSuppressedRef = useRef(false);
+  const [editorRevision, setEditorRevision] = useState(0);
 
   const [proposal, setProposal] = useState<EditProposal | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -304,6 +317,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
   const handleEditorReady = useCallback((editorInstance: editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) => {
     editorRef.current = editorInstance;
     monacoRef.current = monaco;
+    setEditorRevision((revision) => revision + 1);
     selectionListenerRef.current?.dispose();
     cursorListenerRef.current?.dispose();
     selectionListenerRef.current = editorInstance.onDidChangeCursorSelection(() => {
@@ -335,7 +349,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
     }
 
     const provideInlineCompletions: languages.InlineCompletionsProvider['provideInlineCompletions'] = async (model, position, _context, token) => {
-        if (!autocompleteEnabledRef.current || proposalRef.current || token.isCancellationRequested || model !== editorInstance.getModel()) return { items: [] };
+        if (!autocompleteEnabledRef.current || proposalRef.current || inlineEditGhostSuppressedRef.current || token.isCancellationRequested || model !== editorInstance.getModel()) return { items: [] };
 
         const requestId = ++completeRequestIdRef.current;
         completeAbortRef.current?.abort();
@@ -439,6 +453,23 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
       { provideInlineCompletions, disposeInlineCompletions: () => {} },
     );
   }, [documentId, isMarkdown]);
+
+  // --- AI inline edit controller (bubble, prompt, stream, review, apply) ---
+  const editorAreaRef = useRef<HTMLDivElement | null>(null);
+  const inlineEdit = useInlineEdit({
+    editorRef,
+    editorRevision,
+    documentId,
+    activePath,
+    format: isMarkdown ? 'markdown' : 'latex',
+    canEdit,
+    isBinaryActive,
+    overlayRef: editorAreaRef,
+    onModelChanged: (path, text) => workspace.setContent(path, text),
+  });
+  inlineEditGhostSuppressedRef.current = inlineEdit.ghostSuppressed;
+  const editShortcutLabel = typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.userAgent) ? '⌘ K' : 'Ctrl K';
+  const editCommandLabel = editShortcutLabel.split(' ')[0];
 
   // --- Paraphrase action: always operates on the file that is open right now ---
   const handleParaphrase = useCallback(async (tone: string = 'Clearer') => {
@@ -1136,6 +1167,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                 </div>
 
                 <div className="ml-auto flex items-center gap-2">
+                  {canEdit && <InlineEditIdleHint shortcutLabel={editShortcutLabel} />}
                   {isAiLoading && (
                     <span className="text-xs text-status-compiling flex items-center gap-1">
                       <RefreshCw className="w-3 h-3 animate-spin" />
@@ -1158,7 +1190,7 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
               </div>
 
               {/* Editor, binary preview, or empty state */}
-              <div className="flex-1 overflow-hidden">
+              <div ref={editorAreaRef} className="flex-1 overflow-hidden relative">
                 {isBinaryActive && activeFile ? (
                   <div className="h-full overflow-auto p-4 flex flex-col items-center gap-3 bg-surface-raised">
                     {/* The preview is the user's own uploaded file, served raw by the asset route. */}
@@ -1186,6 +1218,76 @@ export default function DocumentEditor({ initialDocument }: DocumentEditorProps)
                 ) : (
                   <div className="h-full flex items-center justify-center text-sm text-muted-foreground px-6 text-center">
                     Open a file from the workspace panel, or create one to start writing.
+                  </div>
+                )}
+
+                {/* Anchored AI inline edit surfaces. The wrapper ignores pointer
+                    events so the editor stays usable; only the card is live. */}
+                {inlineEdit.surface !== 'none' && (
+                  <div className="pointer-events-none absolute inset-0 z-30">
+                    <div
+                      ref={inlineEdit.surfaceRef}
+                      className="pointer-events-auto absolute"
+                      style={{
+                        top: inlineEdit.placement?.top ?? 8,
+                        left: inlineEdit.placement?.left ?? 8,
+                      }}
+                    >
+                      {inlineEdit.surface === 'bubble' && (
+                        <InlineEditBubble onOpen={inlineEdit.openFromBubble} shortcutLabel={editShortcutLabel} />
+                      )}
+                      {inlineEdit.surface === 'prompt' && inlineEdit.anchor && (
+                        <InlineEditPromptCard
+                          selectionPreview={inlineEdit.anchor.originalText}
+                          instruction={inlineEdit.instruction}
+                          onInstructionChange={inlineEdit.setInstruction}
+                          onSubmitInstruction={inlineEdit.submitInstruction}
+                          onQuickAction={inlineEdit.submitQuickAction}
+                          onDismiss={inlineEdit.dismiss}
+                          validationError={inlineEdit.instructionError}
+                          instructionLimit={inlineEdit.instructionLimit}
+                        />
+                      )}
+                      {inlineEdit.surface === 'streaming' && inlineEdit.anchor && (
+                        <InlineEditStreamingCard
+                          tokens={inlineEdit.previewTokens}
+                          originalText={inlineEdit.anchor.originalText}
+                          onStop={inlineEdit.stop}
+                          partialReviewable={false}
+                        />
+                      )}
+                      {inlineEdit.surface === 'review' && inlineEdit.hunkModel && (
+                        <InlineEditReviewCard
+                          model={inlineEdit.hunkModel}
+                          focusIndex={inlineEdit.focusIndex}
+                          onFocusChange={inlineEdit.setFocusIndex}
+                          onDecision={inlineEdit.decide}
+                          onAcceptAll={inlineEdit.acceptAll}
+                          onRejectAll={inlineEdit.rejectAll}
+                          onApply={inlineEdit.apply}
+                          onDismiss={inlineEdit.dismiss}
+                          staleReason={inlineEdit.blockedReason}
+                          commandLabel={editCommandLabel}
+                        />
+                      )}
+                      {inlineEdit.surface === 'error' && (
+                        <InlineEditErrorCard
+                          message={inlineEdit.state.phase === 'error' ? inlineEdit.state.message : ''}
+                          onRetry={inlineEdit.canRetry ? inlineEdit.retry : undefined}
+                          onDismiss={inlineEdit.dismiss}
+                        />
+                      )}
+                      {inlineEdit.surface === 'receipt' && inlineEdit.receipt && (
+                        <InlineEditAppliedReceipt
+                          acceptedCount={inlineEdit.receipt.acceptedCount}
+                          total={inlineEdit.receipt.total}
+                          keptOriginal={inlineEdit.receipt.keptOriginal}
+                          onUndo={inlineEdit.undoApply}
+                          onDismiss={inlineEdit.dismiss}
+                        />
+                      )}
+                    </div>
+                    <p className="sr-only" role="status" aria-live="polite">{inlineEdit.announcement}</p>
                   </div>
                 )}
               </div>

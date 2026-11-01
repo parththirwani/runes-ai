@@ -34,6 +34,8 @@ export type InlineEditEvent =
   | { type: 'failure'; requestId?: number; message: string }
   /** User pressed Stop while requesting: discard (partial review is a later step). */
   | { type: 'stop' }
+  /** Honest refusal of a trigger attempt (ineligible selection, read-only). */
+  | { type: 'notice'; message: string }
   /** Error acknowledged. */
   | { type: 'closeError' }
   /** Error with a remembered anchor goes straight back to the prompt. */
@@ -76,6 +78,12 @@ export function inlineEditReducer(state: InlineEditState, event: InlineEditEvent
     case 'stop':
       if (state.phase !== 'requesting') return state;
       return { phase: 'idle' };
+
+    case 'notice':
+      // A refused trigger only explains itself while nothing else is open: an
+      // in-flight request or an open review must never be replaced by a toast.
+      if (state.phase !== 'idle') return state;
+      return { phase: 'error', anchor: null, message: event.message };
 
     case 'closeError':
       if (state.phase !== 'error') return state;

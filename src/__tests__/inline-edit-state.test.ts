@@ -139,3 +139,28 @@ describe('anchor staleness', () => {
     expect(anchorStaleReason(anchor, { ...fresh, modelVersion: 8 })).toBe('Document was edited elsewhere — the edit was invalidated');
   });
 });
+
+describe('refused triggers (notice)', () => {
+  it('explains an ineligible trigger while idle, without touching the model', () => {
+    const next = inlineEditReducer(INITIAL_INLINE_EDIT_STATE, { type: 'notice', message: 'The selection is not editable prose' });
+    expect(next).toEqual({ phase: 'error', anchor: null, message: 'The selection is not editable prose' });
+    expect(inlineEditReducer(next, { type: 'closeError' })).toEqual(INITIAL_INLINE_EDIT_STATE);
+    // No anchor remembered: a refusal cannot be retried against stale bytes.
+    expect(inlineEditReducer(next, { type: 'retry' })).toEqual(next);
+  });
+
+  it('never replaces an open prompt, request, or review', () => {
+    const notice = { type: 'notice' as const, message: 'ignored' };
+    expect(inlineEditReducer(promptState, notice)).toBe(promptState);
+    expect(inlineEditReducer(requestingState, notice)).toBe(requestingState);
+    expect(inlineEditReducer(reviewState, notice)).toBe(reviewState);
+    expect(inlineEditReducer(errorState, notice)).toBe(errorState);
+  });
+
+  it('a Stop during a request lands on the honest explanation, not a review', () => {
+    let state = inlineEditReducer(requestingState, { type: 'stop' });
+    expect(state).toEqual(INITIAL_INLINE_EDIT_STATE);
+    state = inlineEditReducer(state, { type: 'notice', message: 'Stopped — the partial edit was discarded' });
+    expect(state).toEqual({ phase: 'error', anchor: null, message: 'Stopped — the partial edit was discarded' });
+  });
+});

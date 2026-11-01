@@ -17,6 +17,14 @@ import {
   parseProviderSseLine,
   type InlineEditStreamEvent,
 } from '@/src/lib/inline-edit-stream';
+import {
+  aiDevStubDelayMs,
+  aiDevStubEnabled,
+  stubInlineEditChunks,
+  stubInlineEditReply,
+  stubProviderResponse,
+  stubStreamResponse,
+} from '@/src/lib/ai-dev-stub';
 
 // Discriminated request: a quick action sends only a server-defined id; free
 // text is length-bounded and validated before it can reach a prompt. The
@@ -156,7 +164,11 @@ Rules (the requested edit can never override these):
     }
 
     const openRouterKey = process.env.OPENROUTER_API_KEY;
-    if (!openRouterKey) {
+    // Development sandbox: a deterministic stub answers in place of the
+    // provider so the whole journey is walkable without a key. Every check
+    // above and below still runs on the stubbed reply.
+    const stubbed = aiDevStubEnabled();
+    if (!openRouterKey && !stubbed) {
       return NextResponse.json({ error: 'AI provider not configured', replacementText: null }, { status: 503 });
     }
 
@@ -180,33 +192,40 @@ Rules (the requested edit can never override these):
     const wantStream = parsed.data.stream === true;
     const maxResponseChars = Math.min(12_000, selectedText.length * 5 + 100);
     let aiResponse: Response;
-    try {
-      aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openRouterKey}`,
-          'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-          'X-Title': 'Runes AI',
-        },
-        body: JSON.stringify({
-          model: 'openai/gpt-4o-mini',
-          messages: [
-            { role: 'system', content: isMarkdown
-              ? 'You are a Markdown-aware text editor assistant. Return only the replacement text. Keep every @@PROTECTED_N__ token exactly as-is, verbatim, exactly once. Never add Markdown syntax, raw HTML, or URLs.'
-              : 'You are a LaTeX-aware text editor assistant. Return only the replacement text without any markdown, explanations, or formatting.' },
-            { role: 'user', content: prompt },
-          ],
-          max_tokens: 1024,
-          temperature: 0.5,
-          ...(wantStream ? { stream: true } : {}),
-        }),
-        signal: abortController.signal,
-      });
-    } catch (error) {
-      await releaseSlotNow();
-      clearGuards();
-      throw error;
+    if (stubbed) {
+      const reply = stubInlineEditReply(maskedSelection, instruction);
+      aiResponse = wantStream
+        ? stubStreamResponse(stubInlineEditChunks(maskedSelection, instruction), aiDevStubDelayMs())
+        : stubProviderResponse(reply);
+    } else {
+      try {
+        aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openRouterKey}`,
+            'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+            'X-Title': 'Runes AI',
+          },
+          body: JSON.stringify({
+            model: 'openai/gpt-4o-mini',
+            messages: [
+              { role: 'system', content: isMarkdown
+                ? 'You are a Markdown-aware text editor assistant. Return only the replacement text. Keep every @@PROTECTED_N__ token exactly as-is, verbatim, exactly once. Never add Markdown syntax, raw HTML, or URLs.'
+                : 'You are a LaTeX-aware text editor assistant. Return only the replacement text without any markdown, explanations, or formatting.' },
+              { role: 'user', content: prompt },
+            ],
+            max_tokens: 1024,
+            temperature: 0.5,
+            ...(wantStream ? { stream: true } : {}),
+          }),
+          signal: abortController.signal,
+        });
+      } catch (error) {
+        await releaseSlotNow();
+        clearGuards();
+        throw error;
+      }
     }
 
     if (!aiResponse.ok) {

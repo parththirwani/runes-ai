@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { acquireAiSlot, checkAiRateLimit } from '@/src/lib/ai-rate-limit';
 import { filterCompletion } from '@/src/lib/latex-utils';
 import { filterMarkdownCompletion, markdownLineIsProse, scanMarkdownContext } from '@/src/lib/markdown-utils';
+import { aiDevStubEnabled, stubCompletion, stubProviderResponse } from '@/src/lib/ai-dev-stub';
 
 const completeSchema = z.object({
   documentId: z.string().min(1).max(128),
@@ -53,7 +54,10 @@ export const POST = withAuth(async (req, session) => {
 
     // Call AI
     const openRouterKey = process.env.OPENROUTER_API_KEY;
-    if (!openRouterKey) {
+    // Development sandbox only: a deterministic reply stands in for the
+    // provider. Every filter and authorization rule still runs on it.
+    const stubbed = aiDevStubEnabled();
+    if (!openRouterKey && !stubbed) {
       return NextResponse.json({ insertion: null, error: 'AI completion unavailable' }, { status: 503 });
     }
 
@@ -106,7 +110,9 @@ Rules:
     if (!releaseSlot) return NextResponse.json({ insertion: null }, { status: 429, headers: { 'Retry-After': '1' } });
     let aiResponse: Response;
     try {
-      aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      aiResponse = stubbed
+        ? stubProviderResponse(stubCompletion(prefix))
+        : await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
